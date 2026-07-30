@@ -22,13 +22,15 @@ model User {
   @@map("users")
 }
 
-// stagioneId è null per le chiavi non legate a una squadra (es. sidebar-order, una
-// preferenza personale dell'account); per tutto il resto (rosa, calendario, formazione
-// predefinita, piano squadra) è l'id della Stagione a cui quel blob appartiene.
+// stagioneId è '' (non null: SQLite/Prisma non ammettono null dentro una compound unique
+// key usata con findUnique/upsert) per le chiavi non legate a una squadra (es.
+// sidebar-order, una preferenza personale dell'account); per tutto il resto (rosa,
+// calendario, formazione predefinita, piano squadra) è l'id della Stagione a cui quel
+// blob appartiene.
 model KvEntry {
   id         String   @id @default(cuid())
   userId     String?
-  stagioneId String?
+  stagioneId String   @default("")
   key        String
   value      String
   updatedAt  DateTime @updatedAt

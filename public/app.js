@@ -3367,7 +3367,10 @@ function parseSchemaCampo(livello){
   d.arrows = d.arrows.map(a=>({
     id: a.id || uid(),
     x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2,
-    points: Array.isArray(a.points) && a.points.length>=2 ? a.points : null,
+    // Difensivo anche contro punti corrotti (es. salvati prima del fix del bug che li
+    // serializzava come "{}" vuoti): se anche solo un punto non ha coordinate numeriche,
+    // si scarta l'intero percorso e si ricade sulla curva automatica da inizio/fine.
+    points: (Array.isArray(a.points) && a.points.length>=2 && a.points.every(p=>p && typeof p.x==='number' && typeof p.y==='number')) ? a.points : null,
     tipo: ['movimento','passaggio','pallone-alto','divisore'].includes(a.tipo) ? a.tipo : 'passaggio',
     color: a.color || SCHEMA_COLORS[0],
   }));
@@ -3776,7 +3779,10 @@ function attachSchemaFieldInteractions(){
     const s = state.schema;
     if(s.drawMode && s.activeLineType==='pallone-alto'){
       const start = toPoint(e);
-      const points = [start];
+      // toPoint() ritorna un DOMPoint: le sue x/y sono proprietà d'accesso, non proprietà
+      // proprie enumerabili, quindi JSON.stringify le serializza come "{}". Va convertito
+      // subito in un oggetto semplice, altrimenti il tratto disegnato si perde al salvataggio.
+      const points = [{ x: start.x, y: start.y }];
       const tempPath = document.createElementNS('http://www.w3.org/2000/svg','path');
       tempPath.setAttribute('fill','none'); tempPath.setAttribute('stroke', s.activeColor); tempPath.setAttribute('stroke-width','0.15');
       tempPath.setAttribute('d', 'M'+start.x+','+start.y);
@@ -3785,7 +3791,7 @@ function attachSchemaFieldInteractions(){
         const p = toPoint(e2);
         const last = points[points.length-1];
         if(Math.hypot(p.x-last.x, p.y-last.y) > 0.25){
-          points.push(p);
+          points.push({ x: p.x, y: p.y });
           tempPath.setAttribute('d', smoothPathFromPoints(points));
         }
       }

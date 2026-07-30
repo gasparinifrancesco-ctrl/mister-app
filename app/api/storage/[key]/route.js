@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/dal';
-import { ALLOWED_STORAGE_KEYS, isSeasonScopedKey, getActiveStagione } from '@/lib/stagioni';
+import { ALLOWED_STORAGE_KEYS, isSeasonScopedKey, getActiveStagione, GLOBAL_STAGIONE_ID } from '@/lib/stagioni';
 
 export async function GET(request, { params }) {
   const session = await getSession();
@@ -12,7 +12,7 @@ export async function GET(request, { params }) {
     return Response.json({ error: 'unknown key' }, { status: 400 });
   }
 
-  let stagioneId = null;
+  let stagioneId = GLOBAL_STAGIONE_ID;
   if (isSeasonScopedKey(key)) {
     const { searchParams } = new URL(request.url);
     const requestedStagioneId = searchParams.get('stagioneId');
@@ -52,7 +52,7 @@ export async function PUT(request, { params }) {
 
   // In scrittura non si può mai scegliere la stagione: si scrive sempre e solo su quella
   // attiva. Una stagione chiusa è un archivio di sola lettura.
-  const stagioneId = isSeasonScopedKey(key) ? (await getActiveStagione(session.userId)).id : null;
+  const stagioneId = isSeasonScopedKey(key) ? (await getActiveStagione(session.userId)).id : GLOBAL_STAGIONE_ID;
 
   await prisma.kvEntry.upsert({
     where: { userId_stagioneId_key: { userId: session.userId, stagioneId, key } },
