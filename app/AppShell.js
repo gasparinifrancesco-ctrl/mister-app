@@ -3,7 +3,8 @@
 import Script from "next/script";
 import { logoutAction } from "@/app/actions/auth";
 
-export default function AppShell({ email, schemaUnlocked }) {
+export default function AppShell({ email, schemaUnlocked, stagione }) {
+  const squadraLabel = [stagione?.tipoSquadra, stagione?.livello].filter(Boolean).join(" ");
   return (
     <>
       {/* Data attributes instead of an inline <script>: React's hydration reliably
@@ -13,6 +14,10 @@ export default function AppShell({ email, schemaUnlocked }) {
         id="app-user-data"
         data-email={email}
         data-schema-unlocked={schemaUnlocked ? "1" : "0"}
+        data-stagione-etichetta={stagione?.etichetta || ""}
+        data-stagione-societa={stagione?.societa || ""}
+        data-stagione-tipo={stagione?.tipoSquadra || ""}
+        data-stagione-livello={stagione?.livello || ""}
         style={{ display: "none" }}
       />
       <div id="save-error-banner" style={{ display: "none" }}>
@@ -32,8 +37,11 @@ export default function AppShell({ email, schemaUnlocked }) {
       <div className="app-frame">
         <aside className="sidebar">
           <div className="sidebar-brand">
-            <span className="brand-title">United Carpi (Juniores èlite)</span>
-            <span className="season-badge">2026/27</span>
+            <button className="brand-title brand-title-btn" onClick={() => window.openStagioni && window.openStagioni()} title="Gestisci stagioni">
+              {stagione?.societa || "Società non impostata"}
+            </button>
+            {squadraLabel ? <span className="brand-subtitle">{squadraLabel}</span> : null}
+            <span className="season-badge">{stagione?.etichetta || "—"}</span>
             {email ? <span className="sidebar-user-email">{email}</span> : null}
           </div>
           <nav id="side-nav" className="side-nav"></nav>

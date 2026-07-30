@@ -39,6 +39,9 @@
   }
   .sidebar-brand{ padding: 18px 18px 16px; border-bottom:1px solid var(--border); margin-bottom:8px; }
   .sidebar-brand .brand-title{ display:block; font-family:'Oswald',sans-serif; font-weight:700; font-size:1.05rem; letter-spacing:0.02em; color: var(--chalk); line-height:1.25; }
+  .sidebar-brand .brand-title-btn{ background:none; border:none; padding:0; text-align:left; cursor:pointer; width:100%; }
+  .sidebar-brand .brand-title-btn:hover{ color: var(--accent); }
+  .sidebar-brand .brand-subtitle{ display:block; font-size:0.76rem; color: var(--text-dim); margin-top:2px; }
   .sidebar-brand .season-badge{ font-family:'Oswald',sans-serif; font-size:0.72rem; color: var(--bg); background: var(--accent); padding: 3px 9px; border-radius: 999px; font-weight:600; margin-top:8px; display:inline-block; }
   .sidebar-brand .sidebar-user-email{ display:block; font-size:0.68rem; color: var(--text-dim); margin-top:8px; word-break:break-all; }
   .side-nav{ display:flex; flex-direction:column; gap:2px; padding: 6px 10px; flex:1; }

@@ -40,6 +40,15 @@ const FORMATIONS = {
 };
 const FORMATION_KEYS = Object.keys(FORMATIONS);
 const SCHEMA_COLORS = ['#4FA8E0','#E0574F','#F2C94C','#6FCF7A'];
+const STAGIONE_LIVELLI = {
+  'Prima Squadra': ['Terza Categoria','Seconda Categoria','Prima Categoria','Promozione','Eccellenza','Serie D','Serie C','Serie B','Serie A','Altro'],
+  'Juniores': ['Provinciale','Regionale','Élite','Nazionale','Altro'],
+  'Allievi': ['Provinciali','Regionali','Nazionali','Altro'],
+  'Giovanissimi': ['Provinciali','Regionali','Nazionali','Altro'],
+  'Primavera': ['Primavera 4','Primavera 3','Primavera 2','Primavera 1','Altro'],
+  'Altro': ['Altro'],
+};
+const STAGIONE_TIPI = Object.keys(STAGIONE_LIVELLI);
 
 /* ---------- stato ---------- */
 let state = {
@@ -63,6 +72,16 @@ let state = {
   rosaViewMode: 'generali',
   defaultFormationSort: 'ruolo',
   notificheOpen: false,
+  stagioni: {
+    list: [],
+    loaded: false,
+    detailId: null,
+    detail: null,
+    selectedImportIds: [],
+    showNewForm: false,
+    newTipo: 'Prima Squadra',
+    newLivello: STAGIONE_LIVELLI['Prima Squadra'][0],
+  },
   schema: {
     view: 'library',
     exerciseId: null,
@@ -264,19 +283,19 @@ async function loadData(){
     state.players = (r && r.value) ? JSON.parse(r.value) : [];
   }catch(e){ state.players = []; }
   try{
-    const r = await storageGet('matches-2026-27');
+    const r = await storageGet('matches');
     state.matches = (r && r.value) ? JSON.parse(r.value) : [];
   }catch(e){ state.matches = []; }
   try{
-    const r = await storageGet('allenamenti-2026-27');
+    const r = await storageGet('allenamenti');
     state.allenamenti = (r && r.value) ? JSON.parse(r.value) : [];
   }catch(e){ state.allenamenti = []; }
   try{
-    const r = await storageGet('piano-squadra-2026-27');
+    const r = await storageGet('piano-squadra');
     state.pianoSquadra = (r && r.value) ? JSON.parse(r.value) : {};
   }catch(e){ state.pianoSquadra = {}; }
   try{
-    const r = await storageGet('formazione-default-2026-27');
+    const r = await storageGet('formazione-default');
     state.formazioneDefault = (r && r.value) ? JSON.parse(r.value) : { modulo:'', slots:[], chips:[] };
   }catch(e){ state.formazioneDefault = { modulo:'', slots:[], chips:[] }; }
   try{
@@ -304,7 +323,7 @@ async function savePlayers(){
 }
 async function saveMatches(){
   try{
-    const r = await storageSet('matches-2026-27', JSON.stringify(state.matches));
+    const r = await storageSet('matches', JSON.stringify(state.matches));
     if(!r || !r.ok) throw new Error('empty result');
     reportSaveOk();
   }
@@ -312,7 +331,7 @@ async function saveMatches(){
 }
 async function saveAllenamenti(){
   try{
-    const r = await storageSet('allenamenti-2026-27', JSON.stringify(state.allenamenti));
+    const r = await storageSet('allenamenti', JSON.stringify(state.allenamenti));
     if(!r || !r.ok) throw new Error('empty result');
     reportSaveOk();
   }
@@ -320,7 +339,7 @@ async function saveAllenamenti(){
 }
 async function savePianoSquadra(){
   try{
-    const r = await storageSet('piano-squadra-2026-27', JSON.stringify(state.pianoSquadra));
+    const r = await storageSet('piano-squadra', JSON.stringify(state.pianoSquadra));
     if(!r || !r.ok) throw new Error('empty result');
     reportSaveOk();
   }
@@ -329,7 +348,7 @@ async function savePianoSquadra(){
 async function saveFormazioneDefault(){
   syncProgrammataMatchesWithDefault();
   try{
-    const r = await storageSet('formazione-default-2026-27', JSON.stringify(state.formazioneDefault));
+    const r = await storageSet('formazione-default', JSON.stringify(state.formazioneDefault));
     if(!r || !r.ok) throw new Error('empty result');
     reportSaveOk();
   }
@@ -434,8 +453,15 @@ function currentSideNavOrder(){
 }
 function getAppUser(){
   const el = document.getElementById('app-user-data');
-  if(!el) return { email:'', schemaUnlocked:false };
-  return { email: el.getAttribute('data-email')||'', schemaUnlocked: el.getAttribute('data-schema-unlocked')==='1' };
+  if(!el) return { email:'', schemaUnlocked:false, stagioneEtichetta:'' };
+  return {
+    email: el.getAttribute('data-email')||'',
+    schemaUnlocked: el.getAttribute('data-schema-unlocked')==='1',
+    stagioneEtichetta: el.getAttribute('data-stagione-etichetta')||'',
+    stagioneSocieta: el.getAttribute('data-stagione-societa')||'',
+    stagioneTipo: el.getAttribute('data-stagione-tipo')||'',
+    stagioneLivello: el.getAttribute('data-stagione-livello')||'',
+  };
 }
 function renderSideNav(){
   const nav = document.getElementById('side-nav');
@@ -686,7 +712,7 @@ function renderRosaView(){
 
   return '' +
   '<div class="card">' +
-    '<div class="card-header-row"><h2>Rosa — stagione 2026/27</h2>' +
+    '<div class="card-header-row"><h2>Rosa — stagione '+esc(getAppUser().stagioneEtichetta)+'</h2>' +
       '<div class="pitch-actions">' +
         '<label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-dim);"><input type="checkbox" id="rosa-export-stats" checked style="width:auto;padding:0;"> Includi statistiche</label>' +
         '<button class="btn btn-small" onclick="exportRosaPDF()">Esporta PDF</button>' +
@@ -2888,7 +2914,7 @@ function renderStatisticheView(){
 
   return '' +
   '<div class="card">' +
-    '<div class="card-header-row"><h2>Statistiche stagione 2026/27</h2>' +
+    '<div class="card-header-row"><h2>Statistiche stagione '+esc(getAppUser().stagioneEtichetta)+'</h2>' +
       '<div class="pitch-actions"><button class="btn btn-small" onclick="exportSeasonPDF()">Esporta PDF</button><button class="btn btn-small" onclick="exportSeasonXLSX()">Esporta XLSX</button><button class="btn btn-small" onclick="exportPageImage(\'statistiche\')">Esporta immagine</button></div>' +
     '</div>' +
     '<div class="stat-cards">' +
@@ -2954,7 +2980,7 @@ function buildRosterPrintHTML(includeStats){
 }
 function exportRosaPDF(){
   const includeStats = document.getElementById('rosa-export-stats').checked;
-  exportPDF('Rosa 2026/27', buildRosterPrintHTML(includeStats));
+  exportPDF('Rosa '+getAppUser().stagioneEtichetta, buildRosterPrintHTML(includeStats));
 }
 function buildLavagnaPrintSVG(match){
   const slots = match.formazioneNostra.slots || [];
@@ -3005,7 +3031,7 @@ function buildSeasonStatsPrintHTML(){
   html += '<h2>Tipologia gol subiti</h2><ul>' + Object.entries(s.tipologiaSubiti).map(([k,v])=>'<li>'+esc(k)+': '+v+'</li>').join('') + '</ul>';
   return html;
 }
-function exportSeasonPDF(){ exportPDF('Statistiche stagione 2026/27', buildSeasonStatsPrintHTML()); }
+function exportSeasonPDF(){ exportPDF('Statistiche stagione '+getAppUser().stagioneEtichetta, buildSeasonStatsPrintHTML()); }
 
 /* ---------- backup completo ---------- */
 function exportBackup(){
@@ -3023,7 +3049,8 @@ function exportBackup(){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'backup-united-carpi-2026-27-' + new Date().toISOString().slice(0,10) + '.json';
+  const backupNamePart = (getAppUser().stagioneSocieta+'-'+getAppUser().stagioneEtichetta).replace(/[^a-z0-9]+/gi,'-').toLowerCase() || 'squadra';
+  a.download = 'backup-' + backupNamePart + '-' + new Date().toISOString().slice(0,10) + '.json';
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -3091,7 +3118,7 @@ function exportRosaXLSX(){
     const ws = XLSX.utils.json_to_sheet(rows.length?rows:[{Nome:''}]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Rosa');
-    XLSX.writeFile(wb, 'rosa-2026-27.xlsx');
+    XLSX.writeFile(wb, 'rosa-'+(getAppUser().stagioneEtichetta.replace(/[^a-z0-9]+/gi,'-').toLowerCase()||'stagione')+'.xlsx');
   });
 }
 function exportMatchXLSX(matchId){
@@ -3128,7 +3155,7 @@ function exportSeasonXLSX(){
     Object.entries(s.tipologiaFatti).forEach(([k,v])=>tipoRows.push({ Categoria:'Fatti', Tipo:k, Numero:v }));
     Object.entries(s.tipologiaSubiti).forEach(([k,v])=>tipoRows.push({ Categoria:'Subiti', Tipo:k, Numero:v }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tipoRows.length?tipoRows:[{Categoria:'',Tipo:'',Numero:''}]), 'Tipologia gol');
-    XLSX.writeFile(wb, 'statistiche-stagione-2026-27.xlsx');
+    XLSX.writeFile(wb, 'statistiche-'+(getAppUser().stagioneEtichetta.replace(/[^a-z0-9]+/gi,'-').toLowerCase()||'stagione')+'.xlsx');
   });
 }
 

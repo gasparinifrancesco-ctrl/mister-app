@@ -22,15 +22,38 @@ model User {
   @@map("users")
 }
 
+// stagioneId è null per le chiavi non legate a una squadra (es. sidebar-order, una
+// preferenza personale dell'account); per tutto il resto (rosa, calendario, formazione
+// predefinita, piano squadra) è l'id della Stagione a cui quel blob appartiene.
 model KvEntry {
-  id        String   @id @default(cuid())
-  userId    String?
-  key       String
-  value     String
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  userId     String?
+  stagioneId String?
+  key        String
+  value      String
+  updatedAt  DateTime @updatedAt
 
-  @@unique([userId, key])
+  @@unique([userId, stagioneId, key])
   @@map("kv_entries")
+}
+
+// Una Stagione rappresenta la squadra/categoria allenata in un dato periodo (es. "2026/27
+// — Mirandolese, Juniores Regionale"). Rosa/calendario/formazione predefinita/piano squadra
+// sono sempre agganciati alla stagione attiva; la libreria Schema (esercizi/etichette) NON
+// è scopata per stagione, resta condivisa. Chiudere una stagione crea la successiva attiva
+// e lascia quella vecchia consultabile in sola lettura come archivio.
+model Stagione {
+  id          String    @id @default(cuid())
+  userId      String
+  etichetta   String
+  societa     String
+  tipoSquadra String
+  livello     String
+  attiva      Boolean   @default(true)
+  creataIl    DateTime  @default(now())
+  chiusaIl    DateTime?
+
+  @@map("stagioni")
 }
 
 model Objective {
