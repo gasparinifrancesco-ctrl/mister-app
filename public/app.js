@@ -429,6 +429,8 @@ function renderView(){
   } else if(state.currentView==='schema'){
     container.innerHTML = renderSchemaView();
     attachSchemaInteractions();
+  } else if(state.currentView==='stagioni'){
+    container.innerHTML = renderStagioniView();
   }
   renderSideNav();
   renderNextMatchBar();
@@ -4208,6 +4210,178 @@ function ensureHtml2CanvasPromise(){
     if(typeof html2canvas !== 'undefined'){ resolve(); return; }
     reject(new Error('html2canvas non disponibile'));
   });
+}
+
+/* ---------- STAGIONI: società/squadra/livello, archivio, import giocatori ---------- */
+async function openStagioni(){
+  state.currentView = 'stagioni';
+  await loadStagioni();
+  renderView();
+}
+async function loadStagioni(){
+  const res = await apiGet('/api/stagioni');
+  state.stagioni.list = res.stagioni || [];
+  state.stagioni.loaded = true;
+}
+function backToCalendarioFromStagioni(){
+  state.currentView = 'calendario';
+  state.stagioni.detailId = null;
+  state.stagioni.detail = null;
+  renderView();
+}
+function toggleNewStagioneForm(){
+  state.stagioni.showNewForm = !state.stagioni.showNewForm;
+  renderView();
+}
+function onStagioneTipoChange(value){
+  state.stagioni.newTipo = value;
+  state.stagioni.newLivello = (STAGIONE_LIVELLI[value]||['Altro'])[0];
+  renderView();
+}
+async function submitNewStagione(){
+  const societa = document.getElementById('stagione-new-societa').value.trim();
+  const etichetta = document.getElementById('stagione-new-etichetta').value.trim();
+  let tipoSquadra = document.getElementById('stagione-new-tipo').value;
+  if(tipoSquadra==='Altro'){
+    const alt = document.getElementById('stagione-new-tipo-altro');
+    if(alt && alt.value.trim()) tipoSquadra = alt.value.trim();
+  }
+  let livello = document.getElementById('stagione-new-livello').value;
+  if(livello==='Altro'){
+    const alt = document.getElementById('stagione-new-livello-altro');
+    if(alt && alt.value.trim()) livello = alt.value.trim();
+  }
+  if(!societa || !etichetta){ alert('Società ed etichetta stagione sono obbligatorie.'); return; }
+  showConfirmModal(
+    'Chiudere la stagione attiva e iniziarne una nuova ("'+societa+' — '+tipoSquadra+' '+livello+'")? Calendario, rosa, formazione predefinita e piano squadra ripartiranno vuoti (restano consultabili nell\'archivio); la libreria Schema resta condivisa. Potrai importare giocatori dalle stagioni precedenti dall\'archivio.',
+    async () => {
+      const res = await apiPost('/api/stagioni', { etichetta, societa, tipoSquadra, livello });
+      if(res.stagione){
+        alert('Nuova stagione avviata. La pagina si ricarica per aggiornare calendario e rosa.');
+        location.reload();
+      } else alert('Errore: '+(res.error||'sconosciuto'));
+    },
+    'Chiudi e inizia'
+  );
+}
+function renderNewStagioneForm(){
+  const s = state.stagioni;
+  const tipoOptions = STAGIONE_TIPI.map(t=>'<option value="'+t+'" '+(s.newTipo===t?'selected':'')+'>'+esc(t)+'</option>').join('');
+  const livelli = STAGIONE_LIVELLI[s.newTipo] || ['Altro'];
+  const livelloOptions = livelli.map(l=>'<option value="'+l+'" '+(s.newLivello===l?'selected':'')+'>'+esc(l)+'</option>').join('');
+  return '<div style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;">' +
+    '<p class="hint">Chiudere la stagione attiva azzera calendario e rosa della nuova (restano consultabili nell\'archivio); la libreria Schema resta condivisa.</p>' +
+    '<div class="form-row">' +
+      '<div class="field"><label>Società</label><input id="stagione-new-societa" type="text" placeholder="es. Mirandolese"></div>' +
+      '<div class="field"><label>Tipo squadra</label><select id="stagione-new-tipo" onchange="onStagioneTipoChange(this.value)">'+tipoOptions+'</select></div>' +
+      '<div class="field"><label>Livello</label><select id="stagione-new-livello" onchange="state.stagioni.newLivello=this.value; renderView();">'+livelloOptions+'</select></div>' +
+      '<div class="field"><label>Etichetta stagione</label><input id="stagione-new-etichetta" type="text" placeholder="es. 2027/28"></div>' +
+    '</div>' +
+    (s.newTipo==='Altro' ? '<div class="field"><label>Specifica tipo squadra</label><input id="stagione-new-tipo-altro" type="text"></div>' : '') +
+    (s.newLivello==='Altro' ? '<div class="field"><label>Specifica livello</label><input id="stagione-new-livello-altro" type="text"></div>' : '') +
+    '<button class="btn btn-primary btn-small" onclick="submitNewStagione()">Conferma nuova stagione</button>' +
+  '</div>';
+}
+function stagioneArchivioStatsSummary(matches){
+  let giocate=0, vinte=0, pareggiate=0, perse=0, golFatti=0, golSubiti=0;
+  matches.forEach(m=>{
+    if(computeMatchStato(m)!=='Giocata') return;
+    giocate++;
+    const gf=(m.golFatti||[]).length, gs=(m.golSubiti||[]).length;
+    golFatti+=gf; golSubiti+=gs;
+    if(gf>gs) vinte++; else if(gf<gs) perse++; else pareggiate++;
+  });
+  return { giocate, vinte, pareggiate, perse, golFatti, golSubiti };
+}
+async function openStagioneArchivio(id){
+  state.stagioni.detailId = id;
+  state.stagioni.detail = null;
+  state.stagioni.selectedImportIds = [];
+  renderView();
+  const stagione = state.stagioni.list.find(x=>x.id===id);
+  const [playersRes, matchesRes] = await Promise.all([
+    apiGet('/api/storage/players?stagioneId='+encodeURIComponent(id)),
+    apiGet('/api/storage/matches?stagioneId='+encodeURIComponent(id)),
+  ]);
+  let players = [], matches = [];
+  try{ players = playersRes.value ? JSON.parse(playersRes.value) : []; }catch{ players = []; }
+  try{ matches = matchesRes.value ? JSON.parse(matchesRes.value) : []; }catch{ matches = []; }
+  matches.forEach(migrateMatch);
+  state.stagioni.detail = { stagione, players, matches };
+  renderView();
+}
+function closeStagioneArchivio(){
+  state.stagioni.detailId = null;
+  state.stagioni.detail = null;
+  renderView();
+}
+function toggleStagionePlayerSelection(id){
+  const sel = state.stagioni.selectedImportIds;
+  state.stagioni.selectedImportIds = sel.includes(id) ? sel.filter(x=>x!==id) : sel.concat(id);
+  renderView();
+}
+async function importSelectedStagionePlayers(){
+  const sel = state.stagioni.selectedImportIds;
+  if(!sel.length){ alert('Seleziona almeno un giocatore da importare.'); return; }
+  const res = await apiPost('/api/stagioni/importa-giocatori', { daStagioneId: state.stagioni.detailId, giocatoreIds: sel });
+  if(res.importati){
+    alert(res.importati.length+' giocatore/i importato/i nella stagione attiva. Vai in Rosa per vederli.');
+    state.stagioni.selectedImportIds = [];
+    renderView();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
+function renderStagioneArchivioDetail(){
+  const d = state.stagioni.detail;
+  if(!d) return '<div class="card"><p class="hint">Caricamento…</p></div>';
+  const stats = stagioneArchivioStatsSummary(d.matches);
+  const sel = state.stagioni.selectedImportIds;
+  return '<div class="card">' +
+    '<div class="card-header-row"><h3 style="margin:0;">'+esc(d.stagione.societa)+' — '+esc(d.stagione.tipoSquadra)+' '+esc(d.stagione.livello)+' ('+esc(d.stagione.etichetta)+')</h3><button class="btn btn-small" onclick="closeStagioneArchivio()">Chiudi</button></div>' +
+    '<p class="hint">Sola lettura: archivio di una stagione chiusa.</p>' +
+    '<div class="form-row" style="align-items:center;">' +
+      '<span class="pill pill-muted">Partite giocate: '+stats.giocate+'</span>' +
+      '<span class="pill pill-win">V '+stats.vinte+'</span>' +
+      '<span class="pill pill-yellow">N '+stats.pareggiate+'</span>' +
+      '<span class="pill pill-red">P '+stats.perse+'</span>' +
+      '<span class="hint">Gol fatti/subiti: '+stats.golFatti+' / '+stats.golSubiti+'</span>' +
+    '</div>' +
+    '<h4>Rosa ('+d.players.length+')</h4>' +
+    (d.players.length===0 ? '<p class="hint">Nessun giocatore in questa stagione.</p>' :
+      '<div class="pitch-actions" style="margin-bottom:8px;">' +
+        '<button class="btn btn-small" onclick="importSelectedStagionePlayers()">Importa selezionati nella stagione attiva</button>' +
+      '</div>' +
+      d.players.slice().sort((a,b)=>surnameOf(a.nome).localeCompare(surnameOf(b.nome))).map(p=>
+        '<label class="presenza-row" style="cursor:pointer;">' +
+          '<input type="checkbox" '+(sel.includes(p.id)?'checked':'')+' onchange="toggleStagionePlayerSelection(\''+p.id+'\')" style="margin-right:8px;">' +
+          '<span class="roster-name">'+esc(displayName(p.nome))+'</span>' +
+          '<span class="roster-role">'+esc(p.ruolo||'')+'</span>' +
+        '</label>'
+      ).join('')
+    ) +
+  '</div>';
+}
+function renderStagioniView(){
+  const s = state.stagioni;
+  const attiva = s.list.find(x=>x.attiva);
+  const chiuse = s.list.filter(x=>!x.attiva);
+  return '<div class="card">' +
+    '<div class="card-header-row"><h2>Stagioni</h2><button class="btn btn-small" onclick="backToCalendarioFromStagioni()">← Torna al gestionale</button></div>' +
+    (attiva ? '<p class="hint">Stagione attiva: <strong>'+esc(attiva.societa)+' — '+esc(attiva.tipoSquadra)+' '+esc(attiva.livello)+'</strong> ('+esc(attiva.etichetta)+')</p>' : '<p class="hint">Nessuna stagione attiva trovata.</p>') +
+    '<button class="btn btn-primary btn-small" onclick="toggleNewStagioneForm()">'+(s.showNewForm?'Annulla':'+ Chiudi stagione e iniziane una nuova')+'</button>' +
+    (s.showNewForm ? renderNewStagioneForm() : '') +
+  '</div>' +
+  '<div class="card"><h3 style="margin-top:0;">Archivio stagioni chiuse</h3>' +
+    (chiuse.length===0 ? '<p class="hint">Nessuna stagione chiusa ancora.</p>' :
+      chiuse.map(st=>
+        '<div class="schema-session-row" onclick="openStagioneArchivio(\''+st.id+'\')">' +
+          '<strong>'+esc(st.societa)+' — '+esc(st.tipoSquadra)+' '+esc(st.livello)+'</strong>' +
+          '<span class="pill pill-muted">'+esc(st.etichetta)+'</span>' +
+          '<span class="hint">Chiusa il '+formatDate((st.chiusaIl||'').slice(0,10))+'</span>' +
+        '</div>'
+      ).join('')
+    ) +
+  '</div>' +
+  (state.stagioni.detailId ? renderStagioneArchivioDetail() : '');
 }
 
 /* ---------- init ---------- */
