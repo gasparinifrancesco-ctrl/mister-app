@@ -1,0 +1,25 @@
+import { prisma } from '@/lib/prisma';
+import { getSchemaSessionOrNull } from '@/lib/dal';
+
+export async function POST(request, { params }) {
+  const session = await getSchemaSessionOrNull();
+  if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const { id } = await params;
+
+  const exercise = await prisma.exercise.findFirst({ where: { id, userId: session.userId } });
+  if (!exercise) return Response.json({ error: 'not found' }, { status: 404 });
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'invalid json body' }, { status: 400 });
+  }
+  const testo = String(body.testo || '').trim();
+  if (!testo) return Response.json({ error: 'testo obbligatorio' }, { status: 400 });
+
+  const note = await prisma.note.create({
+    data: { esercizioId: id, testo, sedutaId: body.sedutaId || null },
+  });
+  return Response.json({ note });
+}

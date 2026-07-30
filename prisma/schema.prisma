@@ -1,0 +1,115 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  modules      String   @default("[\"united-carpi\"]")
+  createdAt    DateTime @default(now())
+
+  @@map("users")
+}
+
+model KvEntry {
+  id        String   @id @default(cuid())
+  userId    String?
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@map("kv_entries")
+}
+
+model Objective {
+  id              String @id @default(cuid())
+  userId          String
+  key             String
+  label           String
+  order           Int    @default(0)
+  m2PerPlayer     Float
+  intensityFactor Float
+  loadMin         Float
+  loadMax         Float
+
+  exercises Exercise[]
+
+  @@unique([userId, key])
+  @@map("objectives")
+}
+
+model Exercise {
+  id                  String   @id @default(cuid())
+  userId              String
+  titolo              String
+  descrizione         String   @default("")
+  obiettivoId         String
+  numeroGiocatoriBase Int
+  durataTipica        Int      @default(15)
+  larghezzaCampo      Float?
+  lunghezzaCampo      Float?
+  indiceFatica        Int      @default(3)
+  schemaCampo         String   @default("{}")
+  tags                String   @default("[]")
+  versioneDiId        String?
+  varianteDiId        String?
+  creatoIl            DateTime @default(now())
+
+  obiettivo   Objective  @relation(fields: [obiettivoId], references: [id])
+  versioneDi  Exercise?  @relation("Versioni", fields: [versioneDiId], references: [id])
+  versioni    Exercise[] @relation("Versioni")
+  varianteDi  Exercise?  @relation("Varianti", fields: [varianteDiId], references: [id])
+  varianti    Exercise[] @relation("Varianti")
+  note        Note[]
+  valutazioni Rating[]
+  utilizzi    Usage[]
+
+  @@map("exercises")
+}
+
+model Note {
+  id          String   @id @default(cuid())
+  esercizioId String
+  sedutaId    String?
+  testo       String
+  data        DateTime @default(now())
+
+  esercizio Exercise @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
+
+  @@map("notes")
+}
+
+model Rating {
+  id          String   @id @default(cuid())
+  esercizioId String
+  sedutaId    String?
+  voto        Int
+  data        DateTime @default(now())
+
+  esercizio Exercise @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
+
+  @@map("ratings")
+}
+
+model Usage {
+  id             String   @id @default(cuid())
+  esercizioId    String
+  data           DateTime
+  minutiDedicati Int
+
+  esercizio Exercise @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
+
+  @@map("usage_history")
+}
