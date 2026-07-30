@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
-import { computeFieldSize } from '@/lib/schemaCalc';
 
 function withVotoMedio(exercise) {
   const { valutazioni, ...rest } = exercise;
@@ -15,29 +14,34 @@ export async function GET(request) {
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const obiettivoId = searchParams.get('obiettivoId') || undefined;
   const search = searchParams.get('search') || '';
+  const tagsParam = searchParams.get('tags') || '';
+  const wantedTags = tagsParam.split(',').map((t) => t.trim()).filter(Boolean);
 
   const exercises = await prisma.exercise.findMany({
-    where: {
-      userId: session.userId,
-      ...(obiettivoId ? { obiettivoId } : {}),
-    },
+    where: { userId: session.userId },
     include: {
-      obiettivo: true,
       valutazioni: { select: { voto: true } },
-      _count: { select: { versioni: true, varianti: true } },
+      livelli: { select: { id: true, nome: true, ripetizioni: true, durataRipetizione: true }, orderBy: { ordine: 'asc' } },
     },
     orderBy: { creatoIl: 'desc' },
   });
 
-  const filtered = search
+  let filtered = search
     ? exercises.filter((e) => {
         const s = search.toLowerCase();
         const tags = JSON.parse(e.tags || '[]');
         return e.titolo.toLowerCase().includes(s) || tags.some((t) => t.toLowerCase().includes(s));
       })
     : exercises;
+
+  // Filtro etichette: un esercizio compare se ha ALMENO UNA delle etichette selezionate.
+  if (wantedTags.length) {
+    filtered = filtered.filter((e) => {
+      const tags = JSON.parse(e.tags || '[]');
+      return wantedTags.some((wt) => tags.includes(wt));
+    });
+  }
 
   return Response.json({ exercises: filtered.map(withVotoMedio) });
 }
@@ -53,29 +57,26 @@ export async function POST(request) {
     return Response.json({ error: 'invalid json body' }, { status: 400 });
   }
 
-  const { titolo, descrizione, obiettivoId, numeroGiocatoriBase, durataTipica, indiceFatica, tags } = body;
-  if (!titolo || !obiettivoId || !numeroGiocatoriBase) {
-    return Response.json({ error: 'titolo, obiettivoId e numeroGiocatoriBase sono obbligatori' }, { status: 400 });
+  const { titolo, descrizione, numeroGiocatoriBase, larghezzaCampo, lunghezzaCampo, tags } = body;
+  if (!titolo || !numeroGiocatoriBase) {
+    return Response.json({ error: 'titolo e numeroGiocatoriBase sono obbligatori' }, { status: 400 });
   }
 
-  const objective = await prisma.objective.findFirst({ where: { id: obiettivoId, userId: session.userId } });
-  if (!objective) return Response.json({ error: 'obiettivo non valido' }, { status: 400 });
-
-  const { larghezzaCampo, lunghezzaCampo } = computeFieldSize(objective, numeroGiocatoriBase);
-
+  // Nessun calcolo automatico dalle dimensioni: un default ragionevole, sempre modificabile.
   const exercise = await prisma.exercise.create({
     data: {
       userId: session.userId,
       titolo,
       descrizione: descrizione || '',
-      obiettivoId,
       numeroGiocatoriBase: Number(numeroGiocatoriBase),
-      durataTipica: durataTipica ? Number(durataTipica) : 15,
-      indiceFatica: indiceFatica ? Number(indiceFatica) : 3,
-      larghezzaCampo,
-      lunghezzaCampo,
+      larghezzaCampo: larghezzaCampo ? Number(larghezzaCampo) : 20,
+      lunghezzaCampo: lunghezzaCampo ? Number(lunghezzaCampo) : 28,
       tags: JSON.stringify(Array.isArray(tags) ? tags : []),
+      livelli: {
+        create: [{ nome: 'A', ordine: 0, descrizione: descrizione || '' }],
+      },
     },
+    include: { livelli: true },
   });
 
   return Response.json({ exercise });

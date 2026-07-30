@@ -34,49 +34,57 @@ model KvEntry {
 }
 
 model Objective {
-  id              String @id @default(cuid())
-  userId          String
-  key             String
-  label           String
-  order           Int    @default(0)
-  m2PerPlayer     Float
-  intensityFactor Float
-  loadMin         Float
-  loadMax         Float
-
-  exercises Exercise[]
+  id            String @id @default(cuid())
+  userId        String
+  key           String
+  label         String
+  order         Int    @default(0)
+  categoria     String @default("fisico") // "fisico" | "tecnico-tattico"
+  rpeSuggerito  Int? // 1-10 (scala Borg CR10), solo indicativo per categoria "fisico"
+  loadMin       Float
+  loadMax       Float
 
   @@unique([userId, key])
   @@map("objectives")
 }
 
+// Un esercizio è un'identità (titolo, dimensioni, etichette); il contenuto vero e proprio
+// (disegno, descrizione, ripetizioni/durata/recupero) vive nei suoi Livelli. Un esercizio
+// senza progressione ha semplicemente un solo Livello ("A"); una progressione A/B/C è lo
+// stesso esercizio con più livelli, non esercizi diversi.
 model Exercise {
   id                  String   @id @default(cuid())
   userId              String
   titolo              String
   descrizione         String   @default("")
-  obiettivoId         String
   numeroGiocatoriBase Int
-  durataTipica        Int      @default(15)
   larghezzaCampo      Float?
   lunghezzaCampo      Float?
-  indiceFatica        Int      @default(3)
-  schemaCampo         String   @default("{}")
   tags                String   @default("[]")
-  versioneDiId        String?
-  varianteDiId        String?
   creatoIl            DateTime @default(now())
 
-  obiettivo   Objective  @relation(fields: [obiettivoId], references: [id])
-  versioneDi  Exercise?  @relation("Versioni", fields: [versioneDiId], references: [id])
-  versioni    Exercise[] @relation("Versioni")
-  varianteDi  Exercise?  @relation("Varianti", fields: [varianteDiId], references: [id])
-  varianti    Exercise[] @relation("Varianti")
+  livelli     Livello[]
   note        Note[]
   valutazioni Rating[]
-  utilizzi    Usage[]
 
   @@map("exercises")
+}
+
+model Livello {
+  id                String @id @default(cuid())
+  esercizioId       String
+  nome              String @default("A")
+  ordine            Int    @default(0)
+  descrizione       String @default("")
+  schemaCampo       String @default("{}")
+  ripetizioni       Int    @default(1)
+  durataRipetizione Int    @default(15)
+  recuperoSecondi   Int    @default(0)
+
+  esercizio    Exercise      @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
+  sessionItems SessionItem[]
+
+  @@map("livelli")
 }
 
 model Note {
@@ -103,13 +111,36 @@ model Rating {
   @@map("ratings")
 }
 
-model Usage {
-  id             String   @id @default(cuid())
-  esercizioId    String
-  data           DateTime
-  minutiDedicati Int
+model Session {
+  id            String   @id @default(cuid())
+  userId        String
+  titolo        String
+  obiettivoId   String?
+  allenamentoId String?
+  rpe           Int? // 1-10, intensità percepita dell'intera seduta (session-RPE, Foster)
+  note          String   @default("")
+  creataIl      DateTime @default(now())
 
-  esercizio Exercise @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
+  items SessionItem[]
 
-  @@map("usage_history")
+  @@map("sessions")
+}
+
+// livelloId è facoltativo (SetNull): un esercizio/livello può essere eliminato dalla libreria
+// anche se usato in una seduta passata. titoloSnapshot/livelloSnapshot congelano il nome
+// visto al momento dell'inserimento, così la seduta resta leggibile come "immagine" storica
+// anche se la fonte viene poi cancellata.
+model SessionItem {
+  id              String  @id @default(cuid())
+  sessionId       String
+  livelloId       String?
+  titoloSnapshot  String
+  livelloSnapshot String
+  ordine          Int     @default(0)
+  durataMinuti    Int?
+
+  session Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  livello Livello? @relation(fields: [livelloId], references: [id], onDelete: SetNull)
+
+  @@map("session_items")
 }

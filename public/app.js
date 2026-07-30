@@ -39,6 +39,7 @@ const FORMATIONS = {
   ]
 };
 const FORMATION_KEYS = Object.keys(FORMATIONS);
+const SCHEMA_COLORS = ['#4FA8E0','#E0574F','#F2C94C','#6FCF7A'];
 
 /* ---------- stato ---------- */
 let state = {
@@ -60,7 +61,31 @@ let state = {
   editingPlayerId: null,
   allenamentoSort: 'cognome',
   rosaViewMode: 'generali',
-  defaultFormationSort: 'ruolo'
+  defaultFormationSort: 'ruolo',
+  notificheOpen: false,
+  schema: {
+    view: 'library',
+    exerciseId: null,
+    sessionId: null,
+    objectivesLoaded: false,
+    objectives: [],
+    exercises: [],
+    sessions: [],
+    allenamentoSessions: {},
+    availableTags: [],
+    tagsLoaded: false,
+    filterSearch: '',
+    filterTags: [],
+    currentExercise: null,
+    activeLivelloId: null,
+    currentSession: null,
+    drawMode: false,
+    placeMode: null,
+    eraserMode: false,
+    activeColor: SCHEMA_COLORS[0],
+    activeLineType: 'passaggio',
+    livelloPicker: null,
+  }
 };
 let modalConfirmCallback = null;
 
@@ -382,6 +407,9 @@ function renderView(){
   } else if(state.currentView==='match'){
     container.innerHTML = renderMatchView();
     renderMatchTab();
+  } else if(state.currentView==='schema'){
+    container.innerHTML = renderSchemaView();
+    attachSchemaInteractions();
   }
   renderSideNav();
   renderNextMatchBar();
@@ -419,8 +447,8 @@ function renderSideNav(){
       if(!schemaUnlocked){
         return '<button class="side-nav-btn side-nav-btn-locked" data-key="schema" onclick="showSchemaLockedHint()">' + SIDE_NAV_LOCK_ICON + '<span>' + label + '</span></button>';
       }
-      // Schema è una pagina Next.js separata (/schema), non una vista interna: serve una navigazione vera, non switchTopView.
-      return '<button class="side-nav-btn" draggable="true" data-key="schema" onclick="location.href=\'/schema\'">' + SIDE_NAV_ICONS.schema + '<span>' + label + '</span></button>';
+      const schemaActive = state.currentView==='schema';
+      return '<button class="side-nav-btn ' + (schemaActive?'side-nav-btn-active':'') + '" draggable="true" data-key="schema" onclick="openSchemaLibrary()">' + SIDE_NAV_ICONS.schema + '<span>' + label + '</span></button>';
     }
     const active = (state.currentView===key) || ((state.currentView==='match' || state.currentView==='allenamento') && key==='calendario');
     return '<button class="side-nav-btn ' + (active?'side-nav-btn-active':'') + '" draggable="true" data-key="' + key + '" onclick="switchTopView(\'' + key + '\')">' + SIDE_NAV_ICONS[key] + '<span>' + label + '</span></button>';
@@ -1832,12 +1860,58 @@ function findNextMatch(){
   upcoming.sort((a,b)=> (a.data+a.ora).localeCompare(b.data+b.ora));
   return upcoming[0] || null;
 }
+function computeSchemaNotifiche(){
+  const oggi = new Date().toISOString().slice(0,10);
+  const items = [];
+  state.matches.forEach(m=>{
+    if(m.data && m.data<=oggi && computeMatchStato(m)==='Programmata'){
+      items.push({ type:'match', id:m.id, label:'Manca il tabellino: vs '+(m.avversario||'—')+' del '+formatDate(m.data) });
+    }
+  });
+  (state.schema.sessions||[]).forEach(sess=>{
+    if(sess.stato==='eseguita' && !sess.hasNote){
+      items.push({ type:'session', id:sess.id, label:'Note mancanti sulla seduta "'+sess.titolo+'"' });
+    }
+  });
+  return items;
+}
+function openNotifica(type, id){
+  state.notificheOpen = false;
+  if(type==='match') openMatch(id);
+  else if(type==='session') openSchemaSessionBuilder(id);
+}
+function toggleNotificheBell(){
+  state.notificheOpen = !state.notificheOpen;
+  renderNextMatchBar();
+}
+function renderNotificheBell(){
+  const items = computeSchemaNotifiche();
+  const count = items.length;
+  let panel = '';
+  if(state.notificheOpen){
+    panel = '<div class="notif-panel">' +
+      (items.length===0 ? '<p class="hint" style="padding:10px;">Nessun promemoria.</p>' :
+        items.map(n=>'<div class="notif-item" onclick="openNotifica(\''+n.type+'\',\''+n.id+'\')">'+esc(n.label)+'</div>').join('')
+      ) +
+    '</div>';
+  }
+  return '<div class="notif-bell-wrap">' +
+    '<button class="btn btn-small notif-bell-btn" onclick="toggleNotificheBell()" title="Promemoria">🔔' + (count>0?'<span class="notif-badge">'+count+'</span>':'') + '</button>' +
+    panel +
+  '</div>';
+}
+async function refreshSchemaNotifiche(){
+  if(!getAppUser().schemaUnlocked) return;
+  await loadSchemaSessions();
+  renderNextMatchBar();
+}
 function renderNextMatchBar(){
   const bar = document.getElementById('next-match-bar');
   if(!bar) return;
   const nm = findNextMatch();
+  const bell = renderNotificheBell();
   if(!nm){
-    bar.innerHTML = '<span class="next-match-empty">Nessuna partita in programma</span>';
+    bar.innerHTML = '<span class="next-match-empty">Nessuna partita in programma</span>' + bell;
     return;
   }
   bar.innerHTML =
@@ -1845,7 +1919,8 @@ function renderNextMatchBar(){
     '<span class="pill ' + (nm.sede==='Trasferta'?'pill-muted':'') + '">' + esc(nm.sede||'Casa') + '</span>' +
     '<strong class="next-match-opponent">vs ' + esc(nm.avversario||'—') + '</strong>' +
     '<span class="next-match-when">' + formatDate(nm.data) + (nm.ora?(' • '+esc(nm.ora)):'') + '</span>' +
-    '<button class="btn btn-small next-match-goto" onclick="openMatch(\''+nm.id+'\')">Apri</button>';
+    '<button class="btn btn-small next-match-goto" onclick="openMatch(\''+nm.id+'\')">Apri</button>' +
+    bell;
 }
 function exportDefaultFormationXLSX(){
   ensureXLSX(function(){
@@ -2314,6 +2389,7 @@ function openAllenamento(id){
   state.currentView = 'allenamento';
   state.currentAllenamentoId = id;
   renderView();
+  if(getAppUser().schemaUnlocked) loadSchemaSessionsForAllenamento(id);
 }
 function updateAllenamentoData(id, value){
   const a = state.allenamenti.find(x=>x.id===id);
@@ -2358,6 +2434,7 @@ function renderAllenamentoView(){
       '</div>' +
     '</div>' +
   '</div>' +
+  schemaSessionsCardForAllenamento(a) +
   '<div class="card"><h2>Presenze</h2>' +
     '<p class="hint">Di default disponibili, tranne i giocatori aggregati alla prima squadra (non disponibili di default). Seleziona per cambiare lo stato di un giocatore.</p>' +
     '<div class="pitch-actions" style="margin-bottom:8px;">' +
@@ -3055,10 +3132,1061 @@ function exportSeasonXLSX(){
   });
 }
 
+/* ---------- SCHEMA: metodologia sedute (libreria esercizi, disegnatore, sedute) ---------- */
+async function apiGet(url){ const r = await fetch(url); return r.json(); }
+async function apiPost(url, body){ const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); return r.json(); }
+async function apiPatch(url, body){ const r = await fetch(url, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); return r.json(); }
+async function apiDelete(url){ const r = await fetch(url, { method:'DELETE' }); return r.json(); }
+function starInputHTML(){
+  let out = '<span class="star-input">';
+  for(let i=1;i<=5;i++){
+    out += '<button type="button" class="star-input-btn" onclick="submitSchemaRating('+i+')" aria-label="'+i+' stelle">' + starIconSVG('var(--yellow)', 20) + '</button>';
+  }
+  out += '</span>';
+  return out;
+}
+function showSchemaLockedHint(){
+  alert('Modulo Schema in arrivo — non ancora disponibile su questo account.');
+}
+/* icone disegnatore (stroke-based, coerenti con SIDE_NAV_ICONS) — grandi quanto i pallini colore */
+const SCHEMA_ICON_GIOCATORE = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>';
+const SCHEMA_ICON_PALLONE = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5l3.8 2.8-1.4 4.4h-4.8l-1.4-4.4z"/></svg>';
+const SCHEMA_ICON_MOVIMENTO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18L18 6" stroke-dasharray="3,2.4"/><path d="M12.5 6H18v5.5"/></svg>';
+const SCHEMA_ICON_PASSAGGIO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18L18 6"/><path d="M12.5 6H18v5.5"/></svg>';
+const SCHEMA_ICON_PALLONE_ALTO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 19Q11 4 20 10"/><path d="M15.5 7.5l4.5 2.5-2.3 4.3"/></svg>';
+const SCHEMA_ICON_DIVISORE = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="2.5,2.5"><path d="M4 20L20 4"/></svg>';
+const SCHEMA_ICON_GOMMA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 3.5l3 3L10 17H6v-4z"/><path d="M13 7l4 4"/><path d="M4 21h9"/></svg>';
+
+/* ---------- navigazione interna (nessun page load: resta nella SPA) ---------- */
+async function ensureSchemaObjectives(){
+  if(state.schema.objectivesLoaded) return;
+  const res = await apiGet('/api/schema/objectives');
+  state.schema.objectives = res.objectives || [];
+  state.schema.objectivesLoaded = true;
+}
+async function ensureSchemaTags(){
+  const res = await apiGet('/api/schema/tags');
+  state.schema.availableTags = res.tags || [];
+  state.schema.tagsLoaded = true;
+}
+async function openSchemaLibrary(){
+  state.currentView = 'schema';
+  state.schema.view = 'library';
+  state.currentMatchId = null;
+  state.currentAllenamentoId = null;
+  await ensureSchemaObjectives();
+  await ensureSchemaTags();
+  await loadSchemaLibrary();
+  renderView();
+}
+async function openSchemaNewExercise(){
+  state.currentView = 'schema';
+  state.schema.view = 'new';
+  renderView();
+}
+async function openSchemaExercise(id){
+  state.currentView = 'schema';
+  state.schema.view = 'sheet';
+  state.schema.activeLivelloId = null;
+  await ensureSchemaTags();
+  await loadSchemaExercise(id);
+  renderView();
+}
+async function openSchemaSessions(){
+  state.currentView = 'schema';
+  state.schema.view = 'sessions';
+  await ensureSchemaObjectives();
+  await loadSchemaSessions();
+  renderView();
+}
+async function openSchemaSessionBuilder(id){
+  state.currentView = 'schema';
+  state.schema.view = 'sessionBuilder';
+  await ensureSchemaObjectives();
+  await loadSchemaLibrary();
+  await loadSchemaSessionDetail(id);
+  renderView();
+}
+
+/* ---------- dispatch ---------- */
+function renderSchemaView(){
+  const v = state.schema.view;
+  let html;
+  if(v==='new') html = renderSchemaNewExerciseForm();
+  else if(v==='sheet') html = renderSchemaExerciseSheet();
+  else if(v==='sessions') html = renderSchemaSessionsList();
+  else if(v==='sessionBuilder') html = renderSchemaSessionBuilder();
+  else html = renderSchemaLibrary();
+  return html + schemaLivelloPickerHTML();
+}
+function attachSchemaInteractions(){
+  if(state.schema.view==='sheet') attachSchemaFieldInteractions();
+}
+function schemaSubNavHTML(active){
+  return '<div class="pitch-actions" style="margin-bottom:12px;">' +
+    '<button class="btn btn-small '+(active==='library'?'btn-active':'')+'" onclick="openSchemaLibrary()">Libreria esercizi</button>' +
+    '<button class="btn btn-small '+(active==='sessions'?'btn-active':'')+'" onclick="openSchemaSessions()">Sedute</button>' +
+  '</div>';
+}
+
+/* ---------- libreria esercizi ---------- */
+async function loadSchemaLibrary(){
+  const s = state.schema;
+  const params = new URLSearchParams();
+  if(s.filterSearch) params.set('search', s.filterSearch);
+  if(s.filterTags.length) params.set('tags', s.filterTags.join(','));
+  const res = await apiGet('/api/schema/exercises?'+params.toString());
+  s.exercises = res.exercises || [];
+}
+function toggleSchemaFilterTag(tag){
+  const s = state.schema;
+  s.filterTags = s.filterTags.includes(tag) ? s.filterTags.filter(t=>t!==tag) : s.filterTags.concat(tag);
+  loadSchemaLibrary().then(renderView);
+}
+function renderSchemaLibrary(){
+  const s = state.schema;
+  const tagChips = s.availableTags.map(t=>
+    '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" onclick="toggleSchemaFilterTag(\''+esc(t)+'\')">'+esc(t)+'</button>'
+  ).join('');
+  return schemaSubNavHTML('library') +
+    '<div class="card">' +
+      '<div class="card-header-row"><h2>Libreria esercizi</h2>' +
+        '<div class="pitch-actions"><button class="btn btn-primary btn-small" onclick="openSchemaNewExercise()">+ Nuovo esercizio</button></div>' +
+      '</div>' +
+      '<div class="form-row">' +
+        '<div class="field field-grow"><label>Cerca</label><input id="schema-filter-search" type="text" placeholder="titolo o etichetta" value="'+esc(s.filterSearch)+'" oninput="onSchemaFilterChange()"></div>' +
+      '</div>' +
+      (s.availableTags.length ? '<div class="field"><label>Etichette</label><div class="schema-tag-chip-row">'+tagChips+'</div></div>' : '') +
+      '<div class="schema-exercise-grid">' + renderSchemaExerciseCards() + '</div>' +
+    '</div>';
+}
+function renderSchemaExerciseCards(){
+  const s = state.schema;
+  if(s.exercises.length===0) return '<p class="hint">Nessun esercizio ancora. Crea il primo.</p>';
+  return s.exercises.map(e=>{
+    const tags = schemaExerciseTags(e);
+    const badge = e.livelli.length>1 ? '<span class="pill">'+e.livelli.length+' livelli</span>' : '';
+    return '<div class="schema-exercise-card" onclick="openSchemaExercise(\''+e.id+'\')">' +
+      '<div class="schema-exercise-card-head"><strong>'+esc(e.titolo)+'</strong>'+badge+'</div>' +
+      '<div class="hint">'+(tags.length ? esc(tags.join(', ')) : 'Nessuna etichetta')+'</div>' +
+      '<div class="schema-exercise-card-foot">' + (e.votoMedio!=null ? starRatingHTML(e.votoMedio, 12) : '<span class="hint">Non valutato</span>') + '</div>' +
+    '</div>';
+  }).join('');
+}
+let schemaFilterDebounce = null;
+function onSchemaFilterChange(){
+  const s = state.schema;
+  s.filterSearch = document.getElementById('schema-filter-search').value;
+  clearTimeout(schemaFilterDebounce);
+  schemaFilterDebounce = setTimeout(async () => { await loadSchemaLibrary(); renderView(); }, 200);
+}
+
+/* ---------- nuovo esercizio ---------- */
+function renderSchemaNewExerciseForm(){
+  return schemaSubNavHTML('library') +
+    '<div class="card">' +
+      '<div class="card-header-row"><h2>Nuovo esercizio</h2><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button></div>' +
+      '<div class="form-row">' +
+        '<div class="field field-grow"><label>Titolo</label><input id="schema-new-ex-titolo" type="text"></div>' +
+        '<div class="field"><label>N. giocatori</label><input id="schema-new-ex-numgiocatori" type="number" min="1" value="8"></div>' +
+      '</div>' +
+      '<div class="field"><label>Descrizione</label><textarea id="schema-new-ex-descrizione" rows="3"></textarea></div>' +
+      '<button class="btn btn-primary" onclick="createSchemaExercise()">Crea esercizio</button>' +
+    '</div>';
+}
+async function createSchemaExercise(){
+  const titolo = document.getElementById('schema-new-ex-titolo').value.trim();
+  if(!titolo){ alert('Il titolo è obbligatorio.'); return; }
+  const res = await apiPost('/api/schema/exercises', {
+    titolo,
+    descrizione: document.getElementById('schema-new-ex-descrizione').value,
+    numeroGiocatoriBase: document.getElementById('schema-new-ex-numgiocatori').value,
+  });
+  if(res.exercise) openSchemaExercise(res.exercise.id);
+  else alert('Errore: '+(res.error||'sconosciuto'));
+}
+
+/* ---------- scheda esercizio (con livelli di progressione) ---------- */
+async function loadSchemaExercise(id){
+  const res = await apiGet('/api/schema/exercises/'+id);
+  state.schema.currentExercise = res.exercise || null;
+  state.schema.exerciseId = id;
+  if(res.exercise && res.exercise.livelli.length){
+    state.schema.activeLivelloId = res.exercise.livelli[0].id;
+  }
+}
+function schemaActiveLivello(){
+  const e = state.schema.currentExercise;
+  if(!e || !e.livelli.length) return null;
+  return e.livelli.find(l=>l.id===state.schema.activeLivelloId) || e.livelli[0];
+}
+function parseSchemaCampo(livello){
+  let d;
+  try { d = JSON.parse((livello && livello.schemaCampo) || '{}'); } catch { d = {}; }
+  if(!Array.isArray(d.chips)) d.chips = [];
+  if(!Array.isArray(d.arrows)) d.arrows = [];
+  // Default difensivi per i dati creati prima di questo round (chip/frecce senza tipo/colore/id).
+  d.chips = d.chips.map(c=>({
+    id: c.id,
+    x: c.x,
+    y: c.y,
+    tipo: c.tipo==='pallone' ? 'pallone' : 'giocatore',
+    color: c.color || SCHEMA_COLORS[0],
+    numero: c.numero!=null ? c.numero : null,
+    label: c.label || '',
+  }));
+  d.arrows = d.arrows.map(a=>({
+    id: a.id || uid(),
+    x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2,
+    points: Array.isArray(a.points) && a.points.length>=2 ? a.points : null,
+    tipo: ['movimento','passaggio','pallone-alto','divisore'].includes(a.tipo) ? a.tipo : 'passaggio',
+    color: a.color || SCHEMA_COLORS[0],
+  }));
+  return d;
+}
+function schemaColorMarkerId(color){
+  const idx = SCHEMA_COLORS.indexOf(color);
+  return 'schema-arrowhead-'+(idx>=0?idx:0);
+}
+function schemaFieldDefsSVG(){
+  const markers = SCHEMA_COLORS.map((c,i)=>
+    '<marker id="schema-arrowhead-'+i+'" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="'+c+'"/></marker>'
+  ).join('');
+  return '<defs>'+markers+'</defs>';
+}
+function schemaChipSVG(c, w){
+  if(c.tipo==='pallone'){
+    const r = w*0.028;
+    return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
+      '<circle r="'+r+'" fill="#F4F1EA" stroke="#0B141C" stroke-width="'+(w*0.004)+'"/>' +
+      '<path d="M0,'+(-r*0.5)+' L'+(r*0.45)+',0 L0,'+(r*0.5)+' L'+(-r*0.45)+',0 Z" fill="none" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
+    '</g>';
+  }
+  const r = w*0.04;
+  const numeroLabel = c.numero!=null ? String(c.numero) : (c.label ? c.label.charAt(0).toUpperCase() : '');
+  return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
+    '<circle r="'+r+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.005)+'"/>' +
+    (numeroLabel ? '<text text-anchor="middle" dy="'+(w*0.014)+'" font-size="'+(w*0.045)+'" fill="#0B141C" font-family="Oswald, sans-serif" font-weight="600">'+esc(numeroLabel)+'</text>' : '') +
+    (c.label ? '<text text-anchor="middle" dy="'+(w*0.09)+'" font-size="'+(w*0.03)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.012)+'">'+esc(c.label)+'</text>' : '') +
+  '</g>';
+}
+function smoothPathFromPoints(points){
+  if(points.length<2) return '';
+  if(points.length===2) return 'M'+points[0].x+','+points[0].y+' L'+points[1].x+','+points[1].y;
+  let d = 'M'+points[0].x+','+points[0].y;
+  for(let i=1;i<points.length-1;i++){
+    const midX = (points[i].x+points[i+1].x)/2, midY = (points[i].y+points[i+1].y)/2;
+    d += ' Q'+points[i].x+','+points[i].y+' '+midX+','+midY;
+  }
+  d += ' L'+points[points.length-1].x+','+points[points.length-1].y;
+  return d;
+}
+function schemaArrowGeometry(a){
+  // La freccia "pallone alto" segue la curva disegnata a mano; se manca (dati vecchi)
+  // ricade su una bezier automatica calcolata solo da inizio/fine.
+  if(a.tipo==='pallone-alto'){
+    if(a.points) return { tag:'path', d: smoothPathFromPoints(a.points) };
+    const mx=(a.x1+a.x2)/2, my=(a.y1+a.y2)/2;
+    const dx=a.x2-a.x1, dy=a.y2-a.y1;
+    const len=Math.hypot(dx,dy)||1;
+    const offset = len*0.25;
+    const cx = mx - (dy/len)*offset, cy = my + (dx/len)*offset;
+    return { tag:'path', d: 'M'+a.x1+','+a.y1+' Q'+cx+','+cy+' '+a.x2+','+a.y2 };
+  }
+  return { tag:'line', x1:a.x1, y1:a.y1, x2:a.x2, y2:a.y2 };
+}
+function schemaArrowGroupSVG(a, w){
+  const strokeW = w*0.008;
+  const geo = schemaArrowGeometry(a);
+  const shapeAttrs = geo.tag==='path' ? 'd="'+geo.d+'"' : 'x1="'+geo.x1+'" y1="'+geo.y1+'" x2="'+geo.x2+'" y2="'+geo.y2+'"';
+  let visible;
+  if(a.tipo==='divisore'){
+    visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="#F4F1EA" stroke-width="'+strokeW+'" stroke-dasharray="'+(w*0.006)+','+(w*0.012)+'" opacity="0.65"/>';
+  } else {
+    const markerId = schemaColorMarkerId(a.color);
+    const dash = a.tipo==='movimento' ? ' stroke-dasharray="'+(w*0.02)+','+(w*0.014)+'"' : '';
+    visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="'+a.color+'" stroke-width="'+strokeW+'"'+dash+' marker-end="url(#'+markerId+')"/>';
+  }
+  const hit = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="transparent" stroke-width="'+(w*0.035)+'"/>';
+  return '<g class="schema-arrow" data-id="'+a.id+'">'+visible+hit+'</g>';
+}
+function renderSchemaFieldSVG(exercise, livello){
+  const data = parseSchemaCampo(livello);
+  const w = exercise.larghezzaCampo || 20, h = exercise.lunghezzaCampo || 28;
+  const chipsSvg = data.chips.map(c=>schemaChipSVG(c,w)).join('');
+  const arrowsSvg = data.arrows.map(a=>schemaArrowGroupSVG(a,w)).join('');
+  return '<svg id="schema-field-svg" viewBox="0 0 '+w+' '+h+'" class="pitch-svg schema-field-svg">' +
+    schemaFieldDefsSVG() +
+    '<rect x="0" y="0" width="'+w+'" height="'+h+'" fill="#1E5631" stroke="#F4F1EA" stroke-width="'+(w*0.005)+'"/>' +
+    '<g class="arrows-layer">'+arrowsSvg+'</g>' +
+    '<g class="chips-layer">'+chipsSvg+'</g>' +
+  '</svg>';
+}
+function schemaToolbarHTML(){
+  const s = state.schema;
+  const colorSwatches = SCHEMA_COLORS.map(c=>
+    '<button type="button" class="schema-color-swatch '+(s.activeColor===c?'schema-color-swatch-active':'')+'" style="background:'+c+';" onclick="setSchemaActiveColor(\''+c+'\')" title="Colore attivo"></button>'
+  ).join('');
+  const lineTypes = [
+    ['movimento', SCHEMA_ICON_MOVIMENTO, 'Movimento'],
+    ['passaggio', SCHEMA_ICON_PASSAGGIO, 'Passaggio / tiro'],
+    ['pallone-alto', SCHEMA_ICON_PALLONE_ALTO, 'Pallone alto (disegna la curva)'],
+    ['divisore', SCHEMA_ICON_DIVISORE, 'Divisore spazi'],
+  ];
+  const lineButtons = lineTypes.map(([key,icon,title])=>
+    '<button class="btn btn-small btn-icon '+(s.drawMode && s.activeLineType===key?'btn-active':'')+'" onclick="setSchemaLineTypeAndDraw(\''+key+'\')" title="'+title+'">'+icon+'</button>'
+  ).join('');
+  return '<div class="schema-toolbar">' +
+    '<div class="schema-toolbar-row"><span class="hint">Colore:</span>'+colorSwatches+'</div>' +
+    '<div class="schema-toolbar-row">' +
+      '<button class="btn btn-small btn-icon '+(s.placeMode==='giocatore'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'giocatore\')" title="Aggiungi giocatore">'+SCHEMA_ICON_GIOCATORE+'</button>' +
+      '<button class="btn btn-small btn-icon '+(s.placeMode==='pallone'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'pallone\')" title="Aggiungi pallone">'+SCHEMA_ICON_PALLONE+'</button>' +
+      lineButtons +
+      '<button class="btn btn-small btn-icon '+(s.eraserMode?'btn-active':'')+'" onclick="setSchemaEraserMode()" title="Gomma: clicca un elemento per eliminarlo">'+SCHEMA_ICON_GOMMA+'</button>' +
+      ((s.drawMode || s.placeMode || s.eraserMode) ? '<button class="btn btn-small" onclick="stopSchemaDrawing()">Termina</button>' : '') +
+    '</div>' +
+  '</div>';
+}
+function schemaExerciseTags(e){
+  try { const t = JSON.parse((e && e.tags) || '[]'); return Array.isArray(t) ? t : []; }
+  catch { return []; }
+}
+async function addSchemaTagFromInput(){
+  const input = document.getElementById('schema-tag-input');
+  const val = input.value.trim();
+  if(!val) return;
+  const current = schemaExerciseTags(state.schema.currentExercise);
+  if(current.includes(val)){ input.value=''; return; }
+  const updated = current.concat(val);
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { tags: updated });
+  if(res.exercise) state.schema.currentExercise = res.exercise;
+  if(!state.schema.availableTags.includes(val)){
+    state.schema.availableTags = state.schema.availableTags.concat(val).sort((a,b)=>a.localeCompare(b));
+  }
+  renderView();
+}
+function onSchemaTagInputKeydown(evt){
+  if(evt.key==='Enter'){ evt.preventDefault(); addSchemaTagFromInput(); }
+}
+async function removeSchemaTag(tag){
+  const current = schemaExerciseTags(state.schema.currentExercise);
+  const updated = current.filter(t=>t!==tag);
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { tags: updated });
+  if(res.exercise) state.schema.currentExercise = res.exercise;
+  renderView();
+}
+function renderSchemaExerciseSheet(){
+  const e = state.schema.currentExercise;
+  if(!e){ return schemaSubNavHTML('library') + '<div class="card"><p class="hint">Esercizio non trovato.</p></div>'; }
+  const livello = schemaActiveLivello();
+  const noteRecente = e.note[0];
+  const altreNote = e.note.slice(1);
+  const currentTags = schemaExerciseTags(e);
+  const tagChipsHtml = currentTags.map(t=>
+    '<span class="schema-tag-chip schema-tag-chip-removable">'+esc(t)+' <button type="button" onclick="removeSchemaTag(\''+esc(t).replace(/'/g,"\\'")+'\')" aria-label="Rimuovi">×</button></span>'
+  ).join('');
+  const tagDatalist = '<datalist id="schema-tag-suggestions">' + state.schema.availableTags.map(t=>'<option value="'+esc(t)+'">').join('') + '</datalist>';
+  const livelloTabsHtml = e.livelli.map(l=>
+    '<button class="btn btn-small '+(l.id===livello.id?'btn-active':'')+'" onclick="switchSchemaLivello(\''+l.id+'\')">Livello '+esc(l.nome)+'</button>'
+  ).join('') + '<button class="btn btn-small" onclick="addSchemaLivello()">+ Aggiungi livello</button>';
+  return schemaSubNavHTML('library') +
+    '<div class="card">' +
+      '<div class="card-header-row"><h2>'+esc(e.titolo)+'</h2>' +
+        '<div class="pitch-actions"><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button><button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaExercise()">Elimina</button></div>' +
+      '</div>' +
+      '<div class="form-row">' +
+        '<div class="field field-grow"><label>Titolo</label><input value="'+esc(e.titolo)+'" onchange="saveSchemaExerciseField(\'titolo\', this.value)"></div>' +
+        '<div class="field"><label>N. giocatori</label><input type="number" min="1" value="'+e.numeroGiocatoriBase+'" onchange="saveSchemaExerciseField(\'numeroGiocatoriBase\', this.value)"></div>' +
+        '<div class="field"><label>Larghezza campo (m)</label><input id="schema-ex-larghezza" type="number" step="0.1" value="'+e.larghezzaCampo+'" onchange="onSchemaFieldSizeOverride()"></div>' +
+        '<div class="field"><label>Lunghezza campo (m)</label><input id="schema-ex-lunghezza" type="number" step="0.1" value="'+e.lunghezzaCampo+'" onchange="onSchemaFieldSizeOverride()"></div>' +
+      '</div>' +
+      '<div class="field"><label>Descrizione generale</label><textarea rows="2" onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea></div>' +
+      '<div class="field field-grow">' +
+        '<label>Etichette</label>' +
+        '<div class="schema-tag-chip-row">' + tagChipsHtml + '</div>' +
+        '<div style="display:flex; gap:6px; margin-top:6px;">' +
+          '<input id="schema-tag-input" list="schema-tag-suggestions" type="text" placeholder="aggiungi etichetta e premi Invio" onkeydown="onSchemaTagInputKeydown(event)" style="flex:1;">' +
+          '<button type="button" class="btn btn-small" onclick="addSchemaTagFromInput()">Aggiungi</button>' +
+        '</div>' +
+        tagDatalist +
+      '</div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<h3 style="margin-top:0;">Progressione</h3>' +
+      '<div class="pitch-actions" style="margin-bottom:12px;">'+livelloTabsHtml+'</div>' +
+      (e.livelli.length>1 ? '<button class="btn btn-small btn-danger" style="margin-bottom:12px;" onclick="deleteSchemaLivello(\''+livello.id+'\')">Elimina livello '+esc(livello.nome)+'</button>' : '') +
+      '<div class="field"><label>Descrizione di questo livello (cosa lo differenzia)</label><textarea rows="2" onchange="saveSchemaLivelloField(\'descrizione\', this.value)">'+esc(livello.descrizione)+'</textarea></div>' +
+      '<div class="form-row">' +
+        '<div class="field"><label>Ripetizioni</label><input type="number" min="1" value="'+livello.ripetizioni+'" onchange="saveSchemaLivelloField(\'ripetizioni\', this.value)"></div>' +
+        '<div class="field"><label>Durata di ciascuna (min)</label><input type="number" min="1" value="'+livello.durataRipetizione+'" onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
+        '<div class="field"><label>Recupero (sec)</label><input type="number" min="0" value="'+livello.recuperoSecondi+'" onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
+      '</div>' +
+      schemaToolbarHTML() +
+      '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+'">' + renderSchemaFieldSVG(e, livello) + '</div>' +
+      '<p class="hint">Trascina per spostare. Click destro su un elemento per rinominare/numerare/cambiare colore. Con "+ Giocatore"/"+ Pallone" o un tipo di linea attivo, disegna sul campo; con la gomma attiva, clicca un elemento per eliminarlo.</p>' +
+    '</div>' +
+    '<div class="card">' +
+      '<h3 style="margin-top:0;">Note</h3>' +
+      (noteRecente ? '<div class="schema-note-recent"><strong>'+formatDate(noteRecente.data.slice(0,10))+'</strong><p>'+esc(noteRecente.testo)+'</p></div>' : '<p class="hint">Nessuna nota ancora.</p>') +
+      '<div class="form-row"><div class="field field-grow"><label>Nuova nota</label><textarea id="schema-ex-nuova-nota" rows="2"></textarea></div><button class="btn btn-small" onclick="addSchemaNote()">Aggiungi nota</button></div>' +
+      (altreNote.length ? '<details class="schema-note-history"><summary>Storico note ('+altreNote.length+')</summary>' + altreNote.map(n=>'<div class="schema-note-item"><strong>'+formatDate(n.data.slice(0,10))+'</strong><p>'+esc(n.testo)+'</p></div>').join('') + '</details>' : '') +
+    '</div>' +
+    '<div class="card">' +
+      '<h3 style="margin-top:0;">Valutazioni</h3>' +
+      '<div class="form-row" style="align-items:center;">' +
+        '<div>' + (e.votoMedio!=null ? 'Media: '+starRatingHTML(e.votoMedio,16)+' ('+e.votoMedio+')' : 'Nessuna valutazione') + '</div>' +
+        '<div class="hint">Usato '+e.utilizzi+' volte, '+e.minutiTotaliStagione+' minuti totali in stagione</div>' +
+      '</div>' +
+      '<div class="form-row" style="align-items:center;"><label class="hint">Nuovo voto:</label>' + starInputHTML() + '</div>' +
+    '</div>';
+}
+async function saveSchemaExerciseField(field, value){
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { [field]: value });
+  if(res.exercise) state.schema.currentExercise = res.exercise;
+  renderView();
+}
+async function onSchemaFieldSizeOverride(){
+  const larghezzaCampo = document.getElementById('schema-ex-larghezza').value;
+  const lunghezzaCampo = document.getElementById('schema-ex-lunghezza').value;
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { larghezzaCampo, lunghezzaCampo });
+  if(res.exercise){ state.schema.currentExercise = res.exercise; renderView(); }
+}
+async function addSchemaNote(){
+  const textEl = document.getElementById('schema-ex-nuova-nota');
+  const testo = textEl.value.trim();
+  if(!testo) return;
+  await apiPost('/api/schema/exercises/'+state.schema.exerciseId+'/notes', { testo });
+  await loadSchemaExercise(state.schema.exerciseId);
+  renderView();
+}
+async function submitSchemaRating(voto){
+  await apiPost('/api/schema/exercises/'+state.schema.exerciseId+'/ratings', { voto });
+  await loadSchemaExercise(state.schema.exerciseId);
+  renderView();
+}
+function confirmDeleteSchemaExercise(){
+  showConfirmModal('Eliminare "'+state.schema.currentExercise.titolo+'"? Elimina anche i livelli, le note, le valutazioni e lo storico collegati.', async () => {
+    await apiDelete('/api/schema/exercises/'+state.schema.exerciseId);
+    openSchemaLibrary();
+  });
+}
+
+/* ---------- livelli di progressione (stesso esercizio, non un esercizio nuovo) ---------- */
+function switchSchemaLivello(livelloId){
+  state.schema.activeLivelloId = livelloId;
+  renderView();
+}
+async function addSchemaLivello(){
+  const res = await apiPost('/api/schema/exercises/'+state.schema.exerciseId+'/livelli', {});
+  if(res.livello){
+    state.schema.currentExercise.livelli.push(res.livello);
+    state.schema.activeLivelloId = res.livello.id;
+    renderView();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
+function deleteSchemaLivello(livelloId){
+  showConfirmModal('Eliminare questo livello di progressione?', async () => {
+    const res = await apiDelete('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId);
+    if(res.error){ alert(res.error); return; }
+    state.schema.currentExercise.livelli = state.schema.currentExercise.livelli.filter(l=>l.id!==livelloId);
+    if(state.schema.activeLivelloId===livelloId) state.schema.activeLivelloId = state.schema.currentExercise.livelli[0].id;
+    renderView();
+  });
+}
+async function saveSchemaLivelloField(field, value){
+  const livelloId = state.schema.activeLivelloId;
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, { [field]: value });
+  if(res.livello){
+    const idx = state.schema.currentExercise.livelli.findIndex(l=>l.id===livelloId);
+    if(idx>=0) state.schema.currentExercise.livelli[idx] = res.livello;
+  }
+  renderView();
+}
+
+/* ---------- disegno campo: chip (giocatori/palloni) + frecce (4 tipi) + gomma ---------- */
+function setSchemaActiveColor(color){
+  state.schema.activeColor = color;
+  renderView();
+}
+function setSchemaPlaceMode(tipo){
+  const s = state.schema;
+  s.drawMode = false; s.eraserMode = false;
+  s.placeMode = s.placeMode===tipo ? null : tipo;
+  renderView();
+}
+function setSchemaLineTypeAndDraw(tipo){
+  const s = state.schema;
+  s.placeMode = null; s.eraserMode = false;
+  if(s.drawMode && s.activeLineType===tipo){ s.drawMode = false; }
+  else { s.drawMode = true; s.activeLineType = tipo; }
+  renderView();
+}
+function setSchemaEraserMode(){
+  const s = state.schema;
+  s.drawMode = false; s.placeMode = null;
+  s.eraserMode = !s.eraserMode;
+  renderView();
+}
+function stopSchemaDrawing(){
+  const s = state.schema;
+  s.drawMode = false; s.placeMode = null; s.eraserMode = false;
+  renderView();
+}
+async function saveSchemaCampo(data){
+  const livelloId = state.schema.activeLivelloId;
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, { schemaCampo: JSON.stringify(data) });
+  if(res.livello){
+    const idx = state.schema.currentExercise.livelli.findIndex(l=>l.id===livelloId);
+    if(idx>=0) state.schema.currentExercise.livelli[idx] = res.livello;
+    renderView();
+  }
+}
+function showSchemaChipContextMenu(evt, chipId){
+  evt.preventDefault();
+  evt.stopPropagation();
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const chip = data.chips.find(c=>c.id===chipId);
+  if(!chip) return;
+  const menu = document.getElementById('player-context-menu');
+  let html = '<div class="context-menu-item" onclick="renameSchemaChip(\''+chipId+'\'); hideContextMenu();">Rinomina</div>';
+  if(chip.tipo==='giocatore'){
+    html += '<div class="context-menu-item" onclick="numberSchemaChip(\''+chipId+'\'); hideContextMenu();">Numera</div>';
+  }
+  html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
+    SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaChip(\''+chipId+'\',\''+c+'\'); hideContextMenu();" style="width:16px;height:16px;border-radius:50%;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
+  '</div>';
+  html += '<div class="context-menu-item" onclick="deleteSchemaChip(\''+chipId+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
+  menu.innerHTML = html;
+  const x = Math.min(evt.clientX, window.innerWidth-190);
+  const y = Math.min(evt.clientY, window.innerHeight-220);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+function renameSchemaChip(chipId){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const chip = data.chips.find(c=>c.id===chipId);
+  if(!chip) return;
+  const label = prompt('Nome/etichetta:', chip.label||'');
+  if(label!==null){ chip.label = label; saveSchemaCampo(data); }
+}
+function numberSchemaChip(chipId){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const chip = data.chips.find(c=>c.id===chipId);
+  if(!chip) return;
+  const numero = prompt('Numero:', chip.numero!=null?String(chip.numero):'');
+  if(numero!==null){ chip.numero = numero.trim()===''?null:Number(numero); saveSchemaCampo(data); }
+}
+function recolorSchemaChip(chipId, color){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const chip = data.chips.find(c=>c.id===chipId);
+  if(!chip) return;
+  chip.color = color;
+  saveSchemaCampo(data);
+}
+function deleteSchemaChip(chipId){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  data.chips = data.chips.filter(c=>c.id!==chipId);
+  saveSchemaCampo(data);
+}
+function deleteSchemaArrow(arrowId){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  data.arrows = data.arrows.filter(a=>a.id!==arrowId);
+  saveSchemaCampo(data);
+}
+function attachSchemaFieldInteractions(){
+  const svg = document.getElementById('schema-field-svg');
+  if(!svg) return;
+  function toPoint(evt){
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+  svg.querySelectorAll('.schema-chip').forEach(function(chipEl){
+    chipEl.style.cursor = 'grab';
+    chipEl.addEventListener('contextmenu', function(e){
+      showSchemaChipContextMenu(e, chipEl.getAttribute('data-id'));
+    });
+    chipEl.addEventListener('pointerdown', function(e){
+      if(e.button===2) return;
+      e.stopPropagation();
+      const id = chipEl.getAttribute('data-id');
+      if(state.schema.eraserMode){ deleteSchemaChip(id); return; }
+      chipEl.setPointerCapture(e.pointerId);
+      const startPt = toPoint(e);
+      let moved = false;
+      const data = parseSchemaCampo(schemaActiveLivello());
+      const chipData = data.chips.find(function(c){ return c.id===id; });
+      if(!chipData) return;
+      function onMove(e2){
+        const p = toPoint(e2);
+        if(Math.abs(p.x-startPt.x) > 0.3 || Math.abs(p.y-startPt.y) > 0.3) moved = true;
+        chipData.x = p.x; chipData.y = p.y;
+        chipEl.setAttribute('transform', 'translate('+chipData.x+','+chipData.y+')');
+      }
+      function onUp(){
+        svg.removeEventListener('pointermove', onMove);
+        svg.removeEventListener('pointerup', onUp);
+        try{ chipEl.releasePointerCapture(e.pointerId); }catch(err){}
+        if(moved) saveSchemaCampo(data);
+      }
+      svg.addEventListener('pointermove', onMove);
+      svg.addEventListener('pointerup', onUp);
+    });
+  });
+  svg.querySelectorAll('.schema-arrow').forEach(function(arrowEl){
+    arrowEl.addEventListener('pointerdown', function(e){
+      if(!state.schema.eraserMode) return;
+      e.stopPropagation();
+      deleteSchemaArrow(arrowEl.getAttribute('data-id'));
+    });
+  });
+  svg.addEventListener('pointerdown', function(e){
+    if(e.target.closest('.schema-chip') || e.target.closest('.schema-arrow')) return;
+    if(e.button===2) return;
+    const s = state.schema;
+    if(s.drawMode && s.activeLineType==='pallone-alto'){
+      const start = toPoint(e);
+      const points = [start];
+      const tempPath = document.createElementNS('http://www.w3.org/2000/svg','path');
+      tempPath.setAttribute('fill','none'); tempPath.setAttribute('stroke', s.activeColor); tempPath.setAttribute('stroke-width','0.15');
+      tempPath.setAttribute('d', 'M'+start.x+','+start.y);
+      svg.querySelector('.arrows-layer').appendChild(tempPath);
+      function onMove(e2){
+        const p = toPoint(e2);
+        const last = points[points.length-1];
+        if(Math.hypot(p.x-last.x, p.y-last.y) > 0.25){
+          points.push(p);
+          tempPath.setAttribute('d', smoothPathFromPoints(points));
+        }
+      }
+      function onUp(){
+        svg.removeEventListener('pointermove', onMove);
+        svg.removeEventListener('pointerup', onUp);
+        const last = points[points.length-1];
+        // La lunghezza del percorso disegnato (non la distanza in linea retta inizio-fine,
+        // che per una curva può essere piccola anche con un tratto lungo e marcato) decide
+        // se il tratto va salvato: così la curva "si solidifica" con la forma disegnata.
+        let pathLen = 0;
+        for(let i=1;i<points.length;i++) pathLen += Math.hypot(points[i].x-points[i-1].x, points[i].y-points[i-1].y);
+        if(points.length>=2 && pathLen > 0.5){
+          const data = parseSchemaCampo(schemaActiveLivello());
+          data.arrows.push({ id: uid(), tipo:'pallone-alto', color:s.activeColor, points, x1:start.x, y1:start.y, x2:last.x, y2:last.y });
+          saveSchemaCampo(data);
+        } else { tempPath.remove(); }
+      }
+      svg.addEventListener('pointermove', onMove);
+      svg.addEventListener('pointerup', onUp);
+    } else if(s.drawMode){
+      const start = toPoint(e);
+      const tempLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+      tempLine.setAttribute('x1', start.x); tempLine.setAttribute('y1', start.y);
+      tempLine.setAttribute('x2', start.x); tempLine.setAttribute('y2', start.y);
+      tempLine.setAttribute('stroke', s.activeColor); tempLine.setAttribute('stroke-width', '0.15');
+      svg.querySelector('.arrows-layer').appendChild(tempLine);
+      function onMove(e2){ const p=toPoint(e2); tempLine.setAttribute('x2',p.x); tempLine.setAttribute('y2',p.y); }
+      function onUp(e2){
+        svg.removeEventListener('pointermove', onMove);
+        svg.removeEventListener('pointerup', onUp);
+        const p = toPoint(e2);
+        const dist = Math.hypot(p.x-start.x, p.y-start.y);
+        const data = parseSchemaCampo(schemaActiveLivello());
+        if(dist > 0.5){
+          data.arrows.push({ id: uid(), x1:start.x, y1:start.y, x2:p.x, y2:p.y, tipo:s.activeLineType, color:s.activeColor });
+          saveSchemaCampo(data);
+        } else { tempLine.remove(); }
+      }
+      svg.addEventListener('pointermove', onMove);
+      svg.addEventListener('pointerup', onUp);
+    } else if(s.placeMode){
+      const start = toPoint(e);
+      function onUp(e2){
+        svg.removeEventListener('pointerup', onUp);
+        const p = toPoint(e2);
+        const dist = Math.hypot(p.x-start.x, p.y-start.y);
+        if(dist > 1.5) return;
+        const data = parseSchemaCampo(schemaActiveLivello());
+        data.chips.push({ id: uid(), x:p.x, y:p.y, tipo:s.placeMode, color:s.activeColor, numero:null, label:'' });
+        saveSchemaCampo(data);
+      }
+      svg.addEventListener('pointerup', onUp);
+    }
+  });
+}
+
+/* ---------- picker: scelta livello quando un esercizio ha più progressioni ---------- */
+function schemaLivelloPickerHTML(){
+  const picker = state.schema.livelloPicker;
+  if(!picker) return '';
+  return '<div class="schema-picker-overlay" onclick="if(event.target===this) closeSchemaLivelloPicker();">' +
+    '<div class="schema-picker-box">' +
+      '<h3 style="margin-top:0;">'+esc(picker.titolo)+'</h3>' +
+      '<p class="hint">Questo esercizio ha più livelli di progressione: quale vuoi usare?</p>' +
+      '<div class="schema-picker-options">' + picker.livelli.map(l=>'<button class="btn" onclick="chooseSchemaLivello(\''+l.id+'\')">Livello '+esc(l.nome)+'</button>').join('') + '</div>' +
+      '<button class="btn btn-small" onclick="closeSchemaLivelloPicker()">Annulla</button>' +
+    '</div>' +
+  '</div>';
+}
+function closeSchemaLivelloPicker(){
+  state.schema.livelloPicker = null;
+  renderView();
+}
+async function chooseSchemaLivello(livelloId){
+  const picker = state.schema.livelloPicker;
+  state.schema.livelloPicker = null;
+  if(picker && picker.onChoose) await picker.onChoose(livelloId);
+  renderView();
+}
+
+/* ---------- sedute ---------- */
+async function loadSchemaSessions(){
+  const res = await apiGet('/api/schema/sessions');
+  state.schema.sessions = res.sessions || [];
+}
+function schemaSessionStatoPillHTML(stato){
+  if(stato==='eseguita') return '<span class="pill pill-win">Eseguita</span>';
+  if(stato==='programmata') return '<span class="pill pill-yellow">Programmata</span>';
+  return '<span class="pill pill-muted">Bozza</span>';
+}
+function renderSchemaSessionsList(){
+  const s = state.schema;
+  return schemaSubNavHTML('sessions') +
+    '<div class="card">' +
+      '<div class="card-header-row"><h2>Sedute</h2>' +
+        '<div class="pitch-actions"><button class="btn btn-primary btn-small" onclick="promptNewSchemaSession()">+ Nuova seduta</button></div>' +
+      '</div>' +
+      '<p class="hint">Lo stato si calcola da solo: bozza finché non è collegata a un giorno di allenamento, programmata se il giorno è futuro, eseguita quando il giorno è passato.</p>' +
+      (s.sessions.length===0 ? '<p class="hint">Nessuna seduta ancora.</p>' :
+        s.sessions.map(sess=>{
+          const allenamento = sess.allenamentoId ? state.allenamenti.find(a=>a.id===sess.allenamentoId) : null;
+          return '<div class="schema-session-row" onclick="openSchemaSessionBuilder(\''+sess.id+'\')">' +
+            '<strong>'+esc(sess.titolo)+'</strong>' +
+            schemaSessionStatoPillHTML(sess.stato) +
+            (sess.stato==='eseguita' && !sess.hasNote ? '<span class="pill pill-red">Note mancanti</span>' : '') +
+            (allenamento ? '<span class="hint">Allenamento del '+formatDate(allenamento.data)+'</span>' : '') +
+            '<span class="hint">'+sess.items.length+' esercizi</span>' +
+          '</div>';
+        }).join('')
+      ) +
+    '</div>';
+}
+function promptNewSchemaSession(){
+  const titolo = prompt('Titolo della seduta:');
+  if(!titolo) return;
+  createSchemaSession(titolo, null);
+}
+async function createSchemaSession(titolo, allenamentoId){
+  const res = await apiPost('/api/schema/sessions', { titolo, allenamentoId: allenamentoId || null });
+  if(res.session) await openSchemaSessionBuilder(res.session.id);
+  else alert('Errore: '+(res.error||'sconosciuto'));
+}
+async function createSchemaSessionForAllenamento(allenamentoId){
+  const a = state.allenamenti.find(x=>x.id===allenamentoId);
+  const titolo = 'Seduta del ' + formatDate(a ? a.data : '');
+  const res = await apiPost('/api/schema/sessions', { titolo, allenamentoId });
+  if(res.session){
+    delete state.schema.allenamentoSessions[allenamentoId];
+    await openSchemaSessionBuilder(res.session.id);
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
+async function loadSchemaSessionsForAllenamento(allenamentoId){
+  const res = await apiGet('/api/schema/sessions?allenamentoId='+encodeURIComponent(allenamentoId));
+  state.schema.allenamentoSessions[allenamentoId] = res.sessions || [];
+  if(state.currentView==='allenamento' && state.currentAllenamentoId===allenamentoId) renderView();
+}
+function schemaSessionsCardForAllenamento(a){
+  if(!getAppUser().schemaUnlocked) return '';
+  const sessions = state.schema.allenamentoSessions[a.id];
+  if(!sessions) return '<div class="card"><h2>Seduta programmata</h2><p class="hint">Caricamento…</p></div>';
+  return '<div class="card"><h2>Seduta programmata</h2>' +
+    (sessions.length===0
+      ? '<p class="hint">Nessuna seduta collegata a questo giorno.</p><button class="btn btn-small" onclick="createSchemaSessionForAllenamento(\''+a.id+'\')">Crea seduta per questo giorno</button>'
+      : sessions.map(sess=>'<div class="schema-session-row" onclick="openSchemaSessionBuilder(\''+sess.id+'\')"><strong>'+esc(sess.titolo)+'</strong>'+schemaSessionStatoPillHTML(sess.stato)+'</div>').join('')
+    ) +
+  '</div>';
+}
+async function loadSchemaSessionDetail(id){
+  const res = await apiGet('/api/schema/sessions/'+id);
+  state.schema.currentSession = res.session || null;
+  state.schema.sessionId = id;
+}
+function renderSchemaSessionBuilder(){
+  const s = state.schema;
+  const sess = s.currentSession;
+  if(!sess) return schemaSubNavHTML('sessions') + '<div class="card"><p class="hint">Seduta non trovata.</p></div>';
+  // Solo obiettivi fisici guidano il carico/range della seduta: quelli tecnico-tattici
+  // si scelgono esercizio per esercizio, non a livello di seduta.
+  const objFisici = s.objectives.filter(o=>o.categoria==='fisico');
+  const objOptions = '<option value="">Nessun obiettivo fisico</option>' + objFisici.map(o=>'<option value="'+o.id+'" '+(o.id===sess.obiettivoId?'selected':'')+'>'+esc(o.label)+'</option>').join('');
+  const allenamentiOrdinati = state.allenamenti.slice().sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const allenamentoOptions = '<option value="">Nessun giorno collegato (bozza)</option>' + allenamentiOrdinati.map(a=>'<option value="'+a.id+'" '+(a.id===sess.allenamentoId?'selected':'')+'>'+formatDate(a.data)+'</option>').join('');
+  const rpeOptions = '<option value="">—</option>' + Array.from({length:10},(_,i)=>i+1).map(n=>'<option value="'+n+'" '+(sess.rpe===n?'selected':'')+'>'+n+'</option>').join('');
+  const obiettivoScelto = objFisici.find(o=>o.id===sess.obiettivoId);
+  let caricoBadge;
+  if(sess.caricoTotale==null){
+    caricoBadge = '<span class="pill pill-muted">Imposta un RPE (1-10) per calcolare il carico</span>';
+  } else if(obiettivoScelto){
+    const { loadMin, loadMax } = obiettivoScelto;
+    if(sess.caricoTotale < loadMin) caricoBadge = '<span class="pill pill-yellow">Carico '+sess.caricoTotale+' (sotto range '+loadMin+'-'+loadMax+')</span>';
+    else if(sess.caricoTotale > loadMax) caricoBadge = '<span class="pill pill-red">Carico '+sess.caricoTotale+' (sopra range '+loadMin+'-'+loadMax+')</span>';
+    else caricoBadge = '<span class="pill pill-win">Carico '+sess.caricoTotale+' (in range '+loadMin+'-'+loadMax+')</span>';
+  } else {
+    caricoBadge = '<span class="pill pill-muted">Carico totale: '+sess.caricoTotale+'</span>';
+  }
+  const locked = sess.stato==='eseguita';
+  return schemaSubNavHTML('sessions') +
+    '<div class="card">' +
+      '<div class="card-header-row"><h2>'+esc(sess.titolo)+'</h2>' +
+        '<div class="pitch-actions">' +
+          '<button class="btn btn-small" onclick="openSchemaSessions()">← Sedute</button>' +
+          schemaSessionStatoPillHTML(sess.stato) +
+          '<button class="btn btn-small" onclick="exportSchemaSessionImage()">Esporta immagine</button>' +
+          '<button class="btn btn-small" onclick="exportSchemaSessionPDF()">Esporta PDF</button>' +
+          '<button class="btn btn-small" onclick="shareSchemaSessionWhatsApp()">Condividi su WhatsApp</button>' +
+          (!locked ? '<button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaSession()">Elimina</button>' : '') +
+        '</div>' +
+      '</div>' +
+      (locked ? '<p class="hint">Seduta svolta: è congelata come registro di ciò che è stato fatto. Puoi ancora modificare solo RPE e note.</p>' : '') +
+      '<div class="form-row">' +
+        '<div class="field field-grow"><label>Titolo</label><input value="'+esc(sess.titolo)+'" '+(locked?'disabled':'onchange="saveSchemaSessionField(\'titolo\', this.value)"')+'></div>' +
+        '<div class="field"><label>Obiettivo fisico</label><select '+(locked?'disabled':'onchange="onSchemaSessionObiettivoChange(this.value)"')+'>'+objOptions+'</select></div>' +
+        '<div class="field"><label>Giorno di allenamento</label><select '+(locked?'disabled':'onchange="saveSchemaSessionField(\'allenamentoId\', this.value)"')+'>'+allenamentoOptions+'</select></div>' +
+        '<div class="field"><label>RPE seduta (1-10)</label><select onchange="saveSchemaSessionField(\'rpe\', this.value)">'+rpeOptions+'</select></div>' +
+      '</div>' +
+      '<div class="form-row" style="align-items:center;">'+caricoBadge+'<span class="hint">Durata totale: '+sess.durataTotale+' min</span></div>' +
+      (locked ? '<div class="field field-grow"><label>Note e considerazioni sulla seduta svolta</label><textarea rows="2" onchange="saveSchemaSessionField(\'note\', this.value)">'+esc(sess.note||'')+'</textarea></div>' : '') +
+    '</div>' +
+    '<div class="grid-2">' +
+      '<div class="card">' +
+        '<h3 style="margin-top:0;">Libreria esercizi</h3>' +
+        (locked ? '<p class="hint">Seduta già svolta: gli esercizi inclusi non sono più modificabili.</p>' :
+          '<div class="schema-exercise-grid">' + s.exercises.map(e=>
+            '<div class="schema-exercise-card" onclick="addSchemaSessionItem(\''+e.id+'\')">' +
+              '<div class="schema-exercise-card-head"><strong>'+esc(e.titolo)+'</strong>'+(e.livelli.length>1?'<span class="pill">'+e.livelli.length+' livelli</span>':'')+'</div>' +
+              '<div class="hint">'+(schemaExerciseTags(e).join(', ')||'Nessuna etichetta')+'</div>' +
+            '</div>'
+          ).join('') + '</div>'
+        ) +
+      '</div>' +
+      '<div class="card">' +
+        '<h3 style="margin-top:0;">Esercizi nella seduta</h3>' +
+        (sess.items.length===0 ? '<p class="hint">Nessun esercizio aggiunto. Clicca un esercizio nella libreria per aggiungerlo.</p>' :
+          sess.items.map((item,idx)=>{
+            const titolo = item.livello ? item.livello.esercizio.titolo : item.titoloSnapshot;
+            const nomeLivello = item.livello ? item.livello.nome : item.livelloSnapshot;
+            return '<div class="schema-session-item-row">' +
+              '<div><strong>'+esc(titolo)+'</strong><div class="hint">Livello '+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div></div>' +
+              (locked
+                ? '<span class="hint">'+(item.durataMinuti!=null?item.durataMinuti+' min':'—')+'</span>'
+                : '<input type="number" min="1" placeholder="min" style="width:70px;" value="'+(item.durataMinuti!=null?item.durataMinuti:'')+'" onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">'
+              ) +
+              '<div class="pitch-actions">' +
+                (!locked && idx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', -1)">↑</button>' : '') +
+                (!locked && idx<sess.items.length-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', 1)">↓</button>' : '') +
+                (locked && item.livello ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.livello.esercizioId+'\')">Nota</button>' : '') +
+                (!locked ? '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi</button>' : '') +
+              '</div>' +
+            '</div>';
+          }).join('')
+        ) +
+      '</div>' +
+    '</div>';
+}
+async function saveSchemaSessionField(field, value){
+  const res = await apiPatch('/api/schema/sessions/'+state.schema.sessionId, { [field]: value });
+  if(res.session) state.schema.currentSession = res.session;
+  renderView();
+}
+async function onSchemaSessionObiettivoChange(value){
+  const patch = { obiettivoId: value };
+  if(!state.schema.currentSession.rpe){
+    const obj = state.schema.objectives.find(o=>o.id===value);
+    if(obj && obj.rpeSuggerito!=null) patch.rpe = obj.rpeSuggerito;
+  }
+  const res = await apiPatch('/api/schema/sessions/'+state.schema.sessionId, patch);
+  if(res.session){ state.schema.currentSession = res.session; renderView(); }
+}
+function confirmDeleteSchemaSession(){
+  showConfirmModal('Eliminare la seduta "'+state.schema.currentSession.titolo+'"?', async () => {
+    await apiDelete('/api/schema/sessions/'+state.schema.sessionId);
+    openSchemaSessions();
+  });
+}
+async function addSchemaSessionItem(exerciseId){
+  const esercizio = state.schema.exercises.find(e=>e.id===exerciseId);
+  if(!esercizio) return;
+  if(esercizio.livelli.length>1){
+    state.schema.livelloPicker = { titolo: esercizio.titolo, livelli: esercizio.livelli, onChoose: addSchemaSessionItemWithLivello };
+    renderView();
+    return;
+  }
+  await addSchemaSessionItemWithLivello(esercizio.livelli[0].id);
+}
+async function addSchemaSessionItemWithLivello(livelloId){
+  let livello = null;
+  state.schema.exercises.some(e=>{ const l = e.livelli.find(x=>x.id===livelloId); if(l){ livello = l; return true; } return false; });
+  const durataMinuti = livello ? livello.ripetizioni*livello.durataRipetizione : null;
+  await apiPost('/api/schema/sessions/'+state.schema.sessionId+'/items', { livelloId, durataMinuti });
+  await loadSchemaSessionDetail(state.schema.sessionId);
+  renderView();
+}
+async function addSchemaSessionItemNote(esercizioId){
+  const testo = prompt('Nota su questo esercizio per questa seduta:');
+  if(!testo || !testo.trim()) return;
+  await apiPost('/api/schema/exercises/'+esercizioId+'/notes', { testo: testo.trim(), sedutaId: state.schema.sessionId });
+  alert('Nota aggiunta.');
+}
+async function removeSchemaSessionItem(itemId){
+  await apiDelete('/api/schema/sessions/'+state.schema.sessionId+'/items/'+itemId);
+  await loadSchemaSessionDetail(state.schema.sessionId);
+  renderView();
+}
+async function setSchemaSessionItemDurata(itemId, value){
+  await apiPatch('/api/schema/sessions/'+state.schema.sessionId+'/items/'+itemId, { durataMinuti: value===''?null:value });
+  await loadSchemaSessionDetail(state.schema.sessionId);
+  renderView();
+}
+async function moveSchemaSessionItem(itemId, dir){
+  const items = state.schema.currentSession.items;
+  const idx = items.findIndex(i=>i.id===itemId);
+  const swapIdx = idx+dir;
+  if(swapIdx<0 || swapIdx>=items.length) return;
+  const a = items[idx], b = items[swapIdx];
+  await apiPatch('/api/schema/sessions/'+state.schema.sessionId+'/items/'+a.id, { ordine: b.ordine });
+  await apiPatch('/api/schema/sessions/'+state.schema.sessionId+'/items/'+b.id, { ordine: a.ordine });
+  await loadSchemaSessionDetail(state.schema.sessionId);
+  renderView();
+}
+
+/* ---------- esportazione seduta: immagine / PDF / WhatsApp ---------- */
+function schemaAvailablePlayersForSession(sess){
+  const allenamento = sess.allenamentoId ? state.allenamenti.find(a=>a.id===sess.allenamentoId) : null;
+  if(!allenamento) return state.players.slice();
+  return state.players.filter(p=>{
+    const v = (allenamento.presenze && allenamento.presenze[p.id]) || defaultPresenzaFor(p);
+    return v === 'Disponibile';
+  });
+}
+function schemaLineupPitchSVG(players){
+  const bands = [
+    { roles:['ATT'], y:14 },
+    { roles:['MD','CC','ES','ED'], y:48 },
+    { roles:['DC','TD','TS'], y:80 },
+    { roles:['Por'], y:98 },
+  ];
+  let chipsSvg = '';
+  bands.forEach(band=>{
+    const list = players.filter(p=>band.roles.includes(p.ruolo));
+    const n = list.length;
+    list.forEach((p,i)=>{
+      const x = n<=1 ? 34 : 6 + i*(56/Math.max(n-1,1));
+      chipsSvg += '<g transform="translate('+x+','+band.y+')">' +
+        '<circle r="2.6" fill="#0E2233" stroke="#4FA8E0" stroke-width="0.3"/>' +
+        '<text text-anchor="middle" dy="4.4" font-size="1.7" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="0.3">'+esc(surnameOf(p.nome))+'</text>' +
+      '</g>';
+    });
+  });
+  return '<svg viewBox="0 0 68 105" class="pitch-svg">' + pitchMarkingsSVG() + chipsSvg + '</svg>';
+}
+function schemaSessionExportBodyHTML(sess){
+  const allenamento = sess.allenamentoId ? state.allenamenti.find(a=>a.id===sess.allenamentoId) : null;
+  const players = schemaAvailablePlayersForSession(sess);
+  return (
+    '<p>'+(allenamento ? 'Allenamento del '+formatDate(allenamento.data)+(allenamento.ora?' • '+esc(allenamento.ora):'') : 'Nessun giorno collegato')+'</p>' +
+    '<p>'+(sess.obiettivo ? 'Obiettivo fisico: '+esc(sess.obiettivo.label)+' · ' : '')+(sess.rpe!=null?'RPE '+sess.rpe+' · ':'')+(sess.caricoTotale!=null?'Carico '+sess.caricoTotale+' · ':'')+'Durata totale '+sess.durataTotale+' min</p>' +
+    '<h2>Giocatori disponibili ('+players.length+')</h2>' +
+    '<div class="schema-export-pitch">' + schemaLineupPitchSVG(players) + '</div>' +
+    '<h2>Esercizi</h2>' +
+    sess.items.map((item,idx)=>{
+      if(!item.livello) return '<div class="schema-export-item"><h3>'+(idx+1)+'. '+esc(item.titoloSnapshot)+' — Livello '+esc(item.livelloSnapshot)+'</h3><p class="hint">Esercizio non più in libreria.</p></div>';
+      const ex = item.livello.esercizio;
+      return '<div class="schema-export-item">' +
+        '<h3>'+(idx+1)+'. '+esc(ex.titolo)+' — Livello '+esc(item.livello.nome)+'</h3>' +
+        (ex.descrizione ? '<p>'+esc(ex.descrizione)+'</p>' : '') +
+        (item.livello.descrizione ? '<p><em>'+esc(item.livello.descrizione)+'</em></p>' : '') +
+        '<p class="hint">Ripetizioni: '+item.livello.ripetizioni+' × '+item.livello.durataRipetizione+' min, recupero '+item.livello.recuperoSecondi+'s · Durata in questa seduta: '+(item.durataMinuti!=null?item.durataMinuti+' min':'—')+'</p>' +
+        '<div class="schema-export-field">' + renderSchemaFieldSVG(ex, item.livello) + '</div>' +
+      '</div>';
+    }).join('') +
+    (sess.note ? '<h2>Note sulla seduta svolta</h2><p>'+esc(sess.note)+'</p>' : '')
+  );
+}
+function exportSchemaSessionImage(){
+  const sess = state.schema.currentSession;
+  if(!sess) return;
+  ensureHtml2Canvas(function(){
+    const holder = document.createElement('div');
+    holder.className = 'app-content schema-export';
+    holder.style.position = 'fixed'; holder.style.left = '-9999px'; holder.style.top = '0';
+    holder.style.width = '800px'; holder.style.padding = '20px';
+    const bgColor = getComputedStyle(document.body).backgroundColor || '#0B141C';
+    holder.style.background = bgColor;
+    holder.innerHTML = '<h1>'+esc(sess.titolo)+'</h1>' + schemaSessionExportBodyHTML(sess);
+    document.body.appendChild(holder);
+    html2canvas(holder, { backgroundColor: bgColor, scale: 2 }).then(function(canvas){
+      const link = document.createElement('a');
+      link.download = 'seduta-'+sess.titolo.replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.png';
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link); link.click(); link.remove();
+      holder.remove();
+    }).catch(function(err){
+      console.error('export seduta image error', err);
+      alert('Esportazione immagine non riuscita.');
+      holder.remove();
+    });
+  });
+}
+function exportSchemaSessionPDF(){
+  const sess = state.schema.currentSession;
+  if(!sess) return;
+  exportPDF(sess.titolo, schemaSessionExportBodyHTML(sess));
+}
+async function shareSchemaSessionWhatsApp(){
+  const sess = state.schema.currentSession;
+  if(!sess) return;
+  const testo = 'Seduta: '+sess.titolo+(sess.rpe!=null?' (RPE '+sess.rpe+')':'')+' — '+sess.items.length+' esercizi, '+sess.durataTotale+' min.';
+  // Condivisione con immagine allegata: supportata solo dai browser con Web Share API
+  // "livello 2" (perlopiù mobile). Altrove si apre WhatsApp con solo il testo: l'immagine
+  // va allegata a mano dopo averla scaricata con "Esporta immagine".
+  if(navigator.share && navigator.canShare){
+    try{
+      await ensureHtml2CanvasPromise();
+      const holder = document.createElement('div');
+      holder.className = 'app-content schema-export';
+      holder.style.position = 'fixed'; holder.style.left = '-9999px'; holder.style.top = '0';
+      holder.style.width = '800px'; holder.style.padding = '20px';
+      const bgColor = getComputedStyle(document.body).backgroundColor || '#0B141C';
+      holder.style.background = bgColor;
+      holder.innerHTML = '<h1>'+esc(sess.titolo)+'</h1>' + schemaSessionExportBodyHTML(sess);
+      document.body.appendChild(holder);
+      const canvas = await html2canvas(holder, { backgroundColor: bgColor, scale: 2 });
+      holder.remove();
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      const file = new File([blob], 'seduta.png', { type:'image/png' });
+      if(navigator.canShare({ files:[file] })){
+        await navigator.share({ files:[file], title: sess.titolo, text: testo });
+        return;
+      }
+      await navigator.share({ title: sess.titolo, text: testo });
+      return;
+    }catch(err){
+      if(err && err.name==='AbortError') return; // utente ha annullato la condivisione
+      console.error('share seduta error', err);
+    }
+  }
+  window.open('https://wa.me/?text='+encodeURIComponent(testo), '_blank');
+}
+function ensureHtml2CanvasPromise(){
+  return new Promise((resolve, reject)=>{
+    if(typeof html2canvas !== 'undefined'){ resolve(); return; }
+    reject(new Error('html2canvas non disponibile'));
+  });
+}
+
 /* ---------- init ---------- */
 document.addEventListener('click', hideContextMenu);
 renderView();
-loadData();
+loadData().then(refreshSchemaNotifiche);
 window.addEventListener('beforeunload', function(e){
   if(state.players.length || state.matches.length || state.allenamenti.length){
     e.preventDefault();
