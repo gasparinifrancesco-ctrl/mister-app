@@ -2,12 +2,22 @@ import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
 import { getPastAllenamentoIds } from '@/lib/schemaAllenamenti';
 
+const SCHEMA_CATEGORIE_VALIDE = new Set([
+  '',
+  'riscaldamento',
+  'tecnica-individuale',
+  'tecnica-collettiva',
+  'tattica',
+  'finalizzazione',
+  'partita-tema',
+  'portieri',
+]);
+
 async function loadExercise(id, userId, pastAllenamentoIds) {
   return prisma.exercise.findFirst({
     where: { id, userId },
     include: {
       note: { orderBy: { data: 'desc' } },
-      valutazioni: { orderBy: { data: 'desc' } },
       livelli: {
         orderBy: { ordine: 'asc' },
         include: {
@@ -24,9 +34,6 @@ async function loadExercise(id, userId, pastAllenamentoIds) {
 }
 
 function withComputed(exercise) {
-  const votoMedio = exercise.valutazioni.length
-    ? Math.round((exercise.valutazioni.reduce((s, r) => s + r.voto, 0) / exercise.valutazioni.length) * 10) / 10
-    : null;
   let minutiTotaliStagione = 0;
   let utilizzi = 0;
   const livelli = exercise.livelli.map((l) => {
@@ -38,7 +45,7 @@ function withComputed(exercise) {
     const { sessionItems, ...rest } = l;
     return rest;
   });
-  return { ...exercise, livelli, votoMedio, minutiTotaliStagione, utilizzi };
+  return { ...exercise, livelli, minutiTotaliStagione, utilizzi };
 }
 
 export async function GET(request, { params }) {
@@ -73,6 +80,19 @@ export async function PATCH(request, { params }) {
   if (typeof body.numeroGiocatoriBase !== 'undefined') data.numeroGiocatoriBase = Number(body.numeroGiocatoriBase);
   if (typeof body.larghezzaCampo !== 'undefined') data.larghezzaCampo = Number(body.larghezzaCampo);
   if (typeof body.lunghezzaCampo !== 'undefined') data.lunghezzaCampo = Number(body.lunghezzaCampo);
+  if (typeof body.categoria === 'string') {
+    if (!SCHEMA_CATEGORIE_VALIDE.has(body.categoria)) {
+      return Response.json({ error: 'categoria non valida' }, { status: 400 });
+    }
+    data.categoria = body.categoria;
+  }
+  if (typeof body.votoPreferenza !== 'undefined') {
+    const voto = body.votoPreferenza === null || body.votoPreferenza === '' ? null : Number(body.votoPreferenza);
+    if (voto !== null && (!Number.isInteger(voto) || voto < 1 || voto > 5)) {
+      return Response.json({ error: 'votoPreferenza deve essere un intero 1-5' }, { status: 400 });
+    }
+    data.votoPreferenza = voto;
+  }
 
   await prisma.exercise.update({ where: { id }, data });
   const pastAllenamentoIds = await getPastAllenamentoIds(session.userId);

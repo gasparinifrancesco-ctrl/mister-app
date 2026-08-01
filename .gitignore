@@ -45,3 +45,4 @@ next-env.d.ts
 # local sqlite database (real user data, not code)
 *.db
 *.db-journal
+*.db.backup_*

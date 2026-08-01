@@ -10,7 +10,7 @@ export default function RegisterPage() {
   return (
     <div className="auth-page">
       <div className="card auth-card">
-        <h2>United Carpi — Crea account</h2>
+        <h2>Mister — Crea account</h2>
         <form action={action}>
           <div className="field">
             <label htmlFor="email">Email</label>

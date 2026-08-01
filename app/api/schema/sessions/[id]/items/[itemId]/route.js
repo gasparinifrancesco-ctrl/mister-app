@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
-import { isSchemaSessionLocked } from '@/lib/schemaAllenamenti';
 
 async function ownedItem(sessionId, itemId, userId) {
   const item = await prisma.sessionItem.findFirst({
@@ -18,10 +17,6 @@ export async function PATCH(request, { params }) {
 
   const existing = await ownedItem(id, itemId, session.userId);
   if (!existing) return Response.json({ error: 'not found' }, { status: 404 });
-
-  if (await isSchemaSessionLocked(existing.session, session.userId)) {
-    return Response.json({ error: 'Seduta già svolta: non è più possibile modificare gli esercizi inclusi.' }, { status: 400 });
-  }
 
   let body;
   try {
@@ -47,10 +42,6 @@ export async function DELETE(request, { params }) {
 
   const existing = await ownedItem(id, itemId, session.userId);
   if (!existing) return Response.json({ error: 'not found' }, { status: 404 });
-
-  if (await isSchemaSessionLocked(existing.session, session.userId)) {
-    return Response.json({ error: 'Seduta già svolta: non è più possibile modificare gli esercizi inclusi.' }, { status: 400 });
-  }
 
   await prisma.sessionItem.delete({ where: { id: itemId } });
   return Response.json({ ok: true });

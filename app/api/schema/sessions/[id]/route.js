@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
-import { getPastAllenamentoIds, schemaSessionStato, isSchemaSessionLocked } from '@/lib/schemaAllenamenti';
+import { getPastAllenamentoIds, schemaSessionStato } from '@/lib/schemaAllenamenti';
 
 async function loadSession(id, userId) {
   return prisma.session.findFirst({
@@ -58,22 +58,14 @@ export async function PATCH(request, { params }) {
     return Response.json({ error: 'invalid json body' }, { status: 400 });
   }
 
-  const locked = await isSchemaSessionLocked(existing, session.userId);
-  if (locked) {
-    const disallowed = ['titolo', 'obiettivoId', 'allenamentoId'].some((k) => typeof body[k] !== 'undefined');
-    if (disallowed) {
-      return Response.json({ error: 'La seduta è già stata svolta: puoi modificare solo RPE e note.' }, { status: 400 });
-    }
-  }
-
+  // Una seduta resta modificabile anche dopo essere stata svolta: lo stato eseguita/
+  // programmata/bozza è solo un'informazione derivata dal calendario, non un blocco.
   const data = {};
   if (typeof body.note === 'string') data.note = body.note;
   if (typeof body.rpe !== 'undefined') data.rpe = body.rpe === null || body.rpe === '' ? null : Number(body.rpe);
-  if (!locked) {
-    if (typeof body.titolo === 'string') data.titolo = body.titolo;
-    if (typeof body.obiettivoId !== 'undefined') data.obiettivoId = body.obiettivoId || null;
-    if (typeof body.allenamentoId !== 'undefined') data.allenamentoId = body.allenamentoId || null;
-  }
+  if (typeof body.titolo === 'string') data.titolo = body.titolo;
+  if (typeof body.obiettivoId !== 'undefined') data.obiettivoId = body.obiettivoId || null;
+  if (typeof body.allenamentoId !== 'undefined') data.allenamentoId = body.allenamentoId || null;
 
   await prisma.session.update({ where: { id }, data });
   const row = await loadSession(id, session.userId);

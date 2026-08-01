@@ -37,6 +37,7 @@ export default function AppShell({ email, schemaUnlocked, stagione }) {
       <div className="app-frame">
         <aside className="sidebar">
           <div className="sidebar-brand">
+            <span className="app-brand-tag">Mister</span>
             <button className="brand-title brand-title-btn" onClick={() => window.openStagioni && window.openStagioni()} title="Gestisci stagioni">
               {stagione?.societa || "Società non impostata"}
             </button>

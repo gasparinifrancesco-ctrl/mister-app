@@ -1,6 +1,5 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
-import { isSchemaSessionLocked } from '@/lib/schemaAllenamenti';
 
 export async function POST(request, { params }) {
   const session = await getSchemaSessionOrNull();
@@ -9,10 +8,6 @@ export async function POST(request, { params }) {
 
   const existingSession = await prisma.session.findFirst({ where: { id, userId: session.userId } });
   if (!existingSession) return Response.json({ error: 'not found' }, { status: 404 });
-
-  if (await isSchemaSessionLocked(existingSession, session.userId)) {
-    return Response.json({ error: 'Seduta già svolta: non è più possibile modificare gli esercizi inclusi.' }, { status: 400 });
-  }
 
   let body;
   try {

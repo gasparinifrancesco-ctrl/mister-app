@@ -26,7 +26,16 @@
   }
   h1,h2,h3,h4{ font-family: 'Oswald', sans-serif; font-weight: 600; letter-spacing: 0.01em; margin: 0 0 12px; color: var(--chalk); }
   h2{ font-size: 1.15rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  /* Titoli che mostrano un dato specifico (nome esercizio, avversario, nome seduta...)
+     invece di un'etichetta di sezione fissa: niente maiuscolo/spaziatura, cosi si
+     distinguono dalle vere intestazioni strutturali e si leggono come un nome, non
+     come un'etichetta che "urla". Compensato con un filo di dimensione in più. */
+  h2.content-title{ text-transform:none; letter-spacing:normal; font-size:1.22rem; }
   h3{ font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); margin-top: 18px; }
+  /* Il margin-top serve solo a staccare h3 dal contenuto che lo precede: quando è il
+     primo elemento del suo contenitore (card, modale...) non serve, e senza questa
+     regola andrebbe ripetuto a mano style="margin-top:0" in decine di punti diversi. */
+  h3:first-child{ margin-top:0; }
   h4{ font-size: 0.85rem; color: var(--text-dim); margin-top: 14px; }
   a{ color: var(--accent); }
   .print-only{ display:none; }
@@ -38,6 +47,7 @@
     display:flex; flex-direction:column; position:sticky; top:0; align-self:flex-start; height:100vh; overflow-y:auto;
   }
   .sidebar-brand{ padding: 18px 18px 16px; border-bottom:1px solid var(--border); margin-bottom:8px; }
+  .sidebar-brand .app-brand-tag{ display:block; font-family:'Oswald',sans-serif; font-weight:600; font-size:0.66rem; letter-spacing:0.12em; text-transform:uppercase; color: var(--accent); margin-bottom:6px; }
   .sidebar-brand .brand-title{ display:block; font-family:'Oswald',sans-serif; font-weight:700; font-size:1.05rem; letter-spacing:0.02em; color: var(--chalk); line-height:1.25; }
   .sidebar-brand .brand-title-btn{ background:none; border:none; padding:0; text-align:left; cursor:pointer; width:100%; }
   .sidebar-brand .brand-title-btn:hover{ color: var(--accent); }
@@ -69,9 +79,9 @@
     padding:9px 26px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   }
   .next-match-tag{ font-family:'Oswald',sans-serif; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-dim); }
-  .next-match-opponent{ font-size:0.88rem; color:var(--chalk); }
+  .next-match-opponent{ font-size:0.88rem; font-weight:700; color:var(--chalk); background:none; border:none; padding:0; cursor:pointer; font-family:inherit; }
+  .next-match-opponent:hover{ color:var(--accent); text-decoration:underline; }
   .next-match-when{ font-size:0.82rem; color:var(--text-dim); }
-  .next-match-goto{ margin-left:auto; }
   .next-match-empty{ font-size:0.82rem; color:var(--text-dim); }
 
   @media (max-width: 760px){
@@ -85,6 +95,19 @@
     .sidebar-backup .btn{ width:auto; white-space:nowrap; }
     .app-content{ padding: 16px 16px 60px; }
     .next-match-bar{ padding:8px 16px; }
+  }
+  /* Su schermi da telefono la barra orizzontale sopra (marchio + le 6 voci di
+     navigazione) non ci sta tutta: il blocco marchio da solo occupava più metà di uno
+     schermo da 375px, lasciando alle voci di navigazione uno spazio minimo e costringendo
+     a scorrere per raggiungerne quasi tutte. Qui si comprime il marchio (solo nome club,
+     niente sottotitolo/badge stagione/email) e si stringono i pulsanti di navigazione, così
+     restano leggibili senza scorrimento nella maggior parte dei casi — lo scorrimento
+     orizzontale resta comunque disponibile come rete di sicurezza. */
+  @media (max-width: 480px){
+    .sidebar-brand{ padding:10px 12px; display:flex; flex-direction:column; justify-content:center; }
+    .sidebar-brand .brand-subtitle, .sidebar-brand .season-badge, .sidebar-brand .sidebar-user-email{ display:none; }
+    .side-nav-btn{ padding:6px 8px; font-size:0.72rem; gap:4px; }
+    .side-nav-btn svg{ width:18px; height:18px; }
   }
 
   .view-content{ display:flex; flex-direction:column; gap: 16px; }
@@ -107,6 +130,12 @@
   .field{ display:flex; flex-direction:column; gap:5px; }
   .field-grow{ flex:1; min-width: 180px; }
   .field label{ font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
+  /* Ritmo verticale uniforme tra un gruppo campo/riga e il successivo: senza, la label
+     resta "attaccata" a ciò che la precede mentre lo spazio verso il basso è lasciato al
+     caso. Solo sui .field usati come blocco a sé stante (diretti figli di .card), non su
+     quelli dentro una .form-row dove servirebbe a rompere l'allineamento orizzontale. */
+  .form-row:not(:last-child){ margin-bottom:14px; }
+  .card > .field:not(:last-child){ margin-bottom:14px; }
   input, select, textarea{
     background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
     font-family:'Inter',sans-serif; font-size: 0.92rem; padding: 9px 10px; border-radius: 7px;
@@ -115,7 +144,9 @@
   input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible{
     border-color: var(--accent); box-shadow: 0 0 0 2px rgba(62,143,214,0.28);
   }
-  textarea{ font-family:'Inter',sans-serif; resize: vertical; width:100%; }
+  /* Autodimensionate via JS (vedi autosizeTextarea in app.js): niente resize manuale,
+     l'altezza segue sempre il contenuto cosi il testo ha sempre margini giusti. */
+  textarea{ font-family:'Inter',sans-serif; resize: none; overflow: hidden; width:100%; }
   input[type="number"]{ width: 90px; }
   input[type="date"]{ width: 150px; }
   .btn{
@@ -202,10 +233,23 @@
 
   /* schema */
   .schema-exercise-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin-top:12px; }
-  .schema-exercise-card{ background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:12px; cursor:pointer; display:flex; flex-direction:column; gap:6px; transition:border-color .15s; }
+  .schema-exercise-card{ background:var(--panel-2); border:1px solid var(--border); border-left:4px solid var(--border); border-radius:8px; padding:0; overflow:hidden; cursor:pointer; display:flex; flex-direction:column; transition:border-color .15s; }
   .schema-exercise-card:hover{ border-color:var(--accent-dim); }
+  .schema-exercise-card-thumb{ line-height:0; }
+  .schema-exercise-card-thumb .schema-field-svg-thumb{ pointer-events:none; max-height:130px; }
+  .schema-exercise-card-body{ display:flex; flex-direction:column; gap:6px; padding:12px; }
+  /* Versione compatta: stessa anteprima della libreria ma più piccola, usata dove si
+     sceglie un esercizio da aggiungere (costruttore seduta). */
+  .schema-exercise-grid-compact{ grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; }
+  .schema-exercise-card-compact .schema-field-svg-thumb{ max-height:70px; }
+  .schema-exercise-card-compact .schema-exercise-card-body{ padding:8px; gap:3px; }
+  .schema-exercise-card-compact .schema-exercise-card-head{ font-size:0.85rem; }
   .schema-exercise-card-head{ display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+  .schema-exercise-card-meta{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
   .schema-exercise-card-foot{ margin-top:auto; }
+  .schema-cat-chip{ display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:999px; color:#0B141C; white-space:nowrap; }
+  .schema-cat-filter-chip{ color:#0B141C; opacity:0.6; border:none; cursor:pointer; }
+  .schema-cat-filter-chip-active{ opacity:1; box-shadow:0 0 0 2px var(--text); }
   .schema-field-wrap{ max-width:520px; }
   .schema-field-svg{ background:#1E5631; }
   .schema-note-recent{ background:var(--panel-2); border:1px solid var(--accent-dim); border-radius:8px; padding:10px 12px; margin-bottom:10px; }
@@ -244,13 +288,81 @@
   .btn-icon{ display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; padding:0; }
   .schema-eraser-active .schema-chip{ cursor:crosshair; }
   .schema-eraser-active .schema-arrow{ cursor:crosshair; }
+  .schema-eraser-active .schema-zone{ cursor:crosshair; }
+  .schema-zone{ cursor:grab; }
+  .schema-arrow-handle{ opacity:0; transition:opacity 0.12s; }
+  .schema-arrow:hover .schema-arrow-handle{ opacity:0.5; }
+  .schema-arrow-handle:hover{ opacity:0.95 !important; }
   .schema-picker-overlay{ position:fixed; inset:0; z-index:2000; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; }
   .schema-picker-box{ background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; max-width:360px; width:90%; box-shadow:0 12px 32px rgba(0,0,0,0.5); }
   .schema-picker-options{ display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
-  .schema-export-pitch{ max-width:220px; margin:10px 0; }
-  .schema-export-item{ border-top:1px solid var(--border); padding-top:12px; margin-top:12px; }
+  .schema-export-pitch{ max-width:640px; margin:10px 0; }
+  /* Layout per esercizio nell'anteprima/esportazione: testo a sinistra, disegno a
+     destra, per sfruttare meglio lo spazio orizzontale in stampa. */
+  .schema-export-item{ display:flex; gap:16px; align-items:flex-start; border-top:1px solid var(--border); padding-top:12px; margin-top:12px; }
   .schema-export-item:first-of-type{ border-top:none; margin-top:0; }
+  .schema-export-item-text{ flex:1; min-width:0; }
+  .schema-export-item-diagram{ flex-shrink:0; width:260px; margin-top:0; }
   .schema-export-field{ max-width:360px; margin-top:8px; }
+  @media (max-width:640px){ .schema-export-item{ flex-direction:column; } .schema-export-item-diagram{ width:100%; } }
+  .schema-dim-input{ width:52px; text-align:center; }
+  .schema-toolbar-divider{ width:1px; height:24px; background:var(--border); margin:0 4px; }
+  .schema-session-preview{ background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px; }
+  .schema-lineup-pitch .piano-pitch-card{ cursor:default; }
+  .schema-pick-available{ color:var(--success); }
+  .schema-pick-absent{ color:var(--danger); text-decoration:line-through; opacity:0.75; }
+  /* Versione "stampa" del campo ruoli coperti: sfondo bianco, card chiare invece delle
+     card scure semitrasparenti dell'editor live, per un minimo di inchiostro. */
+  .schema-lineup-pitch-print{ background:#FFFFFF; border-color:#ccc; }
+  .schema-lineup-card-print{ background:#FFFFFF; border:1px solid #ccc; box-shadow:none; }
+  .schema-lineup-card-print .piano-pitch-role{ background:#eee; color:#333; }
+  .schema-lineup-card-print .piano-pitch-compact-row{ color:#222; }
+  .schema-lineup-card-print .piano-pitch-compact-row-0{ color:#111; }
+  .schema-lineup-card-print .piano-pitch-empty{ color:#999; }
+  .schema-lineup-card-print .piano-pitch-tier{ color:#999; }
+
+  /* Esportazione/stampa seduta (immagine, PDF, condivisione): sempre sfondo bianco, testo
+     grande e leggibile. Invece di rimpicciolire tutto per stare su una sola facciata, il
+     contenuto è impaginato su più fogli A4 (vedi schemaSessionExportPages in app.js): 2
+     esercizi sul primo foglio (che ha già meta+ruoli coperti), 3 sui successivi. Le
+     variabili vengono ridefinite localmente cosi ogni elemento annidato che le usa
+     (pillole categoria, disponibile/assente, bordi) resta leggibile su bianco senza
+     dover toccare ogni singola classe una per una. */
+  .schema-print-page{
+    --text:#161616; --text-dim:#5a5a5a; --border:#cfcfcf; --panel-2:#f6f6f6;
+    --success:#1f7a4d; --danger:#b3392f; --chalk:#161616; --accent:#2a5f8f;
+    color:#161616; font-family: Arial, Helvetica, sans-serif;
+  }
+  /* Un foglio = una pagina reale, in proporzione A4: l'anteprima a schermo nel
+     costruttore seduta usa la stessa identica classe dell'esportazione, cosi è
+     letteralmente la foto di quello che poi viene stampato/esportato. */
+  .schema-print-sheet{
+    background:#FFFFFF; width:210mm; min-height:297mm; padding:14mm; box-sizing:border-box;
+    margin:0 auto 18px; box-shadow:0 3px 14px rgba(0,0,0,0.35);
+    font-size:12px; line-height:1.4;
+  }
+  .schema-print-sheet:last-child{ margin-bottom:0; }
+  .schema-print-sheet h1{ font-size:23px; margin:0 0 8px; color:#161616; text-transform:none; letter-spacing:normal; }
+  .schema-print-page-header{ font-size:11px; color:#666; margin-bottom:10px; padding-bottom:5px; border-bottom:1px solid #ccc; }
+  .schema-print-sheet h2{ font-size:16px; margin:14px 0 6px; color:#161616; text-transform:none; letter-spacing:normal; border-bottom:1px solid #ccc; padding-bottom:3px; }
+  .schema-print-sheet h3{ font-size:14px; margin:0 0 4px; color:#161616; text-transform:none; letter-spacing:normal; }
+  .schema-print-sheet p{ margin:3px 0; }
+  .schema-print-sheet em{ font-size:12px; }
+  /* Formattazione manuale dello svolgimento (click destro su testo selezionato nella
+     textarea): niente colore, solo dimensione/peso, cosi resta leggibile anche in
+     stampa in bianco e nero. */
+  .rt-big{ font-size:1.25em; font-weight:600; }
+  .schema-print-sheet .hint{ font-size:11px; }
+  .schema-print-sheet .schema-export-item{ padding-top:10px; margin-top:10px; gap:18px; }
+  .schema-print-sheet .schema-export-item-diagram{ width:270px; }
+  .schema-print-sheet .schema-export-field{ margin-top:4px; }
+  .schema-print-sheet .schema-export-pitch{ max-width:460px; margin:6px 0; }
+  .schema-print-sheet .schema-cat-chip{ font-size:10px; padding:2px 7px; }
+  .schema-print-sheet .piano-pitch-card{ width:80px; padding:3px 4px; }
+  .schema-print-sheet .piano-pitch-card-head{ padding-bottom:2px; margin-bottom:2px; }
+  .schema-print-sheet .piano-pitch-role{ font-size:9px; padding:0 4px; }
+  .schema-print-sheet .piano-pitch-compact-row{ font-size:9px; }
+  .schema-print-sheet .piano-pitch-tier{ font-size:8px; width:8px; }
 
   /* match header + tabs */
   .match-header{ display:flex; flex-direction:column; gap:6px; }
@@ -369,12 +481,47 @@
   .cal-event-sub{ display:block; font-size:0.6rem; opacity:0.85; font-weight:400; }
   @media (max-width:700px){ .cal-cell{ min-height:56px; padding:4px; } .cal-headcell{ font-size:0.55rem; } .cal-event{ font-size:0.6rem; padding:2px 4px; } }
 
+  /* export "Calendario Preparazione": stessi stili sia per la cattura immagine (fuori
+     schermo, mai in stampa) sia per il PDF dentro #print-area — colori sempre presenti
+     (print-color-adjust) perché per stampa i browser altrimenti li rimuovono di default. */
+  .cal-print-wrap{ background:#fff; color:#161616; font-family: Arial, Helvetica, sans-serif; padding:16px; }
+  .cal-print-wrap h1{ font-size:20px; margin:0 0 4px; color:#161616; }
+  .cal-print-wrap .cal-print-period{ font-size:13px; color:#5a5a5a; margin:0 0 14px; }
+  .cal-print-table{ width:100%; border-collapse:collapse; font-size:12px; }
+  .cal-print-table th, .cal-print-table td{
+    border:1px solid #999; padding:4px 8px; text-align:left;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .cal-print-table th{ background:#2a2a2a; color:#fff; }
+  .cal-print-row-allenamento td{ background:#d9d9d9; }
+  .cal-print-row-amichevole td{ background:#bfe8c8; }
+  .cal-print-row-campionato td{ background:#f3bfd0; }
+  .cal-print-row-riposo td{ background:#ffffff; }
+  .cal-print-legend{ margin-top:10px; font-size:11px; color:#5a5a5a; display:flex; gap:14px; flex-wrap:wrap; }
+  .cal-print-legend span{ display:inline-flex; align-items:center; gap:5px; }
+  .cal-print-legend i{ width:10px; height:10px; display:inline-block; border:1px solid #999; }
+
+  /* scheda statistiche giocatore (export immagine da Rosa, tasto destro sul nome) */
+  .player-stats-card{ width:440px; box-sizing:border-box; padding:22px; }
+  .player-stats-card h1{ font-size:21px; margin:0 0 4px; }
+  .player-stats-card .player-stats-sub{ font-size:12px; color:var(--text-dim); margin:0 0 12px; }
+  .player-stats-card .player-stats-rating{ margin-bottom:16px; }
+  .player-stats-table{ width:100%; border-collapse:collapse; font-size:13px; }
+  .player-stats-table td{ border-bottom:1px solid var(--border); padding:7px 4px; }
+  .player-stats-table td:first-child{ color:var(--text-dim); }
+  .player-stats-table td:last-child{ text-align:right; font-weight:600; }
+  .player-stats-note{ margin-top:14px; font-size:12px; color:var(--text-dim); font-style:italic; }
+
   @media (prefers-reduced-motion: reduce){ *{ transition: none !important; } }
   @media (max-width: 560px){
     .rosa-table th, .rosa-table td{ font-size:0.66rem; padding:5px 3px; }
   }
 
   @media print{
+    /* Margine 0 sulla pagina fisica: ogni .schema-print-sheet ha il proprio padding
+       interno (12mm) che fa già da margine, cosi la dimensione è la stessa, precisa,
+       sia a schermo sia in stampa invece di dipendere anche dal margine del browser. */
+    @page{ size: A4; margin: 0; }
     body > .app-frame{ display:none !important; }
     #print-area{ display:block !important; color:#000; background:#fff; font-family: Arial, sans-serif; padding: 10px; }
     #print-area h1{ font-family: Arial, sans-serif; color:#000; font-size: 20px; margin-bottom:4px; }
@@ -382,4 +529,18 @@
     #print-area p{ margin: 4px 0; }
     .print-table{ width:100%; border-collapse: collapse; margin-top:6px; }
     .print-table th, .print-table td{ border:1px solid #999; padding:4px 8px; font-size:12px; text-align:left; }
+    /* La seduta Schema si stampa su più fogli A4 reali (vedi .schema-print-sheet sopra):
+       dentro #print-area serve più specificità di #print-area h1/h2/p per vincere sulle
+       regole generiche sopra, niente ombra/margine finto e interruzione di pagina vera
+       tra un foglio e l'altro. */
+    #print-area{ padding:0; }
+    #print-area .schema-print-page{ width:auto; max-width:none; padding:0; }
+    #print-area .schema-print-sheet{
+      width:auto; min-height:0; box-shadow:none; margin:0; padding:12mm; box-sizing:border-box;
+      page-break-after:always; break-after:page;
+    }
+    #print-area .schema-print-sheet:last-child{ page-break-after:auto; break-after:auto; }
+    #print-area .schema-print-sheet h1{ font-size:23px; margin-bottom:8px; }
+    #print-area .schema-print-sheet h2{ font-size:16px; margin-top:14px; }
+    #print-area .schema-print-sheet p{ margin:3px 0; }
   }

@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "United Carpi (Juniores èlite) — 2026/27",
-  description: "Gestione stagionale rosa, convocazioni, formazioni tattiche e statistiche",
+  title: "Mister",
+  description: "Il gestionale per l'allenatore dilettante: rosa, formazioni, calendario, allenamenti e statistiche in un unico posto",
 };
 
 export default function RootLayout({ children }) {

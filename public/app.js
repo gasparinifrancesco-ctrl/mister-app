@@ -40,6 +40,27 @@ const FORMATIONS = {
 };
 const FORMATION_KEYS = Object.keys(FORMATIONS);
 const SCHEMA_COLORS = ['#4FA8E0','#E0574F','#F2C94C','#6FCF7A'];
+// Fase di allenamento a scelta vincolata (non etichetta libera): stesse chiavi validate
+// server-side in app/api/schema/exercises/route.js e [id]/route.js.
+const SCHEMA_CATEGORIE = [
+  { key:'riscaldamento', label:'Riscaldamento', color:'#F2C94C' },
+  { key:'tecnica-individuale', label:'Tecnica individuale', color:'#4FA8E0' },
+  { key:'tecnica-collettiva', label:'Tecnica collettiva / possesso', color:'#6FCF7A' },
+  // Viola e rosso originali erano al limite del contrasto minimo con il testo scuro dei
+  // chip (~4.9-5:1 su sfondo AA richiesto 4.5:1): schiariti per avere più margine (~7:1),
+  // non scuriti — un colore più scuro abbasserebbe ulteriormente il contrasto col testo scuro.
+  { key:'tattica', label:'Tattica / fasi di gioco', color:'#B591DE' },
+  { key:'finalizzazione', label:'Finalizzazione', color:'#E67F78' },
+  { key:'partita-tema', label:'Partita a tema', color:'#E08A4F' },
+  { key:'portieri', label:'Portieri', color:'#4FD1C5' },
+];
+function schemaCategoriaInfo(key){
+  return SCHEMA_CATEGORIE.find(c=>c.key===key) || null;
+}
+function schemaCategoriaOptionsHTML(selected){
+  return '<option value="" '+(!selected?'selected':'')+'>Non categorizzato</option>' +
+    SCHEMA_CATEGORIE.map(c=>'<option value="'+c.key+'" '+(c.key===selected?'selected':'')+'>'+esc(c.label)+'</option>').join('');
+}
 const STAGIONE_LIVELLI = {
   'Prima Squadra': ['Terza Categoria','Seconda Categoria','Prima Categoria','Promozione','Eccellenza','Serie D','Serie C','Serie B','Serie A','Altro'],
   'Juniores': ['Provinciale','Regionale','Élite','Nazionale','Altro'],
@@ -95,6 +116,7 @@ let state = {
     tagsLoaded: false,
     filterSearch: '',
     filterTags: [],
+    filterCategoria: '',
     currentExercise: null,
     activeLivelloId: null,
     currentSession: null,
@@ -104,11 +126,23 @@ let state = {
     activeColor: SCHEMA_COLORS[0],
     activeLineType: 'passaggio',
     livelloPicker: null,
+    duplicatePicker: null,
   }
 };
 let modalConfirmCallback = null;
 
 function uid(){ return Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4); }
+// Textarea autodimensionate: nessun resize manuale (vedi CSS), l'altezza segue sempre il
+// contenuto. Un unico listener 'input' delegato + un MutationObserver sul body coprono
+// ogni textarea dell'app (descrizioni, note...) senza dover toccare ogni singolo punto
+// di rendering: qualunque innerHTML che inietta una textarea viene intercettato qui.
+function autosizeTextarea(el){
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+function autosizeAllTextareas(root){
+  (root || document).querySelectorAll('textarea').forEach(autosizeTextarea);
+}
 function esc(s){
   if(s===undefined || s===null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -427,8 +461,14 @@ function renderView(){
     container.innerHTML = renderMatchView();
     renderMatchTab();
   } else if(state.currentView==='schema'){
+    const prevScrollY = window.scrollY;
     container.innerHTML = renderSchemaView();
     attachSchemaInteractions();
+    // requestAnimationFrame, non una chiamata sincrona: il MutationObserver che
+    // autodimensiona le textarea (vedi fondo file) scatta come microtask DOPO questo
+    // punto e cambia l'altezza della pagina, vanificando un ripristino immediato dello
+    // scroll — bisogna aspettare che anche quel ridimensionamento sia avvenuto.
+    requestAnimationFrame(function(){ window.scrollTo(0, prevScrollY); });
   } else if(state.currentView==='stagioni'){
     container.innerHTML = renderStagioniView();
   }
@@ -444,7 +484,7 @@ const SIDE_NAV_ICONS = {
   schema: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>'
 };
 const SIDE_NAV_LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
-const SIDE_NAV_LABELS = { calendario:'Calendario', pianoSquadra:'Piano Squadra', formazione:'Formazione', rosa:'Rosa', statistiche:'Statistiche', schema:'Schema' };
+const SIDE_NAV_LABELS = { calendario:'Calendario', pianoSquadra:'Piano Squadra', formazione:'Formazione', rosa:'Rosa', statistiche:'Statistiche', schema:'Allenamenti' };
 const DEFAULT_SIDE_NAV_ORDER = ['calendario','formazione','pianoSquadra','rosa','statistiche','schema'];
 function currentSideNavOrder(){
   const stored = state.sideNavOrder;
@@ -484,7 +524,7 @@ function renderSideNav(){
   attachSideNavDrag();
 }
 function showSchemaLockedHint(){
-  alert('Modulo Schema in arrivo — non ancora disponibile su questo account.');
+  alert('Modulo Allenamenti in arrivo — non ancora disponibile su questo account.');
 }
 let sideNavDragKey = null;
 function attachSideNavDrag(){
@@ -629,7 +669,7 @@ function renderRosaRow(r, mode){
     '</tr>';
   }
   const starOptions = [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>'<option value="'+v+'" '+(Number(r.valutazione||0)===v?'selected':'')+'>'+v.toFixed(1)+'</option>').join('');
-  const cells = { nome: '<td>'+esc(displayName(r.nome))+'</td>' };
+  const cells = { nome: '<td oncontextmenu="showRosaPlayerContextMenu(event,\''+r.id+'\')" title="Clic destro per esportare le statistiche">'+esc(displayName(r.nome))+'</td>' };
   cells.ruolo = '<td>'+esc(r.ruolo)+'</td>';
   cells.secondoRuolo = '<td>'+esc(r.secondoRuolo)+'</td>';
   cells.eta = '<td>'+(computeAge(r.annoNascita)!=null?computeAge(r.annoNascita):'-')+'</td>';
@@ -689,21 +729,25 @@ function updatePlayerCheckboxField(playerId, field, checked){
   savePlayers();
   renderView();
 }
+function computePlayerStatsRow(playerId, stats){
+  const p = state.players.find(pl=>pl.id===playerId);
+  if(!p) return null;
+  stats = stats || computeSeasonStats();
+  const st = stats.perPlayer[p.id] || {};
+  return {
+    id: p.id, nome: p.nome, ruolo: p.ruolo, secondoRuolo: p.secondoRuolo||'', piede: p.piede||'', annoNascita: p.annoNascita||null,
+    aggregatoPrimaSquadra: !!p.aggregatoPrimaSquadra,
+    eta: computeAge(p.annoNascita), valutazione: p.valutazione||0, note: p.note||'',
+    convocazioni: st.convocazioni||0, titolare: st.titolare||0, subentrato: st.subentrato||0,
+    minuti: st.minutiTot||0, gol: st.gol||0, golSubiti: st.golSubiti||0, assist: st.assist||0,
+    gialli: st.gialli||0, rossi: st.rossi||0,
+    votoMedio: st.votiCount ? (st.votiSum/st.votiCount) : null,
+    percentPresenza: computePresenzaPercent(p.id)
+  };
+}
 function renderRosaView(){
   const stats = computeSeasonStats();
-  let rows = state.players.map(p=>{
-    const st = stats.perPlayer[p.id] || {};
-    return {
-      id: p.id, nome: p.nome, ruolo: p.ruolo, secondoRuolo: p.secondoRuolo||'', piede: p.piede||'', annoNascita: p.annoNascita||null,
-      aggregatoPrimaSquadra: !!p.aggregatoPrimaSquadra,
-      eta: computeAge(p.annoNascita), valutazione: p.valutazione||0, note: p.note||'',
-      convocazioni: st.convocazioni||0, titolare: st.titolare||0, subentrato: st.subentrato||0,
-      minuti: st.minutiTot||0, gol: st.gol||0, golSubiti: st.golSubiti||0, assist: st.assist||0,
-      gialli: st.gialli||0, rossi: st.rossi||0,
-      votoMedio: st.votiCount ? (st.votiSum/st.votiCount) : null,
-      percentPresenza: computePresenzaPercent(p.id)
-    };
-  });
+  let rows = state.players.map(p=>computePlayerStatsRow(p.id, stats));
   const sort = state.rosaSort || { column:'nome', dir:'asc' };
   rows.sort((a,b)=>rosaCompare(a,b,sort.column,sort.dir));
 
@@ -1068,7 +1112,7 @@ function renderMatchView(){
   '<div class="match-header">' +
     '<button class="btn-link" onclick="backToCalendario()">← Calendario</button>' +
     '<div class="match-header-main">' +
-      '<h2>vs ' + esc(match.avversario) + '</h2>' +
+      '<h2 class="content-title">vs ' + esc(match.avversario) + '</h2>' +
       '<div class="match-header-fields">' +
         '<input type="date" value="' + esc(match.data) + '" onchange="updateMatchField(\'' + match.id + '\',\'data\',this.value)">' +
         '<input type="time" value="' + esc(match.ora||'') + '" onchange="updateMatchField(\'' + match.id + '\',\'ora\',this.value)">' +
@@ -1258,7 +1302,23 @@ function exportConvocatiPDF(matchId){
 }
 
 /* ---------- lavagne: campo, sagome, frecce ---------- */
-function pitchMarkingsSVG(){
+function pitchMarkingsSVG(light){
+  if(light){
+    // Campo a sfondo bianco/grigio, senza le bande verdi: risparmia inchiostro in stampa
+    // (anteprima/esportazione seduta) rispetto al campo verde usato nell'editor live.
+    return '<rect x="1" y="1" width="66" height="103" fill="#FFFFFF" stroke="#888" stroke-width="0.4"/>' +
+      '<line x1="1" y1="52.5" x2="67" y2="52.5" stroke="#888" stroke-width="0.4"/>' +
+      '<circle cx="34" cy="52.5" r="9.15" fill="none" stroke="#888" stroke-width="0.4"/>' +
+      '<circle cx="34" cy="52.5" r="0.35" fill="#888"/>' +
+      '<rect x="13.84" y="1" width="40.32" height="16.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
+      '<rect x="24.84" y="1" width="18.32" height="5.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
+      '<circle cx="34" cy="12.5" r="0.35" fill="#888"/>' +
+      '<path d="M 25.5 17.5 A 9.15 9.15 0 0 0 42.5 17.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
+      '<rect x="13.84" y="87.5" width="40.32" height="16.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
+      '<rect x="24.84" y="98.5" width="18.32" height="5.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
+      '<circle cx="34" cy="92.5" r="0.35" fill="#888"/>' +
+      '<path d="M 25.5 87.5 A 9.15 9.15 0 0 1 42.5 87.5" fill="none" stroke="#888" stroke-width="0.4"/>';
+  }
   let bands = '';
   const n = 8, bandH = 103/n;
   for(let i=0;i<n;i++){
@@ -1898,7 +1958,7 @@ function computeSchemaNotifiche(){
   });
   (state.schema.sessions||[]).forEach(sess=>{
     if(sess.stato==='eseguita' && !sess.hasNote){
-      items.push({ type:'session', id:sess.id, label:'Note mancanti sulla seduta "'+sess.titolo+'"' });
+      items.push({ type:'session', id:sess.id, label:'Note mancanti sulla seduta "'+schemaSessionDisplayName(sess)+'"' });
     }
   });
   return items;
@@ -1945,9 +2005,8 @@ function renderNextMatchBar(){
   bar.innerHTML =
     '<span class="next-match-tag">Prossima partita</span>' +
     '<span class="pill ' + (nm.sede==='Trasferta'?'pill-muted':'') + '">' + esc(nm.sede||'Casa') + '</span>' +
-    '<strong class="next-match-opponent">vs ' + esc(nm.avversario||'—') + '</strong>' +
+    '<button type="button" class="next-match-opponent" onclick="openMatch(\''+nm.id+'\')" title="Apri la formazione">vs ' + esc(nm.avversario||'—') + '</button>' +
     '<span class="next-match-when">' + formatDate(nm.data) + (nm.ora?(' • '+esc(nm.ora)):'') + '</span>' +
-    '<button class="btn btn-small next-match-goto" onclick="openMatch(\''+nm.id+'\')">Apri</button>' +
     bell;
 }
 function exportDefaultFormationXLSX(){
@@ -2040,7 +2099,7 @@ function renderDefaultFormationCard(){
         '<h3>Riserve</h3><div id="default-formation-bench">' + benchDefaultHTML() + '</div>' +
       '</div>' +
       '<div>' +
-        '<div class="card-header-row"><h3 style="margin-top:0;">Rosa</h3>' +
+        '<div class="card-header-row"><h3>Rosa</h3>' +
           '<div class="pitch-actions">' +
             '<button class="btn btn-small ' + (sortMode==='ruolo'?'btn-active':'') + '" onclick="setDefaultFormationSort(\'ruolo\')">Ruolo</button>' +
             '<button class="btn btn-small ' + (sortMode==='numero'?'btn-active':'') + '" onclick="setDefaultFormationSort(\'numero\')">Selezione</button>' +
@@ -2453,7 +2512,7 @@ function renderAllenamentoView(){
   return '' +
   '<div class="match-header">' +
     '<button class="btn-link" onclick="backToCalendario()">← Calendario</button>' +
-    '<div class="match-header-main"><h2>Allenamento del ' + formatDate(a.data) + '</h2>' +
+    '<div class="match-header-main"><h2 class="content-title">Allenamento del ' + formatDate(a.data) + '</h2>' +
       '<div class="match-header-fields">' +
         '<input type="date" value="'+esc(a.data)+'" onchange="updateAllenamentoData(\''+a.id+'\',this.value)">' +
         '<input type="time" value="'+esc(a.ora||'')+'" onchange="updateAllenamentoOra(\''+a.id+'\',this.value)">' +
@@ -2517,7 +2576,7 @@ function showAddEventModal(dateStr){
   eventModalDate = dateStr;
   const box = document.getElementById('event-modal-box');
   box.innerHTML =
-    '<h3 style="margin-top:0;">Nuovo evento — ' + formatDate(dateStr) + '</h3>' +
+    '<h3>Nuovo evento — ' + formatDate(dateStr) + '</h3>' +
     '<div class="form-row" style="margin-bottom:14px;">' +
       '<button class="btn btn-primary" onclick="showAddEventForm(\'allenamento\')">Allenamento</button>' +
       '<button class="btn btn-primary" onclick="showAddEventForm(\'partita\')">Partita</button>' +
@@ -2641,15 +2700,16 @@ function renderCalendarioView(){
     '<div class="cal-grid">' + cells + '</div>' +
   '</div>' +
   '<div class="card">' +
-    '<h3 style="margin-top:0;">Esporta / importa calendario</h3>' +
+    '<h3>Esporta / importa calendario</h3>' +
     '<div class="form-row">' +
       '<div class="field"><label>Da</label><input type="date" id="cal-export-da"></div>' +
       '<div class="field"><label>A</label><input type="date" id="cal-export-a"></div>' +
       '<button class="btn btn-small" onclick="exportCalendarioPDF()">Esporta PDF</button>' +
+      '<button class="btn btn-small" onclick="exportCalendarioImage()">Esporta immagine</button>' +
       '<button class="btn btn-small" onclick="exportCalendarioXLSX()">Esporta XLSX</button>' +
       '<button class="btn btn-small" onclick="triggerImportCalendarioXLSX()">Importa XLSX</button>' +
     '</div>' +
-    '<p class="hint">"Da"/"A" valgono solo per l\'esportazione: lascia un campo vuoto per non limitare quel lato del periodo. L\'importazione XLSX richiede le colonne: Data (AAAA-MM-GG), Ora, Tipo Evento (Partita o Allenamento), Avversario, Sede (Casa/Trasferta), Tipo Partita (Campionato/Amichevole).</p>' +
+    '<p class="hint">PDF e immagine richiedono sia "Da" sia "A": elencano ogni giorno del periodo (anche i riposi), colorato per tipo evento. L\'XLSX resta il formato dati grezzo (solo i giorni con eventi) usato anche per la reimportazione: "Da"/"A" restano facoltativi e le colonne richieste sono Data (AAAA-MM-GG), Ora, Tipo Evento (Partita o Allenamento), Avversario, Sede (Casa/Trasferta), Tipo Partita (Campionato/Amichevole).</p>' +
   '</div>';
 }
 function inCalendarRange(dateStr, fromStr, toStr){
@@ -2676,16 +2736,101 @@ function collectCalendarEvents(fromStr, toStr){
   events.sort((x,y)=> (x.data+' '+x.ora).localeCompare(y.data+' '+y.ora));
   return events;
 }
-function exportCalendarioPDF(){
+// Un'esportazione "Calendario Preparazione" elenca OGNI giorno del periodo (compresi i
+// riposi), non solo i giorni con eventi: enumerData colma i buchi tra gli eventi raccolti
+// da collectCalendarEvents.
+function enumerateDateRange(fromStr, toStr){
+  const dates = [];
+  const cur = new Date(fromStr+'T00:00:00');
+  const end = new Date(toStr+'T00:00:00');
+  while(cur<=end){
+    dates.push(cur.getFullYear()+'-'+pad2(cur.getMonth()+1)+'-'+pad2(cur.getDate()));
+    cur.setDate(cur.getDate()+1);
+  }
+  return dates;
+}
+function buildCalendarioDayRows(fromStr, toStr){
+  const events = collectCalendarEvents(fromStr, toStr);
+  const byDate = {};
+  events.forEach(e=>{ (byDate[e.data] = byDate[e.data]||[]).push(e); });
+  return enumerateDateRange(fromStr, toStr).map(d=>{
+    const dayEvents = byDate[d] || [];
+    const match = dayEvents.find(e=>e.tipoEvento==='Partita');
+    const training = dayEvents.find(e=>e.tipoEvento==='Allenamento');
+    const giorno = DAY_NAMES[(new Date(d+'T00:00:00').getDay()+6)%7];
+    if(match){
+      const amichevole = match.tipoPartita==='Amichevole';
+      return {
+        data:d, giorno, tipo: amichevole?'Amichevole':'Campionato',
+        cls: amichevole?'cal-print-row-amichevole':'cal-print-row-campionato',
+        dettaglio: (match.sede==='Trasferta'?'@ ':'vs ') + (match.avversario||'') + (training?' (+ allenamento)':''),
+        ora: match.ora, risultato: match.risultato
+      };
+    }
+    if(training) return { data:d, giorno, tipo:'Allenamento', cls:'cal-print-row-allenamento', dettaglio:'', ora:training.ora, risultato:'' };
+    return { data:d, giorno, tipo:'Riposo', cls:'cal-print-row-riposo', dettaglio:'', ora:'', risultato:'' };
+  });
+}
+function calendarioPrintTableHTML(fromStr, toStr){
+  const rows = buildCalendarioDayRows(fromStr, toStr);
+  const body = rows.map(r=>
+    '<tr class="'+r.cls+'"><td>'+esc(formatDate(r.data))+'</td><td>'+esc(r.giorno)+'</td><td>'+esc(r.tipo)+'</td><td>'+esc(r.dettaglio)+'</td><td>'+esc(r.ora)+'</td><td>'+esc(r.risultato)+'</td></tr>'
+  ).join('');
+  return '<table class="cal-print-table"><thead><tr><th>Data</th><th>Giorno</th><th>Tipo</th><th>Dettaglio</th><th>Ora</th><th>Esito</th></tr></thead><tbody>'+body+'</tbody></table>' +
+    '<div class="cal-print-legend">' +
+      '<span><i style="background:#d9d9d9"></i>Allenamento</span>' +
+      '<span><i style="background:#bfe8c8"></i>Amichevole</span>' +
+      '<span><i style="background:#f3bfd0"></i>Campionato</span>' +
+      '<span><i style="background:#ffffff"></i>Riposo</span>' +
+    '</div>';
+}
+function calendarioPrintWrapHTML(fromStr, toStr){
+  return '<div class="cal-print-wrap"><h1>Calendario Preparazione</h1>' +
+    '<p class="cal-print-period">Periodo: dal '+esc(formatDate(fromStr))+' al '+esc(formatDate(toStr))+'</p>' +
+    calendarioPrintTableHTML(fromStr, toStr) +
+  '</div>';
+}
+function readCalendarioExportRange(){
   const from = document.getElementById('cal-export-da').value;
   const to = document.getElementById('cal-export-a').value;
-  const events = collectCalendarEvents(from, to);
-  const title = 'Calendario' + (from||to ? ' — dal ' + (from?formatDate(from):'inizio stagione') + ' al ' + (to?formatDate(to):'fine stagione') : '');
-  const html = events.length===0 ? '<p>Nessun evento nel periodo selezionato.</p>' :
-    '<table class="print-table"><thead><tr><th>Data</th><th>Ora</th><th>Tipo</th><th>Dettaglio</th><th>Sede</th><th>Esito</th></tr></thead><tbody>' +
-      events.map(e=>'<tr><td>'+formatDate(e.data)+'</td><td>'+esc(e.ora)+'</td><td>'+e.tipoEvento+'</td><td>'+(e.tipoEvento==='Partita'?('vs '+esc(e.avversario)+' ('+esc(e.tipoPartita)+')'):'Allenamento')+'</td><td>'+esc(e.sede)+'</td><td>'+esc(e.risultato)+'</td></tr>').join('') +
-    '</tbody></table>';
-  exportPDF(title, html);
+  if(!from || !to){
+    alert('Seleziona sia "Da" sia "A": servono per elencare ogni giorno del periodo (compresi i riposi).');
+    return null;
+  }
+  if(from>to){
+    alert('"Da" deve precedere "A".');
+    return null;
+  }
+  return { from, to };
+}
+function exportCalendarioPDF(){
+  const range = readCalendarioExportRange();
+  if(!range) return;
+  const area = document.getElementById('print-area');
+  area.innerHTML = calendarioPrintWrapHTML(range.from, range.to);
+  window.print();
+}
+function exportCalendarioImage(){
+  const range = readCalendarioExportRange();
+  if(!range) return;
+  ensureHtml2Canvas(function(){
+    const holder = document.createElement('div');
+    holder.style.position = 'fixed'; holder.style.left = '-9999px'; holder.style.top = '0';
+    holder.style.width = '900px';
+    holder.innerHTML = calendarioPrintWrapHTML(range.from, range.to);
+    document.body.appendChild(holder);
+    html2canvas(holder, { backgroundColor:'#FFFFFF', scale:2 }).then(function(canvas){
+      const link = document.createElement('a');
+      link.download = 'calendario-preparazione-' + range.from + '_' + range.to + '.png';
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link); link.click(); link.remove();
+      holder.remove();
+    }).catch(function(err){
+      console.error('export calendario image error', err);
+      alert('Esportazione immagine non riuscita.');
+      holder.remove();
+    });
+  });
 }
 function exportCalendarioXLSX(){
   const from = document.getElementById('cal-export-da').value;
@@ -2984,6 +3129,64 @@ function exportRosaPDF(){
   const includeStats = document.getElementById('rosa-export-stats').checked;
   exportPDF('Rosa '+getAppUser().stagioneEtichetta, buildRosterPrintHTML(includeStats));
 }
+function showRosaPlayerContextMenu(evt, playerId){
+  evt.preventDefault();
+  evt.stopPropagation();
+  const menu = document.getElementById('player-context-menu');
+  menu.innerHTML = '<div class="context-menu-item" onclick="exportPlayerStatsImage(\''+playerId+'\'); hideContextMenu();">Esporta statistiche (immagine)</div>';
+  const x = Math.min(evt.clientX, window.innerWidth-220);
+  const y = Math.min(evt.clientY, window.innerHeight-60);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+// Scheda statistiche di un singolo giocatore: stesse variabili CSS "carta bianca" già
+// usate per l'export delle sedute Allenamenti (.schema-print-page), così l'aspetto è
+// coerente col resto dell'app invece di uno stile a sé.
+function buildPlayerStatsPrintHTML(playerId){
+  const r = computePlayerStatsRow(playerId);
+  if(!r) return '';
+  const righe = [
+    ['Convocazioni', r.convocazioni], ['Titolare', r.titolare], ['Subentrato', r.subentrato],
+    ['Minuti totali', r.minuti],
+  ];
+  if(r.ruolo==='Por') righe.push(['Gol subiti', r.golSubiti]);
+  righe.push(
+    ['Gol', r.gol], ['Assist', r.assist], ['Ammonizioni', r.gialli], ['Espulsioni', r.rossi],
+    ['Voto medio', r.votoMedio!=null ? r.votoMedio.toFixed(1) : '-'],
+    ['% Presenza', r.percentPresenza!=null ? r.percentPresenza+'%' : '-']
+  );
+  return '<div class="schema-print-page"><div class="player-stats-card">' +
+    '<h1>'+esc(displayName(r.nome))+'</h1>' +
+    '<p class="player-stats-sub">'+esc(r.ruolo)+(r.secondoRuolo?' / '+esc(r.secondoRuolo):'')+(r.piede?' · '+esc(r.piede):'')+(r.eta!=null?' · '+r.eta+' anni':'')+' · '+esc(getAppUser().stagioneEtichetta)+'</p>' +
+    '<div class="player-stats-rating">'+starRatingHTML(r.valutazione, 18)+'</div>' +
+    '<table class="player-stats-table"><tbody>' +
+      righe.map(([label,val])=>'<tr><td>'+esc(label)+'</td><td>'+esc(String(val))+'</td></tr>').join('') +
+    '</tbody></table>' +
+    (r.note ? '<p class="player-stats-note">'+esc(r.note)+'</p>' : '') +
+  '</div></div>';
+}
+function exportPlayerStatsImage(playerId){
+  const p = state.players.find(pl=>pl.id===playerId);
+  if(!p) return;
+  ensureHtml2Canvas(function(){
+    const holder = document.createElement('div');
+    holder.style.position = 'fixed'; holder.style.left = '-9999px'; holder.style.top = '0';
+    holder.innerHTML = buildPlayerStatsPrintHTML(playerId);
+    document.body.appendChild(holder);
+    html2canvas(holder, { backgroundColor:'#FFFFFF', scale:2 }).then(function(canvas){
+      const link = document.createElement('a');
+      link.download = 'statistiche-'+displayName(p.nome).replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.png';
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link); link.click(); link.remove();
+      holder.remove();
+    }).catch(function(err){
+      console.error('export player stats image error', err);
+      alert('Esportazione immagine non riuscita.');
+      holder.remove();
+    });
+  });
+}
 function buildLavagnaPrintSVG(match){
   const slots = match.formazioneNostra.slots || [];
   const chips = match.formazioneNostra.chips || [];
@@ -3166,25 +3369,30 @@ async function apiGet(url){ const r = await fetch(url); return r.json(); }
 async function apiPost(url, body){ const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); return r.json(); }
 async function apiPatch(url, body){ const r = await fetch(url, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); return r.json(); }
 async function apiDelete(url){ const r = await fetch(url, { method:'DELETE' }); return r.json(); }
-function starInputHTML(){
+function starInputHTML(current){
+  const v = current || 0;
   let out = '<span class="star-input">';
   for(let i=1;i<=5;i++){
-    out += '<button type="button" class="star-input-btn" onclick="submitSchemaRating('+i+')" aria-label="'+i+' stelle">' + starIconSVG('var(--yellow)', 20) + '</button>';
+    out += '<button type="button" class="star-input-btn" onclick="setSchemaVotoPreferenza('+i+')" aria-label="'+i+' stelle">' + starIconSVG(i<=v ? 'var(--yellow)' : 'var(--border)', 20) + '</button>';
   }
   out += '</span>';
   return out;
 }
-function showSchemaLockedHint(){
-  alert('Modulo Schema in arrivo — non ancora disponibile su questo account.');
-}
 /* icone disegnatore (stroke-based, coerenti con SIDE_NAV_ICONS) — grandi quanto i pallini colore */
 const SCHEMA_ICON_GIOCATORE = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>';
-const SCHEMA_ICON_PALLONE = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5l3.8 2.8-1.4 4.4h-4.8l-1.4-4.4z"/></svg>';
+// Pallone realistico costruito geometricamente (schemaBallSVG, hoisted): stessa identica
+// resa sia sul pulsante toolbar sia sui palloni piazzati in campo.
+const SCHEMA_ICON_PALLONE = '<svg viewBox="0 0 24 24" width="26" height="26"><g transform="translate(12,12)">'+schemaBallSVG(9,24)+'</g></svg>';
 const SCHEMA_ICON_MOVIMENTO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18L18 6" stroke-dasharray="3,2.4"/><path d="M12.5 6H18v5.5"/></svg>';
 const SCHEMA_ICON_PASSAGGIO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18L18 6"/><path d="M12.5 6H18v5.5"/></svg>';
 const SCHEMA_ICON_PALLONE_ALTO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 19Q11 4 20 10"/><path d="M15.5 7.5l4.5 2.5-2.3 4.3"/></svg>';
 const SCHEMA_ICON_DIVISORE = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="2.5,2.5"><path d="M4 20L20 4"/></svg>';
+const SCHEMA_ICON_RIGACAMPO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20L20 4"/></svg>';
 const SCHEMA_ICON_GOMMA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 3.5l3 3L10 17H6v-4z"/><path d="M13 7l4 4"/><path d="M4 21h9"/></svg>';
+const SCHEMA_ICON_PORTA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="10"/><path d="M8 6v10M12 6v10M16 6v10"/></svg>';
+const SCHEMA_ICON_PORTINA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="9" width="10" height="6"/><path d="M10 9v6M14 9v6"/></svg>';
+const SCHEMA_ICON_CONO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l5 14H7z"/><path d="M5 18h14"/></svg>';
+const SCHEMA_ICON_ZONA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3,2"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>';
 
 /* ---------- navigazione interna (nessun page load: resta nella SPA) ---------- */
 async function ensureSchemaObjectives(){
@@ -3246,7 +3454,7 @@ function renderSchemaView(){
   else if(v==='sessions') html = renderSchemaSessionsList();
   else if(v==='sessionBuilder') html = renderSchemaSessionBuilder();
   else html = renderSchemaLibrary();
-  return html + schemaLivelloPickerHTML();
+  return html + schemaLivelloPickerHTML() + schemaDuplicatePickerHTML();
 }
 function attachSchemaInteractions(){
   if(state.schema.view==='sheet') attachSchemaFieldInteractions();
@@ -3264,6 +3472,7 @@ async function loadSchemaLibrary(){
   const params = new URLSearchParams();
   if(s.filterSearch) params.set('search', s.filterSearch);
   if(s.filterTags.length) params.set('tags', s.filterTags.join(','));
+  if(s.filterCategoria) params.set('categoria', s.filterCategoria);
   const res = await apiGet('/api/schema/exercises?'+params.toString());
   s.exercises = res.exercises || [];
 }
@@ -3272,10 +3481,17 @@ function toggleSchemaFilterTag(tag){
   s.filterTags = s.filterTags.includes(tag) ? s.filterTags.filter(t=>t!==tag) : s.filterTags.concat(tag);
   loadSchemaLibrary().then(renderView);
 }
+function setSchemaFilterCategoria(key){
+  state.schema.filterCategoria = state.schema.filterCategoria===key ? '' : key;
+  loadSchemaLibrary().then(renderView);
+}
 function renderSchemaLibrary(){
   const s = state.schema;
   const tagChips = s.availableTags.map(t=>
     '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" onclick="toggleSchemaFilterTag(\''+esc(t)+'\')">'+esc(t)+'</button>'
+  ).join('');
+  const categoriaChips = SCHEMA_CATEGORIE.map(c=>
+    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategoria===c.key?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="setSchemaFilterCategoria(\''+c.key+'\')">'+esc(c.label)+'</button>'
   ).join('');
   return schemaSubNavHTML('library') +
     '<div class="card">' +
@@ -3285,22 +3501,47 @@ function renderSchemaLibrary(){
       '<div class="form-row">' +
         '<div class="field field-grow"><label>Cerca</label><input id="schema-filter-search" type="text" placeholder="titolo o etichetta" value="'+esc(s.filterSearch)+'" oninput="onSchemaFilterChange()"></div>' +
       '</div>' +
+      '<div class="field"><label>Fase di allenamento</label><div class="schema-tag-chip-row">'+categoriaChips+'</div></div>' +
       (s.availableTags.length ? '<div class="field"><label>Etichette</label><div class="schema-tag-chip-row">'+tagChips+'</div></div>' : '') +
       '<div class="schema-exercise-grid">' + renderSchemaExerciseCards() + '</div>' +
     '</div>';
 }
+function schemaExerciseDurataStimata(e){
+  const l = e.livelli && e.livelli[0];
+  if(!l) return null;
+  // Tempo totale, non solo lavoro: include i recuperi tra le serie (una serie in meno
+  // dei recuperi, perché dopo l'ultima non si aspetta).
+  const lavoro = l.ripetizioni * l.durataRipetizione;
+  const recuperi = Math.max(l.ripetizioni - 1, 0) * (l.recuperoSecondi || 0) / 60;
+  return Math.round(lavoro + recuperi);
+}
+// Card condivisa tra libreria e costruttore seduta (dove serve piu compatta, senza voto e
+// con miniatura piu piccola): stessa anteprima ovunque si scelga un esercizio.
+function schemaExerciseCardHTML(e, onclickAttr, compact){
+  const tags = schemaExerciseTags(e);
+  const badge = e.livelli.length>1 ? '<span class="pill">'+e.livelli.length+' livelli</span>' : '';
+  const cat = schemaCategoriaInfo(e.categoria);
+  const durata = schemaExerciseDurataStimata(e);
+  const primoLivello = e.livelli[0];
+  const cls = 'schema-exercise-card' + (compact ? ' schema-exercise-card-compact' : '');
+  return '<div class="'+cls+'" style="'+(cat?'border-left-color:'+cat.color+';':'')+'" onclick="'+onclickAttr+'">' +
+    '<div class="schema-exercise-card-thumb">' + (primoLivello ? renderSchemaFieldSVG(e, primoLivello, false) : '') + '</div>' +
+    '<div class="schema-exercise-card-body">' +
+      '<div class="schema-exercise-card-head"><strong>'+esc(e.titolo)+'</strong>'+badge+'</div>' +
+      '<div class="schema-exercise-card-meta">' +
+        (cat ? '<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>' : '<span class="hint">Non categorizzato</span>') +
+        '<span class="hint">'+e.numeroGiocatoriBase+' giocatori</span>' +
+        (durata!=null ? '<span class="hint" title="Tempo totale, recuperi tra le serie inclusi">'+durata+' min tot.</span>' : '') +
+      '</div>' +
+      '<div class="hint">'+(tags.length ? esc(tags.join(', ')) : 'Nessuna etichetta')+'</div>' +
+      (compact ? '' : '<div class="schema-exercise-card-foot">' + (e.votoPreferenza!=null ? starRatingHTML(e.votoPreferenza, 12) : '<span class="hint">Non valutato</span>') + '</div>') +
+    '</div>' +
+  '</div>';
+}
 function renderSchemaExerciseCards(){
   const s = state.schema;
   if(s.exercises.length===0) return '<p class="hint">Nessun esercizio ancora. Crea il primo.</p>';
-  return s.exercises.map(e=>{
-    const tags = schemaExerciseTags(e);
-    const badge = e.livelli.length>1 ? '<span class="pill">'+e.livelli.length+' livelli</span>' : '';
-    return '<div class="schema-exercise-card" onclick="openSchemaExercise(\''+e.id+'\')">' +
-      '<div class="schema-exercise-card-head"><strong>'+esc(e.titolo)+'</strong>'+badge+'</div>' +
-      '<div class="hint">'+(tags.length ? esc(tags.join(', ')) : 'Nessuna etichetta')+'</div>' +
-      '<div class="schema-exercise-card-foot">' + (e.votoMedio!=null ? starRatingHTML(e.votoMedio, 12) : '<span class="hint">Non valutato</span>') + '</div>' +
-    '</div>';
-  }).join('');
+  return s.exercises.map(e=>schemaExerciseCardHTML(e, "openSchemaExercise('"+e.id+"')", false)).join('');
 }
 let schemaFilterDebounce = null;
 function onSchemaFilterChange(){
@@ -3318,8 +3559,9 @@ function renderSchemaNewExerciseForm(){
       '<div class="form-row">' +
         '<div class="field field-grow"><label>Titolo</label><input id="schema-new-ex-titolo" type="text"></div>' +
         '<div class="field"><label>N. giocatori</label><input id="schema-new-ex-numgiocatori" type="number" min="1" value="8"></div>' +
+        '<div class="field"><label>Fase di allenamento</label><select id="schema-new-ex-categoria">'+schemaCategoriaOptionsHTML('')+'</select></div>' +
       '</div>' +
-      '<div class="field"><label>Descrizione</label><textarea id="schema-new-ex-descrizione" rows="3"></textarea></div>' +
+      '<div class="field"><label>Descrizione generale</label><textarea id="schema-new-ex-descrizione" rows="3"></textarea><span class="hint">Solo a schermo, non compare in anteprima/stampa: perché/a cosa serve questo esercizio. Lo svolgimento che viene stampato si scrive dopo, nel livello.</span></div>' +
       '<button class="btn btn-primary" onclick="createSchemaExercise()">Crea esercizio</button>' +
     '</div>';
 }
@@ -3330,6 +3572,7 @@ async function createSchemaExercise(){
     titolo,
     descrizione: document.getElementById('schema-new-ex-descrizione').value,
     numeroGiocatoriBase: document.getElementById('schema-new-ex-numgiocatori').value,
+    categoria: document.getElementById('schema-new-ex-categoria').value,
   });
   if(res.exercise) openSchemaExercise(res.exercise.id);
   else alert('Errore: '+(res.error||'sconosciuto'));
@@ -3354,15 +3597,18 @@ function parseSchemaCampo(livello){
   try { d = JSON.parse((livello && livello.schemaCampo) || '{}'); } catch { d = {}; }
   if(!Array.isArray(d.chips)) d.chips = [];
   if(!Array.isArray(d.arrows)) d.arrows = [];
+  if(!Array.isArray(d.zones)) d.zones = [];
   // Default difensivi per i dati creati prima di questo round (chip/frecce senza tipo/colore/id).
   d.chips = d.chips.map(c=>({
     id: c.id,
     x: c.x,
     y: c.y,
-    tipo: c.tipo==='pallone' ? 'pallone' : 'giocatore',
+    tipo: ['pallone','porta','portina','cono'].includes(c.tipo) ? c.tipo : 'giocatore',
     color: c.color || SCHEMA_COLORS[0],
     numero: c.numero!=null ? c.numero : null,
     label: c.label || '',
+    ruolo: c.ruolo==='portiere' ? 'portiere' : null,
+    rot: typeof c.rot==='number' ? c.rot : 0,
   }));
   d.arrows = d.arrows.map(a=>({
     id: a.id || uid(),
@@ -3371,8 +3617,25 @@ function parseSchemaCampo(livello){
     // serializzava come "{}" vuoti): se anche solo un punto non ha coordinate numeriche,
     // si scarta l'intero percorso e si ricade sulla curva automatica da inizio/fine.
     points: (Array.isArray(a.points) && a.points.length>=2 && a.points.every(p=>p && typeof p.x==='number' && typeof p.y==='number')) ? a.points : null,
-    tipo: ['movimento','passaggio','pallone-alto','divisore'].includes(a.tipo) ? a.tipo : 'passaggio',
+    // Curvatura regolare del pallone-alto (vedi schemaCurveControlPoint): assente sulle
+    // frecce non curve e su quelle disegnate a mano libera prima di questa modifica.
+    bend: typeof a.bend==='number' ? a.bend : null,
+    tipo: ['movimento','passaggio','pallone-alto','divisore','campo-linea'].includes(a.tipo) ? a.tipo : 'passaggio',
     color: a.color || SCHEMA_COLORS[0],
+    // Numerazione manuale (click destro → Numera), mai automatica: solo le frecce che
+    // l'allenatore sceglie esplicitamente di numerare mostrano il badge.
+    numero: a.numero!=null ? a.numero : null,
+  }));
+  d.zones = d.zones.map(z=>({
+    id: z.id || uid(),
+    x: typeof z.x==='number' ? z.x : 0,
+    y: typeof z.y==='number' ? z.y : 0,
+    w: typeof z.w==='number' && z.w>0 ? z.w : 5,
+    h: typeof z.h==='number' && z.h>0 ? z.h : 5,
+    color: z.color || SCHEMA_COLORS[0],
+    // "pieno" = tinta colorata (tattico), "contorno" = solo bordo bianco/neutro, per
+    // disegnare marcature reali del campo come l'area di rigore.
+    stile: z.stile==='contorno' ? 'contorno' : 'pieno',
   }));
   return d;
 }
@@ -3386,21 +3649,80 @@ function schemaFieldDefsSVG(){
   ).join('');
   return '<defs>'+markers+'</defs>';
 }
-function schemaChipSVG(c, w){
-  if(c.tipo==='pallone'){
-    const r = w*0.028;
-    return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
-      '<circle r="'+r+'" fill="#F4F1EA" stroke="#0B141C" stroke-width="'+(w*0.004)+'"/>' +
-      '<path d="M0,'+(-r*0.5)+' L'+(r*0.45)+',0 L0,'+(r*0.5)+' L'+(-r*0.45)+',0 Z" fill="none" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
-    '</g>';
+// Pallone disegnato geometricamente (nessuna icona di terze parti): cerchio bianco,
+// pentagono nero centrale, cinque tasselli scuri lungo i bordi del pentagono collegati
+// da cuciture — il pattern pentagono/tassello si riconosce come vero pallone anche in
+// miniatura, a differenza di un singolo pentagono isolato.
+function schemaBallSVG(r, w){
+  // Solo bianco, nessun pattern a pentagoni: un cerchio bianco con un sottile bordo
+  // scuro per restare visibile su qualunque sfondo (verde in editor, bianco in stampa).
+  return '<circle r="'+r+'" fill="#F4F1EA" stroke="#0B141C" stroke-width="'+(w*0.006)+'"/>';
+}
+// Le porte sono sempre bianche/neutre (non seguono la palette colori): un colore
+// realistico e coerente indipendentemente da chi le piazza. "big" distingue porta
+// regolare da portina (mini-porta); rot (gradi) permette di orientarle sul campo.
+function schemaGoalSVG(c, w, printMode){
+  const big = c.tipo==='porta';
+  const gw = big ? w*0.16 : w*0.09;
+  const gh = big ? w*0.075 : w*0.045;
+  const rot = c.rot || 0;
+  const cols = big ? 6 : 4, rowsN = big ? 3 : 2;
+  // La rete e il bordo bianco si vedono solo sul verde: in stampa (sfondo bianco) usiamo
+  // un grigio scuro, altrimenti sarebbero invisibili su sfondo bianco.
+  const netColor = printMode ? '#555' : '#F4F1EA';
+  let net = '';
+  for(let i=1;i<cols;i++){
+    const nx = -gw/2 + (gw/cols)*i;
+    net += '<line x1="'+nx.toFixed(2)+'" y1="'+(-gh/2).toFixed(2)+'" x2="'+nx.toFixed(2)+'" y2="'+(gh/2).toFixed(2)+'" stroke="'+netColor+'" stroke-width="'+(w*0.0015)+'" opacity="0.6"/>';
   }
-  const r = w*0.04;
-  const numeroLabel = c.numero!=null ? String(c.numero) : (c.label ? c.label.charAt(0).toUpperCase() : '');
-  return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
-    '<circle r="'+r+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.005)+'"/>' +
-    (numeroLabel ? '<text text-anchor="middle" dy="'+(w*0.014)+'" font-size="'+(w*0.045)+'" fill="#0B141C" font-family="Oswald, sans-serif" font-weight="600">'+esc(numeroLabel)+'</text>' : '') +
-    (c.label ? '<text text-anchor="middle" dy="'+(w*0.09)+'" font-size="'+(w*0.03)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.012)+'">'+esc(c.label)+'</text>' : '') +
+  for(let j=1;j<rowsN;j++){
+    const ny = -gh/2 + (gh/rowsN)*j;
+    net += '<line x1="'+(-gw/2).toFixed(2)+'" y1="'+ny.toFixed(2)+'" x2="'+(gw/2).toFixed(2)+'" y2="'+ny.toFixed(2)+'" stroke="'+netColor+'" stroke-width="'+(w*0.0015)+'" opacity="0.6"/>';
+  }
+  const rectAttrs = 'x="'+(-gw/2)+'" y="'+(-gh/2)+'" width="'+gw+'" height="'+gh+'"';
+  return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+') rotate('+rot+')">' +
+    '<rect '+rectAttrs+' fill="rgba(11,20,28,0.16)" stroke="#0B141C" stroke-width="'+(w*0.009)+'"/>' +
+    net +
+    '<rect '+rectAttrs+' fill="none" stroke="'+netColor+'" stroke-width="'+(w*0.005)+'"/>' +
+    (c.label ? '<text text-anchor="middle" dy="'+(gh/2+w*0.032)+'" font-size="'+(w*0.026)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.01)+'">'+esc(c.label)+'</text>' : '') +
   '</g>';
+}
+function schemaConeSVG(c, w){
+  const s = w*0.035;
+  return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
+    '<path d="M0,'+(-s)+' L'+(s*0.75)+','+(s*0.8)+' L'+(-s*0.75)+','+(s*0.8)+' Z" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
+    '<rect x="'+(-s*0.95)+'" y="'+(s*0.7)+'" width="'+(s*1.9)+'" height="'+(s*0.28)+'" rx="'+(s*0.08)+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
+    (c.label ? '<text text-anchor="middle" dy="'+(s*1.4)+'" font-size="'+(w*0.026)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.01)+'">'+esc(c.label)+'</text>' : '') +
+  '</g>';
+}
+function schemaChipSVG(c, w, printMode){
+  if(c.tipo==='pallone'){
+    // Meno della metà del raggio giocatore, cosi si distingue subito dai chip persona.
+    return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' + schemaBallSVG(w*0.013, w) + '</g>';
+  }
+  if(c.tipo==='porta' || c.tipo==='portina') return schemaGoalSVG(c, w, printMode);
+  if(c.tipo==='cono') return schemaConeSVG(c, w);
+  const r = w*0.032;
+  const numeroLabel = c.numero!=null ? String(c.numero) : (c.label ? c.label.charAt(0).toUpperCase() : '');
+  // Il portiere ha una forma distinta (quadrato arrotondato) invece del cerchio, cosi si
+  // riconosce a colpo d'occhio senza dover leggere il numero.
+  const shape = c.ruolo==='portiere'
+    ? '<rect x="'+(-r)+'" y="'+(-r)+'" width="'+(r*2)+'" height="'+(r*2)+'" rx="'+(r*0.3)+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.005)+'"/>'
+    : '<circle r="'+r+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.005)+'"/>';
+  return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
+    shape +
+    (numeroLabel ? '<text text-anchor="middle" dy="'+(w*0.014)+'" font-size="'+(w*0.04)+'" fill="#0B141C" font-family="Oswald, sans-serif" font-weight="600">'+esc(numeroLabel)+'</text>' : '') +
+    (c.label ? '<text text-anchor="middle" dy="'+(w*0.075)+'" font-size="'+(w*0.028)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.012)+'">'+esc(c.label)+'</text>' : '') +
+  '</g>';
+}
+function schemaZoneSVG(z, printMode){
+  if(z.stile==='contorno'){
+    // Solo bordo, nessuna tinta: per marcature reali del campo (area di rigore, area
+    // piccola...) invece che zone tattiche colorate. Bianco sul verde, grigio in stampa.
+    const color = printMode ? '#555' : '#F4F1EA';
+    return '<rect class="schema-zone" data-id="'+z.id+'" x="'+z.x+'" y="'+z.y+'" width="'+z.w+'" height="'+z.h+'" fill="none" stroke="'+color+'" stroke-width="0.2"/>';
+  }
+  return '<rect class="schema-zone" data-id="'+z.id+'" x="'+z.x+'" y="'+z.y+'" width="'+z.w+'" height="'+z.h+'" fill="'+z.color+'" fill-opacity="0.22" stroke="'+z.color+'" stroke-width="0.15" stroke-dasharray="0.4,0.3"/>';
 }
 function smoothPathFromPoints(points){
   if(points.length<2) return '';
@@ -3413,48 +3735,99 @@ function smoothPathFromPoints(points){
   d += ' L'+points[points.length-1].x+','+points[points.length-1].y;
   return d;
 }
+// Punto di controllo di una quadratica dati i due estremi e uno scostamento perpendicolare
+// con segno ("bend"): a t=0.5 la curva si scosta dalla corda di metà dell'offset del punto
+// di controllo, quindi qui l'offset è 2×bend per far coincidere lo scostamento massimo
+// della curva con "bend".
+function schemaCurveControlPoint(x1,y1,x2,y2,bend){
+  const dx=x2-x1, dy=y2-y1;
+  const len=Math.hypot(dx,dy)||1;
+  const mx=(x1+x2)/2, my=(y1+y2)/2;
+  const px=-dy/len, py=dx/len;
+  return { x: mx+px*bend*2, y: my+py*bend*2 };
+}
 function schemaArrowGeometry(a){
-  // La freccia "pallone alto" segue la curva disegnata a mano; se manca (dati vecchi)
-  // ricade su una bezier automatica calcolata solo da inizio/fine.
+  // La freccia "pallone alto" è una quadratica regolare: "bend" (uno scostamento
+  // perpendicolare con segno, misurato una volta al rilascio del disegno a mano libera)
+  // ne fissa la curvatura, così la forma resta pulita e si adatta da sola quando si
+  // trascina un estremo. "points" (tracciato fedele a mano libera) resta letto solo per
+  // compatibilità con frecce disegnate prima di questa modifica. "mid" è il punto usato
+  // per posizionare il badge numerato della sequenza.
   if(a.tipo==='pallone-alto'){
-    if(a.points) return { tag:'path', d: smoothPathFromPoints(a.points) };
+    if(a.bend!=null){
+      const c = schemaCurveControlPoint(a.x1,a.y1,a.x2,a.y2,a.bend);
+      return { tag:'path', d: 'M'+a.x1+','+a.y1+' Q'+c.x+','+c.y+' '+a.x2+','+a.y2, mid:c };
+    }
+    if(a.points){
+      const mid = a.points[Math.floor(a.points.length/2)];
+      return { tag:'path', d: smoothPathFromPoints(a.points), mid };
+    }
     const mx=(a.x1+a.x2)/2, my=(a.y1+a.y2)/2;
     const dx=a.x2-a.x1, dy=a.y2-a.y1;
     const len=Math.hypot(dx,dy)||1;
     const offset = len*0.25;
     const cx = mx - (dy/len)*offset, cy = my + (dx/len)*offset;
-    return { tag:'path', d: 'M'+a.x1+','+a.y1+' Q'+cx+','+cy+' '+a.x2+','+a.y2 };
+    return { tag:'path', d: 'M'+a.x1+','+a.y1+' Q'+cx+','+cy+' '+a.x2+','+a.y2, mid:{x:cx,y:cy} };
   }
-  return { tag:'line', x1:a.x1, y1:a.y1, x2:a.x2, y2:a.y2 };
+  return { tag:'line', x1:a.x1, y1:a.y1, x2:a.x2, y2:a.y2, mid:{x:(a.x1+a.x2)/2, y:(a.y1+a.y2)/2} };
 }
-function schemaArrowGroupSVG(a, w){
-  const strokeW = w*0.008;
+function schemaArrowGroupSVG(a, w, numero, printMode){
+  const strokeW = w*0.005;
   const geo = schemaArrowGeometry(a);
   const shapeAttrs = geo.tag==='path' ? 'd="'+geo.d+'"' : 'x1="'+geo.x1+'" y1="'+geo.y1+'" x2="'+geo.x2+'" y2="'+geo.y2+'"';
   let visible;
+  const neutralColor = printMode ? '#555' : '#F4F1EA';
   if(a.tipo==='divisore'){
-    visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="#F4F1EA" stroke-width="'+strokeW+'" stroke-dasharray="'+(w*0.006)+','+(w*0.012)+'" opacity="0.65"/>';
+    // Bianco sul verde dell'editor, grigio scuro in stampa (sfondo bianco): altrimenti
+    // invisibile.
+    visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="'+neutralColor+'" stroke-width="'+strokeW+'" stroke-dasharray="'+(w*0.006)+','+(w*0.012)+'" opacity="0.65"/>';
+  } else if(a.tipo==='campo-linea'){
+    // Riga bianca del campo (es. limite area), continua e senza freccia — non è
+    // un'indicazione tattica ma una marcatura reale del terreno.
+    visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="'+neutralColor+'" stroke-width="'+strokeW+'"/>';
   } else {
     const markerId = schemaColorMarkerId(a.color);
     const dash = a.tipo==='movimento' ? ' stroke-dasharray="'+(w*0.02)+','+(w*0.014)+'"' : '';
     visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="'+a.color+'" stroke-width="'+strokeW+'"'+dash+' marker-end="url(#'+markerId+')"/>';
   }
   const hit = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="transparent" stroke-width="'+(w*0.035)+'"/>';
-  return '<g class="schema-arrow" data-id="'+a.id+'">'+visible+hit+'</g>';
+  // Badge numerato SOLO se l'allenatore l'ha impostato da menu contestuale (click destro →
+  // Numera): nessuna numerazione automatica. pointer-events:none per non intercettare i
+  // click della gomma, che deve colpire il tratto sottostante.
+  const badge = numero!=null ? '<g transform="translate('+geo.mid.x+','+geo.mid.y+')" pointer-events="none">' +
+    '<circle r="'+(w*0.022)+'" fill="'+a.color+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
+    '<text text-anchor="middle" dy="'+(w*0.0075)+'" font-size="'+(w*0.026)+'" fill="#0B141C" font-family="Oswald, sans-serif" font-weight="700">'+numero+'</text>' +
+  '</g>' : '';
+  // Maniglie ai due estremi: permettono di trascinare partenza o punta singolarmente
+  // (mantenendo fermo l'altro estremo) invece di dover cancellare e ridisegnare. Solo
+  // nell'editor interattivo, mai in stampa/anteprima.
+  const handleColor = (a.tipo==='divisore' || a.tipo==='campo-linea') ? neutralColor : a.color;
+  const handles = printMode ? '' :
+    '<circle class="schema-arrow-handle" data-end="1" cx="'+a.x1+'" cy="'+a.y1+'" r="'+(w*0.014)+'" fill="'+handleColor+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
+    '<circle class="schema-arrow-handle" data-end="2" cx="'+a.x2+'" cy="'+a.y2+'" r="'+(w*0.014)+'" fill="'+handleColor+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>';
+  return '<g class="schema-arrow" data-id="'+a.id+'"'+(numero!=null?' data-numero="'+numero+'"':'')+'>'+visible+hit+badge+handles+'</g>';
 }
-function renderSchemaFieldSVG(exercise, livello){
+function renderSchemaFieldSVG(exercise, livello, withId, printMode){
   const data = parseSchemaCampo(livello);
   const w = exercise.larghezzaCampo || 20, h = exercise.lunghezzaCampo || 28;
-  const chipsSvg = data.chips.map(c=>schemaChipSVG(c,w)).join('');
-  const arrowsSvg = data.arrows.map(a=>schemaArrowGroupSVG(a,w)).join('');
-  return '<svg id="schema-field-svg" viewBox="0 0 '+w+' '+h+'" class="pitch-svg schema-field-svg">' +
+  const zonesSvg = data.zones.map(z=>schemaZoneSVG(z, printMode)).join('');
+  const chipsSvg = data.chips.map(c=>schemaChipSVG(c,w,printMode)).join('');
+  const arrowsSvg = data.arrows.map(a=>schemaArrowGroupSVG(a, w, a.numero, printMode)).join('');
+  const idAttr = withId===false ? '' : ' id="schema-field-svg"';
+  const thumbClass = withId===false ? ' schema-field-svg-thumb' : '';
+  // Sfondo bianco/grigio in stampa (anteprima/esportazione seduta) per risparmiare
+  // inchiostro, verde nell'editor live.
+  const bgFill = printMode ? '#FFFFFF' : '#1E5631';
+  const bgStroke = printMode ? '#888' : '#F4F1EA';
+  return '<svg'+idAttr+' viewBox="0 0 '+w+' '+h+'" class="pitch-svg schema-field-svg'+thumbClass+'">' +
     schemaFieldDefsSVG() +
-    '<rect x="0" y="0" width="'+w+'" height="'+h+'" fill="#1E5631" stroke="#F4F1EA" stroke-width="'+(w*0.005)+'"/>' +
+    '<rect x="0" y="0" width="'+w+'" height="'+h+'" fill="'+bgFill+'" stroke="'+bgStroke+'" stroke-width="'+(w*0.005)+'"/>' +
+    '<g class="zones-layer">'+zonesSvg+'</g>' +
     '<g class="arrows-layer">'+arrowsSvg+'</g>' +
     '<g class="chips-layer">'+chipsSvg+'</g>' +
   '</svg>';
 }
-function schemaToolbarHTML(){
+function schemaToolbarHTML(exercise){
   const s = state.schema;
   const colorSwatches = SCHEMA_COLORS.map(c=>
     '<button type="button" class="schema-color-swatch '+(s.activeColor===c?'schema-color-swatch-active':'')+'" style="background:'+c+';" onclick="setSchemaActiveColor(\''+c+'\')" title="Colore attivo"></button>'
@@ -3464,24 +3837,72 @@ function schemaToolbarHTML(){
     ['passaggio', SCHEMA_ICON_PASSAGGIO, 'Passaggio / tiro'],
     ['pallone-alto', SCHEMA_ICON_PALLONE_ALTO, 'Pallone alto (disegna la curva)'],
     ['divisore', SCHEMA_ICON_DIVISORE, 'Divisore spazi'],
+    ['campo-linea', SCHEMA_ICON_RIGACAMPO, 'Riga bianca del campo'],
   ];
   const lineButtons = lineTypes.map(([key,icon,title])=>
     '<button class="btn btn-small btn-icon '+(s.drawMode && s.activeLineType===key?'btn-active':'')+'" onclick="setSchemaLineTypeAndDraw(\''+key+'\')" title="'+title+'">'+icon+'</button>'
   ).join('');
   return '<div class="schema-toolbar">' +
-    '<div class="schema-toolbar-row"><span class="hint">Colore:</span>'+colorSwatches+'</div>' +
     '<div class="schema-toolbar-row">' +
+      '<span class="hint">Campo (m):</span>' +
+      '<input id="schema-ex-larghezza" type="number" step="1" min="1" value="'+Math.round(exercise.larghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input" title="Larghezza campo">' +
+      '<span class="hint">×</span>' +
+      '<input id="schema-ex-lunghezza" type="number" step="1" min="1" value="'+Math.round(exercise.lunghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input" title="Lunghezza campo">' +
+      '<span class="schema-toolbar-divider"></span>' +
       '<button class="btn btn-small btn-icon '+(s.placeMode==='giocatore'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'giocatore\')" title="Aggiungi giocatore">'+SCHEMA_ICON_GIOCATORE+'</button>' +
       '<button class="btn btn-small btn-icon '+(s.placeMode==='pallone'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'pallone\')" title="Aggiungi pallone">'+SCHEMA_ICON_PALLONE+'</button>' +
+      '<button class="btn btn-small btn-icon '+(s.placeMode==='porta'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'porta\')" title="Aggiungi porta grande">'+SCHEMA_ICON_PORTA+'</button>' +
+      '<button class="btn btn-small btn-icon '+(s.placeMode==='portina'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'portina\')" title="Aggiungi portina">'+SCHEMA_ICON_PORTINA+'</button>' +
+      '<button class="btn btn-small btn-icon '+(s.placeMode==='cono'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'cono\')" title="Aggiungi cono">'+SCHEMA_ICON_CONO+'</button>' +
+      '<button class="btn btn-small btn-icon '+(s.placeMode==='zona'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'zona\')" title="Disegna una zona: trascina da un angolo all\'altro">'+SCHEMA_ICON_ZONA+'</button>' +
       lineButtons +
       '<button class="btn btn-small btn-icon '+(s.eraserMode?'btn-active':'')+'" onclick="setSchemaEraserMode()" title="Gomma: clicca un elemento per eliminarlo">'+SCHEMA_ICON_GOMMA+'</button>' +
       ((s.drawMode || s.placeMode || s.eraserMode) ? '<button class="btn btn-small" onclick="stopSchemaDrawing()">Termina</button>' : '') +
     '</div>' +
+    '<div class="schema-toolbar-row"><span class="hint">Colore:</span>'+colorSwatches+'</div>' +
   '</div>';
 }
 function schemaExerciseTags(e){
   try { const t = JSON.parse((e && e.tags) || '[]'); return Array.isArray(t) ? t : []; }
   catch { return []; }
+}
+// Formattazione minima delle descrizioni: memorizzata come TESTO SEMPLICE con marcatori
+// (**grassetto**, ++più grande++), mai come HTML — cosi non c'è alcun rischio che un
+// input dell'utente venga interpretato come markup arbitrario quando lo mostriamo con
+// innerHTML nell'anteprima/stampa. Si esegue esc() PRIMA di sostituire i marcatori con i
+// tag, quindi solo i tag che genero io possono comparire nell'output.
+function schemaRichTextToHTML(text){
+  if(!text) return '';
+  let out = esc(text);
+  out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/\+\+(.+?)\+\+/g, '<span class="rt-big">$1</span>');
+  out = out.replace(/\n/g, '<br>');
+  return out;
+}
+// Click destro con del testo selezionato in una textarea "schema-rich-text" (le
+// descrizioni esercizio/livello): invece del menu nativo del browser, propone di avvolgere
+// la selezione con i marcatori sopra.
+function showSchemaRichTextMenu(evt, el){
+  const start = el.selectionStart, end = el.selectionEnd;
+  const menu = document.getElementById('player-context-menu');
+  menu.innerHTML =
+    '<div class="context-menu-item" onclick="applySchemaRichTextMark(\''+el.id+'\','+start+','+end+',\'**\'); hideContextMenu();">Grassetto</div>' +
+    '<div class="context-menu-item" onclick="applySchemaRichTextMark(\''+el.id+'\','+start+','+end+',\'++\'); hideContextMenu();">Più grande</div>';
+  const x = Math.min(evt.clientX, window.innerWidth-190);
+  const y = Math.min(evt.clientY, window.innerHeight-220);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+function applySchemaRichTextMark(textareaId, start, end, token){
+  const el = document.getElementById(textareaId);
+  if(!el) return;
+  const value = el.value;
+  el.value = value.slice(0,start) + token + value.slice(start,end) + token + value.slice(end);
+  el.dispatchEvent(new Event('change', { bubbles:true }));
+  autosizeTextarea(el);
+  el.focus();
+  el.setSelectionRange(start, end + token.length*2);
 }
 async function addSchemaTagFromInput(){
   const input = document.getElementById('schema-tag-input');
@@ -3519,20 +3940,20 @@ function renderSchemaExerciseSheet(){
   ).join('');
   const tagDatalist = '<datalist id="schema-tag-suggestions">' + state.schema.availableTags.map(t=>'<option value="'+esc(t)+'">').join('') + '</datalist>';
   const livelloTabsHtml = e.livelli.map(l=>
-    '<button class="btn btn-small '+(l.id===livello.id?'btn-active':'')+'" onclick="switchSchemaLivello(\''+l.id+'\')">Livello '+esc(l.nome)+'</button>'
-  ).join('') + '<button class="btn btn-small" onclick="addSchemaLivello()">+ Aggiungi livello</button>';
+    '<button class="btn btn-small '+(l.id===livello.id?'btn-active':'')+'" onclick="switchSchemaLivello(\''+l.id+'\')" oncontextmenu="showSchemaLivelloContextMenu(event,\''+l.id+'\')" title="Clic destro per rinominare">'+esc(schemaLivelloLabel(l))+'</button>'
+  ).join('') + '<button class="btn btn-small" onclick="addSchemaLivello()">+ Livello vuoto</button>' +
+    '<button class="btn btn-small" onclick="duplicateSchemaLivello()" title="Crea un nuovo livello partendo dal disegno e dai dati del livello '+esc(schemaLivelloLabel(livello))+'">Duplica livello '+esc(schemaLivelloLabel(livello))+' →</button>';
   return schemaSubNavHTML('library') +
     '<div class="card">' +
-      '<div class="card-header-row"><h2>'+esc(e.titolo)+'</h2>' +
+      '<div class="card-header-row"><h2 class="content-title">'+esc(e.titolo)+'</h2>' +
         '<div class="pitch-actions"><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button><button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaExercise()">Elimina</button></div>' +
       '</div>' +
       '<div class="form-row">' +
         '<div class="field field-grow"><label>Titolo</label><input value="'+esc(e.titolo)+'" onchange="saveSchemaExerciseField(\'titolo\', this.value)"></div>' +
         '<div class="field"><label>N. giocatori</label><input type="number" min="1" value="'+e.numeroGiocatoriBase+'" onchange="saveSchemaExerciseField(\'numeroGiocatoriBase\', this.value)"></div>' +
-        '<div class="field"><label>Larghezza campo (m)</label><input id="schema-ex-larghezza" type="number" step="0.1" value="'+e.larghezzaCampo+'" onchange="onSchemaFieldSizeOverride()"></div>' +
-        '<div class="field"><label>Lunghezza campo (m)</label><input id="schema-ex-lunghezza" type="number" step="0.1" value="'+e.lunghezzaCampo+'" onchange="onSchemaFieldSizeOverride()"></div>' +
+        '<div class="field"><label>Fase di allenamento</label><select onchange="saveSchemaExerciseField(\'categoria\', this.value)">'+schemaCategoriaOptionsHTML(e.categoria)+'</select></div>' +
       '</div>' +
-      '<div class="field"><label>Descrizione generale</label><textarea rows="2" onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea></div>' +
+      '<div class="field"><label>Descrizione generale</label><textarea rows="2" onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea><span class="hint">Solo a schermo, non compare in anteprima/stampa: usala per annotare a te stesso perché/a cosa serve questo esercizio.</span></div>' +
       '<div class="field field-grow">' +
         '<label>Etichette</label>' +
         '<div class="schema-tag-chip-row">' + tagChipsHtml + '</div>' +
@@ -3544,33 +3965,37 @@ function renderSchemaExerciseSheet(){
       '</div>' +
     '</div>' +
     '<div class="card">' +
-      '<h3 style="margin-top:0;">Progressione</h3>' +
+      '<h3>Progressione</h3>' +
       '<div class="pitch-actions" style="margin-bottom:12px;">'+livelloTabsHtml+'</div>' +
-      (e.livelli.length>1 ? '<button class="btn btn-small btn-danger" style="margin-bottom:12px;" onclick="deleteSchemaLivello(\''+livello.id+'\')">Elimina livello '+esc(livello.nome)+'</button>' : '') +
-      '<div class="field"><label>Descrizione di questo livello (cosa lo differenzia)</label><textarea rows="2" onchange="saveSchemaLivelloField(\'descrizione\', this.value)">'+esc(livello.descrizione)+'</textarea></div>' +
+      (e.livelli.length>1 ? '<button class="btn btn-small btn-danger" style="margin-bottom:12px;" onclick="deleteSchemaLivello(\''+livello.id+'\')">Elimina livello '+esc(schemaLivelloLabel(livello))+'</button>' : '') +
+      '<div class="field"><label>Svolgimento di questo livello</label><textarea id="schema-livello-descrizione" class="schema-rich-text" rows="2" title="Seleziona del testo e clicca col destro per grassetto/dimensione" onchange="saveSchemaLivelloField(\'descrizione\', this.value)">'+esc(livello.descrizione)+'</textarea><span class="hint">L\'unica descrizione che compare in anteprima/stampa: come si svolge questo livello.</span></div>' +
       '<div class="form-row">' +
         '<div class="field"><label>Ripetizioni</label><input type="number" min="1" value="'+livello.ripetizioni+'" onchange="saveSchemaLivelloField(\'ripetizioni\', this.value)"></div>' +
         '<div class="field"><label>Durata di ciascuna (min)</label><input type="number" min="1" value="'+livello.durataRipetizione+'" onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
         '<div class="field"><label>Recupero (sec)</label><input type="number" min="0" value="'+livello.recuperoSecondi+'" onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
       '</div>' +
-      schemaToolbarHTML() +
+      schemaToolbarHTML(e) +
       '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+'">' + renderSchemaFieldSVG(e, livello) + '</div>' +
-      '<p class="hint">Trascina per spostare. Click destro su un elemento per rinominare/numerare/cambiare colore. Con "+ Giocatore"/"+ Pallone" o un tipo di linea attivo, disegna sul campo; con la gomma attiva, clicca un elemento per eliminarlo.</p>' +
+      '<p class="hint">Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore). Con giocatore/pallone/porta/portina/cono attivo, clicca sul campo per posizionarlo; con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo.</p>' +
     '</div>' +
     '<div class="card">' +
-      '<h3 style="margin-top:0;">Note</h3>' +
+      '<h3>Note</h3>' +
       (noteRecente ? '<div class="schema-note-recent"><strong>'+formatDate(noteRecente.data.slice(0,10))+'</strong><p>'+esc(noteRecente.testo)+'</p></div>' : '<p class="hint">Nessuna nota ancora.</p>') +
       '<div class="form-row"><div class="field field-grow"><label>Nuova nota</label><textarea id="schema-ex-nuova-nota" rows="2"></textarea></div><button class="btn btn-small" onclick="addSchemaNote()">Aggiungi nota</button></div>' +
       (altreNote.length ? '<details class="schema-note-history"><summary>Storico note ('+altreNote.length+')</summary>' + altreNote.map(n=>'<div class="schema-note-item"><strong>'+formatDate(n.data.slice(0,10))+'</strong><p>'+esc(n.testo)+'</p></div>').join('') + '</details>' : '') +
     '</div>' +
     '<div class="card">' +
-      '<h3 style="margin-top:0;">Valutazioni</h3>' +
+      '<h3>Quanto lo reputi efficace</h3>' +
+      '<p class="hint">Una sola valutazione, tua: quanto ti piace/lo reputi efficace questo esercizio. Non è una media delle sedute — dipenderebbe da troppi fattori estranei all\'esercizio in sé. Clicca di nuovo la stessa stella per azzerare.</p>' +
       '<div class="form-row" style="align-items:center;">' +
-        '<div>' + (e.votoMedio!=null ? 'Media: '+starRatingHTML(e.votoMedio,16)+' ('+e.votoMedio+')' : 'Nessuna valutazione') + '</div>' +
+        starInputHTML(e.votoPreferenza) +
         '<div class="hint">Usato '+e.utilizzi+' volte, '+e.minutiTotaliStagione+' minuti totali in stagione</div>' +
       '</div>' +
-      '<div class="form-row" style="align-items:center;"><label class="hint">Nuovo voto:</label>' + starInputHTML() + '</div>' +
     '</div>';
+}
+async function setSchemaVotoPreferenza(voto){
+  const current = state.schema.currentExercise.votoPreferenza;
+  await saveSchemaExerciseField('votoPreferenza', current===voto ? null : voto);
 }
 async function saveSchemaExerciseField(field, value){
   const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { [field]: value });
@@ -3578,8 +4003,8 @@ async function saveSchemaExerciseField(field, value){
   renderView();
 }
 async function onSchemaFieldSizeOverride(){
-  const larghezzaCampo = document.getElementById('schema-ex-larghezza').value;
-  const lunghezzaCampo = document.getElementById('schema-ex-lunghezza').value;
+  const larghezzaCampo = Math.round(Number(document.getElementById('schema-ex-larghezza').value)) || 1;
+  const lunghezzaCampo = Math.round(Number(document.getElementById('schema-ex-lunghezza').value)) || 1;
   const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { larghezzaCampo, lunghezzaCampo });
   if(res.exercise){ state.schema.currentExercise = res.exercise; renderView(); }
 }
@@ -3591,13 +4016,8 @@ async function addSchemaNote(){
   await loadSchemaExercise(state.schema.exerciseId);
   renderView();
 }
-async function submitSchemaRating(voto){
-  await apiPost('/api/schema/exercises/'+state.schema.exerciseId+'/ratings', { voto });
-  await loadSchemaExercise(state.schema.exerciseId);
-  renderView();
-}
 function confirmDeleteSchemaExercise(){
-  showConfirmModal('Eliminare "'+state.schema.currentExercise.titolo+'"? Elimina anche i livelli, le note, le valutazioni e lo storico collegati.', async () => {
+  showConfirmModal('Eliminare "'+state.schema.currentExercise.titolo+'"? Elimina anche i livelli, le note e lo storico collegati.', async () => {
     await apiDelete('/api/schema/exercises/'+state.schema.exerciseId);
     openSchemaLibrary();
   });
@@ -3616,6 +4036,14 @@ async function addSchemaLivello(){
     renderView();
   } else alert('Errore: '+(res.error||'sconosciuto'));
 }
+async function duplicateSchemaLivello(){
+  const res = await apiPost('/api/schema/exercises/'+state.schema.exerciseId+'/livelli', { duplicateFrom: state.schema.activeLivelloId });
+  if(res.livello){
+    state.schema.currentExercise.livelli.push(res.livello);
+    state.schema.activeLivelloId = res.livello.id;
+    renderView();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
 function deleteSchemaLivello(livelloId){
   showConfirmModal('Eliminare questo livello di progressione?', async () => {
     const res = await apiDelete('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId);
@@ -3624,6 +4052,41 @@ function deleteSchemaLivello(livelloId){
     if(state.schema.activeLivelloId===livelloId) state.schema.activeLivelloId = state.schema.currentExercise.livelli[0].id;
     renderView();
   });
+}
+// I livelli nascono con nome "A"/"B"/"C" (una progressione automatica), ma il nome è
+// liberamente rinominabile (click sulla matita accanto al tab): un nome personalizzato
+// (qualunque cosa diversa da una singola lettera) sostituisce del tutto l'etichetta
+// "Livello X" invece di affiancarcisi, così in libreria/costruttore seduta si legge
+// direttamente "Uscita centrale" invece di "Livello Uscita centrale".
+function schemaLivelloLabel(l){
+  const nome = (l && l.nome) || '';
+  return /^[A-Z]$/.test(nome) ? 'Livello '+nome : nome;
+}
+function showSchemaLivelloContextMenu(evt, livelloId){
+  evt.preventDefault();
+  evt.stopPropagation();
+  const menu = document.getElementById('player-context-menu');
+  menu.innerHTML = '<div class="context-menu-item" onclick="renameSchemaLivello(\''+livelloId+'\'); hideContextMenu();">Rinomina</div>';
+  const x = Math.min(evt.clientX, window.innerWidth-190);
+  const y = Math.min(evt.clientY, window.innerHeight-60);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+async function renameSchemaLivello(livelloId){
+  const l = state.schema.currentExercise.livelli.find(x=>x.id===livelloId);
+  if(!l) return;
+  const custom = !/^[A-Z]$/.test(l.nome);
+  const nome = prompt('Nome del livello (es. "Uscita centrale"):', custom ? l.nome : '');
+  if(nome===null) return;
+  const trimmed = nome.trim();
+  if(!trimmed) return;
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, { nome: trimmed });
+  if(res.livello){
+    const idx = state.schema.currentExercise.livelli.findIndex(x=>x.id===livelloId);
+    if(idx>=0) state.schema.currentExercise.livelli[idx] = res.livello;
+  }
+  renderView();
 }
 async function saveSchemaLivelloField(field, value){
   const livelloId = state.schema.activeLivelloId;
@@ -3680,13 +4143,20 @@ function showSchemaChipContextMenu(evt, chipId){
   const chip = data.chips.find(c=>c.id===chipId);
   if(!chip) return;
   const menu = document.getElementById('player-context-menu');
+  const isGoal = chip.tipo==='porta' || chip.tipo==='portina';
   let html = '<div class="context-menu-item" onclick="renameSchemaChip(\''+chipId+'\'); hideContextMenu();">Rinomina</div>';
   if(chip.tipo==='giocatore'){
     html += '<div class="context-menu-item" onclick="numberSchemaChip(\''+chipId+'\'); hideContextMenu();">Numera</div>';
+    html += '<div class="context-menu-item" onclick="toggleSchemaChipPortiere(\''+chipId+'\'); hideContextMenu();">'+(chip.ruolo==='portiere'?'Rimuovi ruolo portiere':'Segna come portiere')+'</div>';
   }
-  html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
-    SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaChip(\''+chipId+'\',\''+c+'\'); hideContextMenu();" style="width:16px;height:16px;border-radius:50%;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
-  '</div>';
+  if(isGoal){
+    html += '<div class="context-menu-item" onclick="rotateSchemaChip(\''+chipId+'\',-45); hideContextMenu();">Ruota ↺ 45°</div>';
+    html += '<div class="context-menu-item" onclick="rotateSchemaChip(\''+chipId+'\',45); hideContextMenu();">Ruota ↻ 45°</div>';
+  } else {
+    html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
+      SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaChip(\''+chipId+'\',\''+c+'\'); hideContextMenu();" style="width:16px;height:16px;border-radius:50%;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
+    '</div>';
+  }
   html += '<div class="context-menu-item" onclick="deleteSchemaChip(\''+chipId+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
   menu.innerHTML = html;
   const x = Math.min(evt.clientX, window.innerWidth-190);
@@ -3716,6 +4186,20 @@ function recolorSchemaChip(chipId, color){
   chip.color = color;
   saveSchemaCampo(data);
 }
+function toggleSchemaChipPortiere(chipId){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const chip = data.chips.find(c=>c.id===chipId);
+  if(!chip) return;
+  chip.ruolo = chip.ruolo==='portiere' ? null : 'portiere';
+  saveSchemaCampo(data);
+}
+function rotateSchemaChip(chipId, delta){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const chip = data.chips.find(c=>c.id===chipId);
+  if(!chip) return;
+  chip.rot = ((chip.rot||0) + delta + 360) % 360;
+  saveSchemaCampo(data);
+}
 function deleteSchemaChip(chipId){
   const data = parseSchemaCampo(schemaActiveLivello());
   data.chips = data.chips.filter(c=>c.id!==chipId);
@@ -3724,6 +4208,85 @@ function deleteSchemaChip(chipId){
 function deleteSchemaArrow(arrowId){
   const data = parseSchemaCampo(schemaActiveLivello());
   data.arrows = data.arrows.filter(a=>a.id!==arrowId);
+  saveSchemaCampo(data);
+}
+function showSchemaZoneContextMenu(evt, zoneId){
+  evt.preventDefault();
+  evt.stopPropagation();
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const zone = data.zones.find(z=>z.id===zoneId);
+  if(!zone) return;
+  const menu = document.getElementById('player-context-menu');
+  let html = '<div class="context-menu-item" onclick="toggleSchemaZoneStile(\''+zoneId+'\'); hideContextMenu();">'+(zone.stile==='contorno'?'Stile: tinta piena':'Stile: solo contorno (es. area di rigore)')+'</div>';
+  if(zone.stile!=='contorno'){
+    html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
+      SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaZone(\''+zoneId+'\',\''+c+'\'); hideContextMenu();" style="width:16px;height:16px;border-radius:4px;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
+    '</div>';
+  }
+  html += '<div class="context-menu-item" onclick="deleteSchemaZone(\''+zoneId+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
+  menu.innerHTML = html;
+  const x = Math.min(evt.clientX, window.innerWidth-190);
+  const y = Math.min(evt.clientY, window.innerHeight-220);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+function toggleSchemaZoneStile(zoneId){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const zone = data.zones.find(z=>z.id===zoneId);
+  if(!zone) return;
+  zone.stile = zone.stile==='contorno' ? 'pieno' : 'contorno';
+  saveSchemaCampo(data);
+}
+function recolorSchemaZone(zoneId, color){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const zone = data.zones.find(z=>z.id===zoneId);
+  if(!zone) return;
+  zone.color = color;
+  saveSchemaCampo(data);
+}
+function deleteSchemaZone(zoneId){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  data.zones = data.zones.filter(z=>z.id!==zoneId);
+  saveSchemaCampo(data);
+}
+function showSchemaArrowContextMenu(evt, arrowId){
+  evt.preventDefault();
+  evt.stopPropagation();
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const arrow = data.arrows.find(a=>a.id===arrowId);
+  if(!arrow) return;
+  const menu = document.getElementById('player-context-menu');
+  let html = '<div class="context-menu-item" onclick="numberSchemaArrow(\''+arrowId+'\'); hideContextMenu();">'+(arrow.numero!=null?'Cambia numero':'Numera')+'</div>';
+  if(arrow.numero!=null){
+    html += '<div class="context-menu-item" onclick="numberSchemaArrow(\''+arrowId+'\', true); hideContextMenu();">Rimuovi numero</div>';
+  }
+  if(arrow.tipo!=='divisore' && arrow.tipo!=='campo-linea'){
+    html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
+      SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaArrow(\''+arrowId+'\',\''+c+'\'); hideContextMenu();" style="width:16px;height:16px;border-radius:50%;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
+    '</div>';
+  }
+  html += '<div class="context-menu-item" onclick="deleteSchemaArrow(\''+arrowId+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
+  menu.innerHTML = html;
+  const x = Math.min(evt.clientX, window.innerWidth-190);
+  const y = Math.min(evt.clientY, window.innerHeight-220);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+function numberSchemaArrow(arrowId, remove){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const arrow = data.arrows.find(a=>a.id===arrowId);
+  if(!arrow) return;
+  if(remove){ arrow.numero = null; saveSchemaCampo(data); return; }
+  const numero = prompt('Numero (vuoto per rimuovere):', arrow.numero!=null?String(arrow.numero):'');
+  if(numero!==null){ arrow.numero = numero.trim()===''?null:Number(numero); saveSchemaCampo(data); }
+}
+function recolorSchemaArrow(arrowId, color){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const arrow = data.arrows.find(a=>a.id===arrowId);
+  if(!arrow) return;
+  arrow.color = color;
   saveSchemaCampo(data);
 }
 function attachSchemaFieldInteractions(){
@@ -3766,15 +4329,125 @@ function attachSchemaFieldInteractions(){
       svg.addEventListener('pointerup', onUp);
     });
   });
+  function updateSchemaArrowDOM(groupEl, a){
+    const geo = schemaArrowGeometry(a);
+    [groupEl.children[0], groupEl.children[1]].forEach(function(el){
+      if(!el) return;
+      if(geo.tag==='path') el.setAttribute('d', geo.d);
+      else { el.setAttribute('x1',geo.x1); el.setAttribute('y1',geo.y1); el.setAttribute('x2',geo.x2); el.setAttribute('y2',geo.y2); }
+    });
+    const badge = groupEl.getAttribute('data-numero') ? groupEl.children[2] : null;
+    if(badge) badge.setAttribute('transform', 'translate('+geo.mid.x+','+geo.mid.y+')');
+    const h1 = groupEl.querySelector('.schema-arrow-handle[data-end="1"]');
+    const h2 = groupEl.querySelector('.schema-arrow-handle[data-end="2"]');
+    if(h1){ h1.setAttribute('cx', a.x1); h1.setAttribute('cy', a.y1); }
+    if(h2){ h2.setAttribute('cx', a.x2); h2.setAttribute('cy', a.y2); }
+  }
   svg.querySelectorAll('.schema-arrow').forEach(function(arrowEl){
+    arrowEl.style.cursor = 'grab';
+    arrowEl.addEventListener('contextmenu', function(e){
+      showSchemaArrowContextMenu(e, arrowEl.getAttribute('data-id'));
+    });
+    arrowEl.querySelectorAll('.schema-arrow-handle').forEach(function(handleEl){
+      handleEl.style.cursor = 'crosshair';
+      handleEl.addEventListener('pointerdown', function(e){
+        if(e.button===2) return;
+        e.stopPropagation();
+        const id = arrowEl.getAttribute('data-id');
+        if(state.schema.eraserMode){ deleteSchemaArrow(id); return; }
+        const end = handleEl.getAttribute('data-end');
+        handleEl.setPointerCapture(e.pointerId);
+        const data = parseSchemaCampo(schemaActiveLivello());
+        const arrowData = data.arrows.find(function(a){ return a.id===id; });
+        if(!arrowData) return;
+        let moved = false;
+        function onMove(e2){
+          const p = toPoint(e2);
+          moved = true;
+          if(end==='1'){ arrowData.x1 = p.x; arrowData.y1 = p.y; }
+          else { arrowData.x2 = p.x; arrowData.y2 = p.y; }
+          updateSchemaArrowDOM(arrowEl, arrowData);
+        }
+        function onUp(){
+          svg.removeEventListener('pointermove', onMove);
+          svg.removeEventListener('pointerup', onUp);
+          try{ handleEl.releasePointerCapture(e.pointerId); }catch(err){}
+          if(moved) saveSchemaCampo(data);
+        }
+        svg.addEventListener('pointermove', onMove);
+        svg.addEventListener('pointerup', onUp);
+      });
+    });
     arrowEl.addEventListener('pointerdown', function(e){
-      if(!state.schema.eraserMode) return;
+      if(e.button===2) return;
+      const id = arrowEl.getAttribute('data-id');
+      if(state.schema.eraserMode){ e.stopPropagation(); deleteSchemaArrow(id); return; }
       e.stopPropagation();
-      deleteSchemaArrow(arrowEl.getAttribute('data-id'));
+      arrowEl.setPointerCapture(e.pointerId);
+      const startPt = toPoint(e);
+      let moved = false;
+      const data = parseSchemaCampo(schemaActiveLivello());
+      const arrowData = data.arrows.find(function(a){ return a.id===id; });
+      if(!arrowData) return;
+      const orig = {
+        x1: arrowData.x1, y1: arrowData.y1, x2: arrowData.x2, y2: arrowData.y2,
+        points: arrowData.points ? arrowData.points.map(function(p){ return { x:p.x, y:p.y }; }) : null,
+      };
+      function onMove(e2){
+        const p = toPoint(e2);
+        const dx = p.x-startPt.x, dy = p.y-startPt.y;
+        if(Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) moved = true;
+        arrowData.x1 = orig.x1+dx; arrowData.y1 = orig.y1+dy;
+        arrowData.x2 = orig.x2+dx; arrowData.y2 = orig.y2+dy;
+        if(orig.points) arrowData.points = orig.points.map(function(pt){ return { x: pt.x+dx, y: pt.y+dy }; });
+        updateSchemaArrowDOM(arrowEl, arrowData);
+      }
+      function onUp(){
+        svg.removeEventListener('pointermove', onMove);
+        svg.removeEventListener('pointerup', onUp);
+        try{ arrowEl.releasePointerCapture(e.pointerId); }catch(err){}
+        if(moved) saveSchemaCampo(data);
+      }
+      svg.addEventListener('pointermove', onMove);
+      svg.addEventListener('pointerup', onUp);
+    });
+  });
+  svg.querySelectorAll('.schema-zone').forEach(function(zoneEl){
+    zoneEl.style.cursor = 'grab';
+    zoneEl.addEventListener('contextmenu', function(e){
+      showSchemaZoneContextMenu(e, zoneEl.getAttribute('data-id'));
+    });
+    zoneEl.addEventListener('pointerdown', function(e){
+      if(e.button===2) return;
+      e.stopPropagation();
+      const id = zoneEl.getAttribute('data-id');
+      if(state.schema.eraserMode){ deleteSchemaZone(id); return; }
+      zoneEl.setPointerCapture(e.pointerId);
+      const startPt = toPoint(e);
+      let moved = false;
+      const data = parseSchemaCampo(schemaActiveLivello());
+      const zoneData = data.zones.find(function(z){ return z.id===id; });
+      if(!zoneData) return;
+      const origX = zoneData.x, origY = zoneData.y;
+      function onMove(e2){
+        const p = toPoint(e2);
+        const dx = p.x-startPt.x, dy = p.y-startPt.y;
+        if(Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) moved = true;
+        zoneData.x = origX+dx; zoneData.y = origY+dy;
+        zoneEl.setAttribute('x', zoneData.x); zoneEl.setAttribute('y', zoneData.y);
+      }
+      function onUp(){
+        svg.removeEventListener('pointermove', onMove);
+        svg.removeEventListener('pointerup', onUp);
+        try{ zoneEl.releasePointerCapture(e.pointerId); }catch(err){}
+        if(moved) saveSchemaCampo(data);
+      }
+      svg.addEventListener('pointermove', onMove);
+      svg.addEventListener('pointerup', onUp);
     });
   });
   svg.addEventListener('pointerdown', function(e){
-    if(e.target.closest('.schema-chip') || e.target.closest('.schema-arrow')) return;
+    if(e.target.closest('.schema-chip') || e.target.closest('.schema-arrow') || e.target.closest('.schema-zone')) return;
     if(e.button===2) return;
     const s = state.schema;
     if(s.drawMode && s.activeLineType==='pallone-alto'){
@@ -3805,8 +4478,20 @@ function attachSchemaFieldInteractions(){
         let pathLen = 0;
         for(let i=1;i<points.length;i++) pathLen += Math.hypot(points[i].x-points[i-1].x, points[i].y-points[i-1].y);
         if(points.length>=2 && pathLen > 0.5){
+          // Al rilascio il tracciato libero si "pulisce" in una quadratica regolare: si
+          // misura solo il punto di massimo scostamento perpendicolare dalla corda
+          // inizio-fine (segno incluso) e si tiene quello come curvatura ("bend"), non il
+          // tracciato fedele — vedi schemaCurveControlPoint/schemaArrowGeometry.
+          const dx=last.x-start.x, dy=last.y-start.y;
+          const chordLen = Math.hypot(dx,dy)||1;
+          const px=-dy/chordLen, py=dx/chordLen;
+          let bend = 0;
+          points.forEach(function(p){
+            const d = (p.x-start.x)*px + (p.y-start.y)*py;
+            if(Math.abs(d) > Math.abs(bend)) bend = d;
+          });
           const data = parseSchemaCampo(schemaActiveLivello());
-          data.arrows.push({ id: uid(), tipo:'pallone-alto', color:s.activeColor, points, x1:start.x, y1:start.y, x2:last.x, y2:last.y });
+          data.arrows.push({ id: uid(), tipo:'pallone-alto', color:s.activeColor, x1:start.x, y1:start.y, x2:last.x, y2:last.y, bend });
           saveSchemaCampo(data);
         } else { tempPath.remove(); }
       }
@@ -3833,6 +4518,34 @@ function attachSchemaFieldInteractions(){
       }
       svg.addEventListener('pointermove', onMove);
       svg.addEventListener('pointerup', onUp);
+    } else if(s.placeMode==='zona'){
+      const start = toPoint(e);
+      const tempRect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      tempRect.setAttribute('fill', s.activeColor); tempRect.setAttribute('fill-opacity','0.22');
+      tempRect.setAttribute('stroke', s.activeColor); tempRect.setAttribute('stroke-width','0.15'); tempRect.setAttribute('stroke-dasharray','0.4,0.3');
+      tempRect.setAttribute('x', start.x); tempRect.setAttribute('y', start.y); tempRect.setAttribute('width','0'); tempRect.setAttribute('height','0');
+      svg.querySelector('.zones-layer').appendChild(tempRect);
+      function onMove(e2){
+        const p = toPoint(e2);
+        const x = Math.min(start.x, p.x), y = Math.min(start.y, p.y);
+        const rw = Math.abs(p.x-start.x), rh = Math.abs(p.y-start.y);
+        tempRect.setAttribute('x', x); tempRect.setAttribute('y', y);
+        tempRect.setAttribute('width', rw); tempRect.setAttribute('height', rh);
+      }
+      function onUp(e2){
+        svg.removeEventListener('pointermove', onMove);
+        svg.removeEventListener('pointerup', onUp);
+        const p = toPoint(e2);
+        const x = Math.min(start.x, p.x), y = Math.min(start.y, p.y);
+        const rw = Math.abs(p.x-start.x), rh = Math.abs(p.y-start.y);
+        if(rw > 0.6 && rh > 0.6){
+          const data = parseSchemaCampo(schemaActiveLivello());
+          data.zones.push({ id: uid(), x, y, w:rw, h:rh, color: s.activeColor });
+          saveSchemaCampo(data);
+        } else { tempRect.remove(); }
+      }
+      svg.addEventListener('pointermove', onMove);
+      svg.addEventListener('pointerup', onUp);
     } else if(s.placeMode){
       const start = toPoint(e);
       function onUp(e2){
@@ -3855,9 +4568,9 @@ function schemaLivelloPickerHTML(){
   if(!picker) return '';
   return '<div class="schema-picker-overlay" onclick="if(event.target===this) closeSchemaLivelloPicker();">' +
     '<div class="schema-picker-box">' +
-      '<h3 style="margin-top:0;">'+esc(picker.titolo)+'</h3>' +
+      '<h3>'+esc(picker.titolo)+'</h3>' +
       '<p class="hint">Questo esercizio ha più livelli di progressione: quale vuoi usare?</p>' +
-      '<div class="schema-picker-options">' + picker.livelli.map(l=>'<button class="btn" onclick="chooseSchemaLivello(\''+l.id+'\')">Livello '+esc(l.nome)+'</button>').join('') + '</div>' +
+      '<div class="schema-picker-options">' + picker.livelli.map(l=>'<button class="btn" onclick="chooseSchemaLivello(\''+l.id+'\')">'+esc(schemaLivelloLabel(l))+'</button>').join('') + '</div>' +
       '<button class="btn btn-small" onclick="closeSchemaLivelloPicker()">Annulla</button>' +
     '</div>' +
   '</div>';
@@ -3871,6 +4584,42 @@ async function chooseSchemaLivello(livelloId){
   state.schema.livelloPicker = null;
   if(picker && picker.onChoose) await picker.onChoose(livelloId);
   renderView();
+}
+
+/* ---------- picker: duplicazione seduta su un nuovo giorno ---------- */
+function schemaDuplicatePickerHTML(){
+  if(!state.schema.duplicatePicker) return '';
+  const allenamentiOrdinati = state.allenamenti.slice().sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const oggi = new Date().toISOString().slice(0,10);
+  const futuri = allenamentiOrdinati.filter(a=>a.data>=oggi);
+  const list = futuri.length ? futuri : allenamentiOrdinati;
+  const options = list.length
+    ? list.map(a=>'<button class="btn" onclick="chooseSchemaDuplicateTarget(\''+a.id+'\')">'+formatDate(a.data)+'</button>').join('')
+    : '<p class="hint">Nessun allenamento in calendario: creane uno prima in Calendario.</p>';
+  return '<div class="schema-picker-overlay" onclick="if(event.target===this) closeSchemaDuplicatePicker();">' +
+    '<div class="schema-picker-box">' +
+      '<h3>Duplica su quale giorno?</h3>' +
+      '<p class="hint">Stessi esercizi, livelli e durate; RPE e note ripartono vuoti.</p>' +
+      '<div class="schema-picker-options">' + options + '</div>' +
+      '<button class="btn btn-small" onclick="closeSchemaDuplicatePicker()">Annulla</button>' +
+    '</div>' +
+  '</div>';
+}
+function openSchemaDuplicatePicker(){
+  state.schema.duplicatePicker = { sessionId: state.schema.sessionId };
+  renderView();
+}
+function closeSchemaDuplicatePicker(){
+  state.schema.duplicatePicker = null;
+  renderView();
+}
+async function chooseSchemaDuplicateTarget(allenamentoId){
+  const picker = state.schema.duplicatePicker;
+  state.schema.duplicatePicker = null;
+  if(!picker) return;
+  const res = await apiPost('/api/schema/sessions/'+picker.sessionId+'/duplicate', { allenamentoId });
+  if(res.session) await openSchemaSessionBuilder(res.session.id);
+  else alert('Errore: '+(res.error||'sconosciuto'));
 }
 
 /* ---------- sedute ---------- */
@@ -3888,30 +4637,30 @@ function renderSchemaSessionsList(){
   return schemaSubNavHTML('sessions') +
     '<div class="card">' +
       '<div class="card-header-row"><h2>Sedute</h2>' +
-        '<div class="pitch-actions"><button class="btn btn-primary btn-small" onclick="promptNewSchemaSession()">+ Nuova seduta</button></div>' +
+        '<div class="pitch-actions"><button class="btn btn-primary btn-small" onclick="createSchemaSessionBozza()">+ Nuova seduta</button></div>' +
       '</div>' +
-      '<p class="hint">Lo stato si calcola da solo: bozza finché non è collegata a un giorno di allenamento, programmata se il giorno è futuro, eseguita quando il giorno è passato.</p>' +
+      '<p class="hint">Lo stato si calcola da solo: bozza finché non è collegata a un giorno di allenamento, programmata se il giorno è futuro, eseguita quando il giorno è passato. Il nome della seduta è sempre "Allenamento del (data)", preso dal giorno collegato.</p>' +
       (s.sessions.length===0 ? '<p class="hint">Nessuna seduta ancora.</p>' :
         s.sessions.map(sess=>{
-          const allenamento = sess.allenamentoId ? state.allenamenti.find(a=>a.id===sess.allenamentoId) : null;
           return '<div class="schema-session-row" onclick="openSchemaSessionBuilder(\''+sess.id+'\')">' +
-            '<strong>'+esc(sess.titolo)+'</strong>' +
+            '<strong>'+esc(schemaSessionDisplayName(sess))+'</strong>' +
             schemaSessionStatoPillHTML(sess.stato) +
             (sess.stato==='eseguita' && !sess.hasNote ? '<span class="pill pill-red">Note mancanti</span>' : '') +
-            (allenamento ? '<span class="hint">Allenamento del '+formatDate(allenamento.data)+'</span>' : '') +
             '<span class="hint">'+sess.items.length+' esercizi</span>' +
           '</div>';
         }).join('')
       ) +
     '</div>';
 }
-function promptNewSchemaSession(){
-  const titolo = prompt('Titolo della seduta:');
-  if(!titolo) return;
-  createSchemaSession(titolo, null);
+// Le sedute non hanno un titolo libero: il nome mostrato ovunque è sempre derivato dal
+// giorno di allenamento collegato (o "bozza" se non ancora collegato). Il campo titolo
+// resta nel DB solo come valore interno non mostrato.
+function schemaSessionDisplayName(sess){
+  const allenamento = sess.allenamentoId ? state.allenamenti.find(a=>a.id===sess.allenamentoId) : null;
+  return allenamento ? 'Allenamento del '+formatDate(allenamento.data) : 'Nuova seduta (bozza, nessun giorno collegato)';
 }
-async function createSchemaSession(titolo, allenamentoId){
-  const res = await apiPost('/api/schema/sessions', { titolo, allenamentoId: allenamentoId || null });
+async function createSchemaSessionBozza(){
+  const res = await apiPost('/api/schema/sessions', { titolo: 'Seduta', allenamentoId: null });
   if(res.session) await openSchemaSessionBuilder(res.session.id);
   else alert('Errore: '+(res.error||'sconosciuto'));
 }
@@ -3936,7 +4685,7 @@ function schemaSessionsCardForAllenamento(a){
   return '<div class="card"><h2>Seduta programmata</h2>' +
     (sessions.length===0
       ? '<p class="hint">Nessuna seduta collegata a questo giorno.</p><button class="btn btn-small" onclick="createSchemaSessionForAllenamento(\''+a.id+'\')">Crea seduta per questo giorno</button>'
-      : sessions.map(sess=>'<div class="schema-session-row" onclick="openSchemaSessionBuilder(\''+sess.id+'\')"><strong>'+esc(sess.titolo)+'</strong>'+schemaSessionStatoPillHTML(sess.stato)+'</div>').join('')
+      : sessions.map(sess=>'<div class="schema-session-row" onclick="openSchemaSessionBuilder(\''+sess.id+'\')"><strong>'+esc(schemaSessionDisplayName(sess))+'</strong>'+schemaSessionStatoPillHTML(sess.stato)+'</div>').join('')
     ) +
   '</div>';
 }
@@ -3968,63 +4717,58 @@ function renderSchemaSessionBuilder(){
   } else {
     caricoBadge = '<span class="pill pill-muted">Carico totale: '+sess.caricoTotale+'</span>';
   }
-  const locked = sess.stato==='eseguita';
+  // Una seduta eseguita resta comunque modificabile ed eliminabile: lo stato è solo
+  // un'informazione (bozza/programmata/eseguita calcolata dal calendario), non un vincolo.
   return schemaSubNavHTML('sessions') +
     '<div class="card">' +
-      '<div class="card-header-row"><h2>'+esc(sess.titolo)+'</h2>' +
+      '<div class="card-header-row"><h2 class="content-title">'+esc(schemaSessionDisplayName(sess))+'</h2>' +
         '<div class="pitch-actions">' +
           '<button class="btn btn-small" onclick="openSchemaSessions()">← Sedute</button>' +
           schemaSessionStatoPillHTML(sess.stato) +
           '<button class="btn btn-small" onclick="exportSchemaSessionImage()">Esporta immagine</button>' +
           '<button class="btn btn-small" onclick="exportSchemaSessionPDF()">Esporta PDF</button>' +
           '<button class="btn btn-small" onclick="shareSchemaSessionWhatsApp()">Condividi su WhatsApp</button>' +
-          (!locked ? '<button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaSession()">Elimina</button>' : '') +
+          '<button class="btn btn-small" onclick="openSchemaDuplicatePicker()">Duplica in una nuova data</button>' +
+          '<button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaSession()">Elimina</button>' +
         '</div>' +
       '</div>' +
-      (locked ? '<p class="hint">Seduta svolta: è congelata come registro di ciò che è stato fatto. Puoi ancora modificare solo RPE e note.</p>' : '') +
       '<div class="form-row">' +
-        '<div class="field field-grow"><label>Titolo</label><input value="'+esc(sess.titolo)+'" '+(locked?'disabled':'onchange="saveSchemaSessionField(\'titolo\', this.value)"')+'></div>' +
-        '<div class="field"><label>Obiettivo fisico</label><select '+(locked?'disabled':'onchange="onSchemaSessionObiettivoChange(this.value)"')+'>'+objOptions+'</select></div>' +
-        '<div class="field"><label>Giorno di allenamento</label><select '+(locked?'disabled':'onchange="saveSchemaSessionField(\'allenamentoId\', this.value)"')+'>'+allenamentoOptions+'</select></div>' +
+        '<div class="field"><label>Obiettivo fisico</label><select onchange="onSchemaSessionObiettivoChange(this.value)">'+objOptions+'</select></div>' +
+        '<div class="field"><label>Giorno di allenamento</label><select onchange="saveSchemaSessionField(\'allenamentoId\', this.value)">'+allenamentoOptions+'</select></div>' +
         '<div class="field"><label>RPE seduta (1-10)</label><select onchange="saveSchemaSessionField(\'rpe\', this.value)">'+rpeOptions+'</select></div>' +
       '</div>' +
       '<div class="form-row" style="align-items:center;">'+caricoBadge+'<span class="hint">Durata totale: '+sess.durataTotale+' min</span></div>' +
-      (locked ? '<div class="field field-grow"><label>Note e considerazioni sulla seduta svolta</label><textarea rows="2" onchange="saveSchemaSessionField(\'note\', this.value)">'+esc(sess.note||'')+'</textarea></div>' : '') +
+      '<div class="field field-grow"><label>Note e considerazioni</label><textarea rows="2" onchange="saveSchemaSessionField(\'note\', this.value)">'+esc(sess.note||'')+'</textarea></div>' +
     '</div>' +
     '<div class="grid-2">' +
       '<div class="card">' +
-        '<h3 style="margin-top:0;">Libreria esercizi</h3>' +
-        (locked ? '<p class="hint">Seduta già svolta: gli esercizi inclusi non sono più modificabili.</p>' :
-          '<div class="schema-exercise-grid">' + s.exercises.map(e=>
-            '<div class="schema-exercise-card" onclick="addSchemaSessionItem(\''+e.id+'\')">' +
-              '<div class="schema-exercise-card-head"><strong>'+esc(e.titolo)+'</strong>'+(e.livelli.length>1?'<span class="pill">'+e.livelli.length+' livelli</span>':'')+'</div>' +
-              '<div class="hint">'+(schemaExerciseTags(e).join(', ')||'Nessuna etichetta')+'</div>' +
-            '</div>'
-          ).join('') + '</div>'
-        ) +
+        '<h3>Libreria esercizi</h3>' +
+        '<div class="schema-exercise-grid schema-exercise-grid-compact">' + s.exercises.map(e=>schemaExerciseCardHTML(e, "addSchemaSessionItem('"+e.id+"')", true)).join('') + '</div>' +
       '</div>' +
       '<div class="card">' +
-        '<h3 style="margin-top:0;">Esercizi nella seduta</h3>' +
+        '<h3>Esercizi nella seduta</h3>' +
         (sess.items.length===0 ? '<p class="hint">Nessun esercizio aggiunto. Clicca un esercizio nella libreria per aggiungerlo.</p>' :
           sess.items.map((item,idx)=>{
             const titolo = item.livello ? item.livello.esercizio.titolo : item.titoloSnapshot;
-            const nomeLivello = item.livello ? item.livello.nome : item.livelloSnapshot;
+            const nomeLivello = schemaLivelloLabel({ nome: item.livello ? item.livello.nome : item.livelloSnapshot });
             return '<div class="schema-session-item-row">' +
-              '<div><strong>'+esc(titolo)+'</strong><div class="hint">Livello '+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div></div>' +
-              (locked
-                ? '<span class="hint">'+(item.durataMinuti!=null?item.durataMinuti+' min':'—')+'</span>'
-                : '<input type="number" min="1" placeholder="min" style="width:70px;" value="'+(item.durataMinuti!=null?item.durataMinuti:'')+'" onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">'
-              ) +
+              '<div><strong>'+esc(titolo)+'</strong><div class="hint">'+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div></div>' +
+              '<input type="number" min="1" placeholder="min" style="width:70px;" value="'+(item.durataMinuti!=null?item.durataMinuti:'')+'" onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
               '<div class="pitch-actions">' +
-                (!locked && idx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', -1)">↑</button>' : '') +
-                (!locked && idx<sess.items.length-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', 1)">↓</button>' : '') +
-                (locked && item.livello ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.livello.esercizioId+'\')">Nota</button>' : '') +
-                (!locked ? '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi</button>' : '') +
+                (idx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', -1)">↑</button>' : '') +
+                (idx<sess.items.length-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', 1)">↓</button>' : '') +
+                (item.livello ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.livello.esercizioId+'\')">Nota</button>' : '') +
+                '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi</button>' +
               '</div>' +
             '</div>';
           }).join('')
         ) +
       '</div>' +
+    '</div>' +
+    '<div class="card">' +
+      '<h3>Anteprima seduta (come viene esportata)</h3>' +
+      '<p class="hint">Si aggiorna da sola man mano che aggiungi esercizi. Ogni foglio bianco è una pagina reale dell\'esportazione.</p>' +
+      '<div class="schema-session-preview schema-print-page">' + schemaSessionExportSheetsHTML(sess, schemaSessionDisplayName(sess)) + '</div>' +
     '</div>';
 }
 async function saveSchemaSessionField(field, value){
@@ -4042,7 +4786,7 @@ async function onSchemaSessionObiettivoChange(value){
   if(res.session){ state.schema.currentSession = res.session; renderView(); }
 }
 function confirmDeleteSchemaSession(){
-  showConfirmModal('Eliminare la seduta "'+state.schema.currentSession.titolo+'"?', async () => {
+  showConfirmModal('Eliminare la seduta "'+schemaSessionDisplayName(state.schema.currentSession)+'"?', async () => {
     await apiDelete('/api/schema/sessions/'+state.schema.sessionId);
     openSchemaSessions();
   });
@@ -4102,69 +4846,142 @@ function schemaAvailablePlayersForSession(sess){
     return v === 'Disponibile';
   });
 }
-function schemaLineupPitchSVG(players){
-  const bands = [
-    { roles:['ATT'], y:14 },
-    { roles:['MD','CC','ES','ED'], y:48 },
-    { roles:['DC','TD','TS'], y:80 },
-    { roles:['Por'], y:98 },
-  ];
-  let chipsSvg = '';
-  bands.forEach(band=>{
-    const list = players.filter(p=>band.roles.includes(p.ruolo));
-    const n = list.length;
-    list.forEach((p,i)=>{
-      const x = n<=1 ? 34 : 6 + i*(56/Math.max(n-1,1));
-      chipsSvg += '<g transform="translate('+x+','+band.y+')">' +
-        '<circle r="2.6" fill="#0E2233" stroke="#4FA8E0" stroke-width="0.3"/>' +
-        '<text text-anchor="middle" dy="4.4" font-size="1.7" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="0.3">'+esc(surnameOf(p.nome))+'</text>' +
-      '</g>';
-    });
-  });
-  return '<svg viewBox="0 0 68 105" class="pitch-svg">' + pitchMarkingsSVG() + chipsSvg + '</svg>';
+function schemaFormationLineupHTML(sess, availablePlayers, printMode){
+  const def = state.formazioneDefault;
+  if(!def || !def.modulo || !(def.slots||[]).length){
+    return '<p class="hint">Imposta prima una formazione predefinita in Rosa per vedere qui i ruoli coperti.</p>';
+  }
+  const availableIds = new Set(availablePlayers.map(p=>p.id));
+  const surnameCounts = pianoSurnameCounts();
+  const cardCls = 'piano-pitch-card' + (printMode ? ' schema-lineup-card-print' : '');
+  const cardsHtml = def.slots.map(s=>{
+    let leftPctNum = (105 - s.y) / 105 * 100;
+    if(s.ruolo==='Por') leftPctNum *= 0.55;
+    const leftPct = leftPctNum.toFixed(2);
+    const topPct = (s.x / 68 * 100).toFixed(2);
+    const rows = [0,1,2].map(idx=>{
+      const pid = getPianoScelta(s.numero, idx);
+      const p = pid ? state.players.find(pl=>pl.id===pid) : null;
+      const label = p ? esc(pianoDisplayName(p, surnameCounts)) : '<span class="piano-pitch-empty">—</span>';
+      const availCls = p ? (availableIds.has(p.id) ? 'schema-pick-available' : 'schema-pick-absent') : '';
+      return '<div class="piano-pitch-compact-row piano-pitch-compact-row-'+idx+' '+availCls+'"><span class="piano-pitch-tier">'+(idx+1)+'</span>'+label+'</div>';
+    }).join('');
+    return '<div class="'+cardCls+'" style="left:'+leftPct+'%; top:'+topPct+'%;">' +
+      '<div class="piano-pitch-card-head"><span class="piano-pitch-role">'+esc(s.ruolo)+'</span></div>' + rows +
+    '</div>';
+  }).join('');
+  const wrapCls = 'piano-pitch-wrap schema-lineup-pitch' + (printMode ? ' schema-lineup-pitch-print' : '');
+  return '<div class="'+wrapCls+'">' +
+      '<svg viewBox="0 0 105 68" class="piano-pitch-svg"><g transform="translate(105,0) rotate(90)">' + pitchMarkingsSVG(printMode) + '</g></svg>' +
+      '<div class="piano-pitch-cards">' + cardsHtml + '</div>' +
+    '</div>';
 }
-function schemaSessionExportBodyHTML(sess){
+function schemaSessionExportItemHTML(item, idx){
+  if(!item.livello) return '<div class="schema-export-item"><h3>'+(idx+1)+'. '+esc(item.titoloSnapshot)+'</h3><p class="hint">Esercizio non più in libreria.</p></div>';
+  const ex = item.livello.esercizio;
+  const cat = schemaCategoriaInfo(ex.categoria);
+  const tags = schemaExerciseTags(ex);
+  const lv = item.livello;
+  const totaleCalcolato = Math.round(lv.ripetizioni*lv.durataRipetizione + Math.max(lv.ripetizioni-1,0)*(lv.recuperoSecondi||0)/60);
+  const tempoTotale = item.durataMinuti!=null ? item.durataMinuti : totaleCalcolato;
+  // Il "Livello" (A/B/C) è uno strumento di lavoro in libreria per scegliere quale
+  // versione usare: una volta scelta per la seduta non ha senso etichettarla sulla
+  // stampa, conta solo il contenuto di quella versione. La descrizione generale
+  // dell'esercizio è solo a monitor (perché/a cosa serve): qui va SOLO lo svolgimento
+  // del livello scelto, mai la descrizione generale, e con la formattazione (grassetto/
+  // dimensione, marcatori **/++) e gli a-capo preservati.
+  return '<div class="schema-export-item">' +
+    '<div class="schema-export-item-text">' +
+      '<h3>'+(idx+1)+'. '+esc(ex.titolo)+'</h3>' +
+      '<p>Tempo totale: '+tempoTotale+' min · '+lv.ripetizioni+'×'+lv.durataRipetizione+' min · recupero '+lv.recuperoSecondi+'s tra le serie</p>' +
+      '<p class="hint">Campo: '+(ex.lunghezzaCampo||'—')+'×'+(ex.larghezzaCampo||'—')+' m</p>' +
+      '<p class="hint">Obiettivo: ' +
+        (cat ? '<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>' : 'Non categorizzato') +
+        (tags.length ? ' · '+esc(tags.join(', ')) : '') +
+      '</p>' +
+      (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
+    '</div>' +
+    '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(ex, item.livello, false, true) + '</div>' +
+  '</div>';
+}
+// Invece di rimpicciolire tutto per stare su una sola facciata, si impagina su più fogli
+// A4 leggibili: il primo ha meta+ruoli coperti (che occupano già spazio) + 2 esercizi, i
+// successivi 3 esercizi ciascuno visto che hanno tutta la pagina libera. Ogni voce
+// dell'array è l'HTML del contenuto di UN foglio (senza il wrapper .schema-print-sheet).
+function schemaSessionExportPages(sess){
   const allenamento = sess.allenamentoId ? state.allenamenti.find(a=>a.id===sess.allenamentoId) : null;
   const players = schemaAvailablePlayersForSession(sess);
-  return (
-    '<p>'+(allenamento ? 'Allenamento del '+formatDate(allenamento.data)+(allenamento.ora?' • '+esc(allenamento.ora):'') : 'Nessun giorno collegato')+'</p>' +
-    '<p>'+(sess.obiettivo ? 'Obiettivo fisico: '+esc(sess.obiettivo.label)+' · ' : '')+(sess.rpe!=null?'RPE '+sess.rpe+' · ':'')+(sess.caricoTotale!=null?'Carico '+sess.caricoTotale+' · ':'')+'Durata totale '+sess.durataTotale+' min</p>' +
-    '<h2>Giocatori disponibili ('+players.length+')</h2>' +
-    '<div class="schema-export-pitch">' + schemaLineupPitchSVG(players) + '</div>' +
-    '<h2>Esercizi</h2>' +
-    sess.items.map((item,idx)=>{
-      if(!item.livello) return '<div class="schema-export-item"><h3>'+(idx+1)+'. '+esc(item.titoloSnapshot)+' — Livello '+esc(item.livelloSnapshot)+'</h3><p class="hint">Esercizio non più in libreria.</p></div>';
-      const ex = item.livello.esercizio;
-      return '<div class="schema-export-item">' +
-        '<h3>'+(idx+1)+'. '+esc(ex.titolo)+' — Livello '+esc(item.livello.nome)+'</h3>' +
-        (ex.descrizione ? '<p>'+esc(ex.descrizione)+'</p>' : '') +
-        (item.livello.descrizione ? '<p><em>'+esc(item.livello.descrizione)+'</em></p>' : '') +
-        '<p class="hint">Ripetizioni: '+item.livello.ripetizioni+' × '+item.livello.durataRipetizione+' min, recupero '+item.livello.recuperoSecondi+'s · Durata in questa seduta: '+(item.durataMinuti!=null?item.durataMinuti+' min':'—')+'</p>' +
-        '<div class="schema-export-field">' + renderSchemaFieldSVG(ex, item.livello) + '</div>' +
-      '</div>';
-    }).join('') +
-    (sess.note ? '<h2>Note sulla seduta svolta</h2><p>'+esc(sess.note)+'</p>' : '')
+  const metaParts = [];
+  if(allenamento && allenamento.ora) metaParts.push('Ore '+esc(allenamento.ora));
+  if(sess.obiettivo) metaParts.push('Obiettivo: '+esc(sess.obiettivo.label));
+  if(sess.rpe!=null) metaParts.push('RPE '+sess.rpe);
+  if(sess.caricoTotale!=null) metaParts.push('Carico '+sess.caricoTotale);
+  metaParts.push('Durata '+sess.durataTotale+' min');
+
+  const itemsHtml = sess.items.map((item,idx)=>schemaSessionExportItemHTML(item, idx));
+  const pages = [];
+
+  const firstChunk = itemsHtml.slice(0, 2);
+  pages.push(
+    '<p>'+metaParts.join(' · ')+'</p>' +
+    '<h2>Ruoli coperti ('+players.length+' disponibili)</h2>' +
+    '<div class="schema-export-pitch">' + schemaFormationLineupHTML(sess, players, true) + '</div>' +
+    (firstChunk.length ? '<h2>Esercizi</h2>' + firstChunk.join('') : '')
   );
+
+  let rest = itemsHtml.slice(2);
+  while(rest.length){
+    pages.push(rest.slice(0, 3).join(''));
+    rest = rest.slice(3);
+  }
+
+  if(sess.note) pages[pages.length-1] += '<h2>Note</h2><p>'+esc(sess.note).replace(/\n/g,'<br>')+'</p>';
+
+  return pages;
+}
+// Ogni foglio è un .schema-print-sheet in proporzione A4: quello che vedi nell'anteprima
+// a schermo (dentro il costruttore seduta) è esattamente quello che viene esportato.
+function schemaSessionExportSheetsHTML(sess, nomeSeduta){
+  const pages = schemaSessionExportPages(sess);
+  return pages.map((pageHtml, i)=>{
+    const header = i===0
+      ? '<h1>'+esc(nomeSeduta)+'</h1>'
+      : '<div class="schema-print-page-header">'+esc(nomeSeduta)+' <span class="hint">— pag. '+(i+1)+'/'+pages.length+'</span></div>';
+    return '<div class="schema-print-sheet">' + header + pageHtml + '</div>';
+  }).join('');
+}
+// Sfondo bianco fisso (non quello scuro dell'app): stessa resa per immagine, PDF e
+// condivisione.
+function buildSchemaPrintHolder(sess, nomeSeduta){
+  const holder = document.createElement('div');
+  holder.className = 'schema-print-page';
+  holder.style.position = 'fixed'; holder.style.left = '-9999px'; holder.style.top = '0';
+  holder.innerHTML = schemaSessionExportSheetsHTML(sess, nomeSeduta);
+  document.body.appendChild(holder);
+  return holder;
 }
 function exportSchemaSessionImage(){
   const sess = state.schema.currentSession;
   if(!sess) return;
   ensureHtml2Canvas(function(){
-    const holder = document.createElement('div');
-    holder.className = 'app-content schema-export';
-    holder.style.position = 'fixed'; holder.style.left = '-9999px'; holder.style.top = '0';
-    holder.style.width = '800px'; holder.style.padding = '20px';
-    const bgColor = getComputedStyle(document.body).backgroundColor || '#0B141C';
-    holder.style.background = bgColor;
-    holder.innerHTML = '<h1>'+esc(sess.titolo)+'</h1>' + schemaSessionExportBodyHTML(sess);
-    document.body.appendChild(holder);
-    html2canvas(holder, { backgroundColor: bgColor, scale: 2 }).then(function(canvas){
-      const link = document.createElement('a');
-      link.download = 'seduta-'+sess.titolo.replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.png';
-      link.href = canvas.toDataURL('image/png');
-      document.body.appendChild(link); link.click(); link.remove();
-      holder.remove();
-    }).catch(function(err){
+    const nomeSeduta = schemaSessionDisplayName(sess);
+    const holder = buildSchemaPrintHolder(sess, nomeSeduta);
+    const sheets = Array.from(holder.querySelectorAll('.schema-print-sheet'));
+    const baseName = nomeSeduta.replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+    // Una immagine per foglio, scaricate in sequenza (non tutte insieme: alcuni browser
+    // bloccano download multipli simultanei come popup).
+    let chain = Promise.resolve();
+    sheets.forEach(function(sheetEl, i){
+      chain = chain.then(function(){
+        return html2canvas(sheetEl, { backgroundColor:'#FFFFFF', scale:2 }).then(function(canvas){
+          const link = document.createElement('a');
+          link.download = sheets.length>1 ? baseName+'-pagina-'+(i+1)+'.png' : baseName+'.png';
+          link.href = canvas.toDataURL('image/png');
+          document.body.appendChild(link); link.click(); link.remove();
+        });
+      });
+    });
+    chain.then(function(){ holder.remove(); }).catch(function(err){
       console.error('export seduta image error', err);
       alert('Esportazione immagine non riuscita.');
       holder.remove();
@@ -4174,35 +4991,38 @@ function exportSchemaSessionImage(){
 function exportSchemaSessionPDF(){
   const sess = state.schema.currentSession;
   if(!sess) return;
-  exportPDF(sess.titolo, schemaSessionExportBodyHTML(sess));
+  const nomeSeduta = schemaSessionDisplayName(sess);
+  // Non uso exportPDF(title, body): metterebbe un <h1> duplicato fuori dal primo foglio,
+  // che già include il proprio titolo nell'intestazione.
+  const area = document.getElementById('print-area');
+  area.innerHTML = '<div class="schema-print-page">' + schemaSessionExportSheetsHTML(sess, nomeSeduta) + '</div>';
+  window.print();
 }
 async function shareSchemaSessionWhatsApp(){
   const sess = state.schema.currentSession;
   if(!sess) return;
-  const testo = 'Seduta: '+sess.titolo+(sess.rpe!=null?' (RPE '+sess.rpe+')':'')+' — '+sess.items.length+' esercizi, '+sess.durataTotale+' min.';
-  // Condivisione con immagine allegata: supportata solo dai browser con Web Share API
-  // "livello 2" (perlopiù mobile). Altrove si apre WhatsApp con solo il testo: l'immagine
-  // va allegata a mano dopo averla scaricata con "Esporta immagine".
+  const nomeSeduta = schemaSessionDisplayName(sess);
+  const testo = nomeSeduta+(sess.rpe!=null?' (RPE '+sess.rpe+')':'')+' — '+sess.items.length+' esercizi, '+sess.durataTotale+' min.';
+  // Condivisione con immagini allegate: supportata solo dai browser con Web Share API
+  // "livello 2" (perlopiù mobile), un file per foglio. Altrove si apre WhatsApp con solo
+  // il testo: le immagini vanno allegate a mano dopo averle scaricate con "Esporta immagine".
   if(navigator.share && navigator.canShare){
     try{
       await ensureHtml2CanvasPromise();
-      const holder = document.createElement('div');
-      holder.className = 'app-content schema-export';
-      holder.style.position = 'fixed'; holder.style.left = '-9999px'; holder.style.top = '0';
-      holder.style.width = '800px'; holder.style.padding = '20px';
-      const bgColor = getComputedStyle(document.body).backgroundColor || '#0B141C';
-      holder.style.background = bgColor;
-      holder.innerHTML = '<h1>'+esc(sess.titolo)+'</h1>' + schemaSessionExportBodyHTML(sess);
-      document.body.appendChild(holder);
-      const canvas = await html2canvas(holder, { backgroundColor: bgColor, scale: 2 });
+      const holder = buildSchemaPrintHolder(sess, nomeSeduta);
+      const sheets = Array.from(holder.querySelectorAll('.schema-print-sheet'));
+      const files = [];
+      for(let i=0;i<sheets.length;i++){
+        const canvas = await html2canvas(sheets[i], { backgroundColor:'#FFFFFF', scale:2 });
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        files.push(new File([blob], 'seduta-pagina-'+(i+1)+'.png', { type:'image/png' }));
+      }
       holder.remove();
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-      const file = new File([blob], 'seduta.png', { type:'image/png' });
-      if(navigator.canShare({ files:[file] })){
-        await navigator.share({ files:[file], title: sess.titolo, text: testo });
+      if(navigator.canShare({ files })){
+        await navigator.share({ files, title: nomeSeduta, text: testo });
         return;
       }
-      await navigator.share({ title: sess.titolo, text: testo });
+      await navigator.share({ title: nomeSeduta, text: testo });
       return;
     }catch(err){
       if(err && err.name==='AbortError') return; // utente ha annullato la condivisione
@@ -4259,7 +5079,7 @@ async function submitNewStagione(){
   }
   if(!societa || !etichetta){ alert('Società ed etichetta stagione sono obbligatorie.'); return; }
   showConfirmModal(
-    'Chiudere la stagione attiva e iniziarne una nuova ("'+societa+' — '+tipoSquadra+' '+livello+'")? Calendario, rosa, formazione predefinita e piano squadra ripartiranno vuoti (restano consultabili nell\'archivio); la libreria Schema resta condivisa. Potrai importare giocatori dalle stagioni precedenti dall\'archivio.',
+    'Chiudere la stagione attiva e iniziarne una nuova ("'+societa+' — '+tipoSquadra+' '+livello+'")? Calendario, rosa, formazione predefinita e piano squadra ripartiranno vuoti (restano consultabili nell\'archivio); la libreria Allenamenti resta condivisa. Potrai importare giocatori dalle stagioni precedenti dall\'archivio.',
     async () => {
       const res = await apiPost('/api/stagioni', { etichetta, societa, tipoSquadra, livello });
       if(res.stagione){
@@ -4276,7 +5096,7 @@ function renderNewStagioneForm(){
   const livelli = STAGIONE_LIVELLI[s.newTipo] || ['Altro'];
   const livelloOptions = livelli.map(l=>'<option value="'+l+'" '+(s.newLivello===l?'selected':'')+'>'+esc(l)+'</option>').join('');
   return '<div style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;">' +
-    '<p class="hint">Chiudere la stagione attiva azzera calendario e rosa della nuova (restano consultabili nell\'archivio); la libreria Schema resta condivisa.</p>' +
+    '<p class="hint">Chiudere la stagione attiva azzera calendario e rosa della nuova (restano consultabili nell\'archivio); la libreria Allenamenti resta condivisa.</p>' +
     '<div class="form-row">' +
       '<div class="field"><label>Società</label><input id="stagione-new-societa" type="text" placeholder="es. Mirandolese"></div>' +
       '<div class="field"><label>Tipo squadra</label><select id="stagione-new-tipo" onchange="onStagioneTipoChange(this.value)">'+tipoOptions+'</select></div>' +
@@ -4376,7 +5196,7 @@ function renderStagioniView(){
     '<button class="btn btn-primary btn-small" onclick="toggleNewStagioneForm()">'+(s.showNewForm?'Annulla':'+ Chiudi stagione e iniziane una nuova')+'</button>' +
     (s.showNewForm ? renderNewStagioneForm() : '') +
   '</div>' +
-  '<div class="card"><h3 style="margin-top:0;">Archivio stagioni chiuse</h3>' +
+  '<div class="card"><h3>Archivio stagioni chiuse</h3>' +
     (chiuse.length===0 ? '<p class="hint">Nessuna stagione chiusa ancora.</p>' :
       chiuse.map(st=>
         '<div class="schema-session-row" onclick="openStagioneArchivio(\''+st.id+'\')">' +
@@ -4392,7 +5212,26 @@ function renderStagioniView(){
 
 /* ---------- init ---------- */
 document.addEventListener('click', hideContextMenu);
+document.addEventListener('input', function(e){
+  if(e.target.tagName==='TEXTAREA') autosizeTextarea(e.target);
+});
+document.addEventListener('contextmenu', function(e){
+  if(e.target.tagName!=='TEXTAREA' || !e.target.classList.contains('schema-rich-text')) return;
+  if(e.target.selectionStart===e.target.selectionEnd) return; // nessuna selezione: menu nativo
+  e.preventDefault();
+  showSchemaRichTextMenu(e, e.target);
+});
+new MutationObserver(function(mutations){
+  mutations.forEach(function(m){
+    m.addedNodes.forEach(function(node){
+      if(node.nodeType!==1) return;
+      if(node.tagName==='TEXTAREA') autosizeTextarea(node);
+      else if(node.querySelectorAll) autosizeAllTextareas(node);
+    });
+  });
+}).observe(document.body, { childList:true, subtree:true });
 renderView();
+autosizeAllTextareas();
 loadData().then(refreshSchemaNotifiche);
 window.addEventListener('beforeunload', function(e){
   if(state.players.length || state.matches.length || state.allenamenti.length){

@@ -86,11 +86,19 @@ model Exercise {
   larghezzaCampo      Float?
   lunghezzaCampo      Float?
   tags                String   @default("[]")
+  // Fase di allenamento a scelta vincolata (non una etichetta libera): riscaldamento,
+  // tecnica-individuale, tecnica-collettiva, tattica, finalizzazione, partita-tema, portieri.
+  // '' = non ancora categorizzato.
+  categoria           String   @default("")
+  // Preferenza personale dell'allenatore su quanto reputa efficace l'esercizio (1-5): un
+  // singolo valore che si sovrascrive, non una media di più voti nel tempo — l'efficacia
+  // percepita in una singola seduta dipenderebbe da troppi fattori estranei all'esercizio
+  // in sé (avversario, condizione dei giocatori, meteo...).
+  votoPreferenza      Int?
   creatoIl            DateTime @default(now())
 
-  livelli     Livello[]
-  note        Note[]
-  valutazioni Rating[]
+  livelli Livello[]
+  note    Note[]
 
   @@map("exercises")
 }
@@ -122,18 +130,6 @@ model Note {
   esercizio Exercise @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
 
   @@map("notes")
-}
-
-model Rating {
-  id          String   @id @default(cuid())
-  esercizioId String
-  sedutaId    String?
-  voto        Int
-  data        DateTime @default(now())
-
-  esercizio Exercise @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
-
-  @@map("ratings")
 }
 
 model Session {
