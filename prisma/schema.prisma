@@ -9,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model User {
@@ -20,6 +20,31 @@ model User {
   createdAt    DateTime @default(now())
 
   @@map("users")
+}
+
+// Un collaboratore invitato dall'admin (l'utente proprietario di userId=ownerId) a lavorare
+// sulla stessa squadra. Nessuna migrazione dei dati esistenti: rosa/calendario/esercizi/ecc.
+// restano scoped da userId come sempre — un collaboratore "vede" i dati della squadra perché
+// la sessione risolve il suo id personale all'ownerId (vedi lib/dal.js getSession). Revoca
+// SEMPRE soft (revokedAt), mai DELETE: i colori si assegnano in base al conteggio dei membri,
+// un DELETE farebbe slittare/collidere i colori di chi resta o arriva dopo.
+// permissions: array JSON di chiavi granulari (vedi lib/permissions.js PERMISSIONS), scelte
+// individualmente dall'admin per questo invito — non un ruolo preimpostato. Mai una FK/enum:
+// validazione solo lato applicazione contro l'elenco canonico.
+model TeamMember {
+  id              String    @id @default(cuid())
+  ownerId         String
+  userId          String?
+  email           String
+  permissions     String    @default("[]")
+  colore          String
+  inviteToken     String?   @unique
+  inviteExpiresAt DateTime?
+  invitedAt       DateTime  @default(now())
+  joinedAt        DateTime?
+  revokedAt       DateTime?
+
+  @@map("team_members")
 }
 
 // stagioneId è '' (non null: SQLite/Prisma non ammettono null dentro una compound unique
@@ -56,6 +81,21 @@ model Stagione {
   chiusaIl    DateTime?
 
   @@map("stagioni")
+}
+
+// Fase di allenamento (riscaldamento, tattica, ecc.): scelta vincolata per Exercise.categoria
+// ma personalizzabile per account, non più una lista fissa nel codice — l'allenatore può
+// rinominarle, ricolorarle, eliminarle o crearne di nuove dalla libreria esercizi.
+model Categoria {
+  id     String @id @default(cuid())
+  userId String
+  chiave String
+  label  String
+  color  String
+  ordine Int    @default(0)
+
+  @@unique([userId, chiave])
+  @@map("categorie")
 }
 
 model Objective {
@@ -139,12 +179,33 @@ model Session {
   obiettivoId   String?
   allenamentoId String?
   rpe           Int? // 1-10, intensità percepita dell'intera seduta (session-RPE, Foster)
-  note          String   @default("")
   creataIl      DateTime @default(now())
 
-  items SessionItem[]
+  items           SessionItem[]
+  considerazioni  Considerazione[]
 
   @@map("sessions")
+}
+
+// Rimpiazza il vecchio Session.note (un solo blocco di testo, implicitamente scritto
+// dall'allenatore): ora una lista, ciascuna firmata da chi l'ha scritta realmente
+// (autoreId = session.actorUserId, non session.userId che è sempre lo scope squadra) e col
+// suo colore. sedutaId nullable rispecchia lo stesso pattern già usato da Note.sedutaId per
+// gli esercizi: null = considerazione generica/aperta, valorizzato = legata a una seduta.
+// Il colore NON è salvato qui (si risolve dal vivo dal roster, vedi lib/team.js): un colore
+// per persona, mai duplicato per nota, altrimenti due fonti di verità che possono disallinearsi.
+model Considerazione {
+  id         String   @id @default(cuid())
+  ownerId    String
+  autoreId   String
+  autoreNome String
+  sedutaId   String?
+  testo      String
+  creataIl   DateTime @default(now())
+
+  seduta Session? @relation(fields: [sedutaId], references: [id], onDelete: SetNull)
+
+  @@map("considerazioni")
 }
 
 // livelloId è facoltativo (SetNull): un esercizio/livello può essere eliminato dalla libreria

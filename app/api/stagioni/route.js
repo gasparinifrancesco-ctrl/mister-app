@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/dal';
+import { hasPermission } from '@/lib/permissions';
 import { getActiveStagione } from '@/lib/stagioni';
 
 export async function GET() {
@@ -20,6 +21,7 @@ export async function GET() {
 export async function POST(request) {
   const session = await getSession();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'manage_stagioni')) return Response.json({ error: 'forbidden' }, { status: 403 });
 
   let body;
   try {

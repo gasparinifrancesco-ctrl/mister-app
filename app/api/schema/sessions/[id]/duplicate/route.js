@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
+import { hasPermission } from '@/lib/permissions';
 
 // Duplica una seduta (tipicamente già svolta) su un nuovo giorno: stessi esercizi/livelli/
 // durate e lo stesso obiettivo fisico, ma RPE e note ripartono vuoti perché riguardano
@@ -7,6 +8,7 @@ import { getSchemaSessionOrNull } from '@/lib/dal';
 export async function POST(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_sedute')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id } = await params;
 
   const existing = await prisma.session.findFirst({

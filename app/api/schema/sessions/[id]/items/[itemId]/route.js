@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
+import { hasPermission } from '@/lib/permissions';
 
 async function ownedItem(sessionId, itemId, userId) {
   const item = await prisma.sessionItem.findFirst({
@@ -13,6 +14,7 @@ async function ownedItem(sessionId, itemId, userId) {
 export async function PATCH(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_sedute')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id, itemId } = await params;
 
   const existing = await ownedItem(id, itemId, session.userId);
@@ -38,6 +40,7 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_sedute')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id, itemId } = await params;
 
   const existing = await ownedItem(id, itemId, session.userId);

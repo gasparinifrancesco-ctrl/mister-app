@@ -1,10 +1,26 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { logoutAction } from "@/app/actions/auth";
 
-export default function AppShell({ email, schemaUnlocked, stagione }) {
+export default function AppShell({ email, isOwner, permissions, actorId, schemaUnlocked, stagione }) {
   const squadraLabel = [stagione?.tipoSquadra, stagione?.livello].filter(Boolean).join(" ");
+  // Su telefono la barra di navigazione in alto non ha spazio per "Esporta/Importa
+  // backup" ed "Esci" insieme alle 6 voci di navigazione (misurato: ~1100px di
+  // contenuto su un viewport da 375px). Questi tre pulsanti, usati raramente, si
+  // spostano in un menu a comparsa dietro un'iconetta "⋯" — invisibile sopra i 760px,
+  // dove restano sempre visibili nella sidebar come prima.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onDocClick(e) {
+      if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false);
+    }
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [moreOpen]);
   return (
     <>
       {/* Data attributes instead of an inline <script>: React's hydration reliably
@@ -13,6 +29,9 @@ export default function AppShell({ email, schemaUnlocked, stagione }) {
       <div
         id="app-user-data"
         data-email={email}
+        data-is-owner={isOwner === false ? "0" : "1"}
+        data-permissions={JSON.stringify(permissions || [])}
+        data-actor-id={actorId || ""}
         data-schema-unlocked={schemaUnlocked ? "1" : "0"}
         data-stagione-etichetta={stagione?.etichetta || ""}
         data-stagione-societa={stagione?.societa || ""}
@@ -46,16 +65,27 @@ export default function AppShell({ email, schemaUnlocked, stagione }) {
             {email ? <span className="sidebar-user-email">{email}</span> : null}
           </div>
           <nav id="side-nav" className="side-nav"></nav>
-          <div className="sidebar-backup">
-            <button className="btn btn-small" onClick={() => window.exportBackup()}>
-              Esporta backup
+          <div className="sidebar-more" ref={moreRef}>
+            <button
+              className="mobile-more-toggle"
+              onClick={() => setMoreOpen((v) => !v)}
+              aria-label="Altre azioni"
+              aria-expanded={moreOpen}
+              aria-haspopup="true"
+            >
+              ⋯
             </button>
-            <button className="btn btn-small" onClick={() => window.triggerImportBackup()}>
-              Importa backup
-            </button>
-            <form action={logoutAction}>
-              <button className="btn btn-small" type="submit">Esci</button>
-            </form>
+            <div className={"sidebar-backup" + (moreOpen ? " sidebar-backup-open" : "")}>
+              <button className="btn btn-small" onClick={() => { window.exportBackup(); setMoreOpen(false); }}>
+                Esporta backup
+              </button>
+              <button className="btn btn-small" onClick={() => { window.triggerImportBackup(); setMoreOpen(false); }}>
+                Importa backup
+              </button>
+              <form action={logoutAction}>
+                <button className="btn btn-small" type="submit">Esci</button>
+              </form>
+            </div>
           </div>
         </aside>
         <div className="app-main">

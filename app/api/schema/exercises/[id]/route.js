@@ -1,17 +1,13 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
+import { hasPermission } from '@/lib/permissions';
 import { getPastAllenamentoIds } from '@/lib/schemaAllenamenti';
 
-const SCHEMA_CATEGORIE_VALIDE = new Set([
-  '',
-  'riscaldamento',
-  'tecnica-individuale',
-  'tecnica-collettiva',
-  'tattica',
-  'finalizzazione',
-  'partita-tema',
-  'portieri',
-]);
+async function isValidCategoria(userId, categoria) {
+  if (!categoria) return true;
+  const found = await prisma.categoria.findFirst({ where: { userId, chiave: categoria } });
+  return !!found;
+}
 
 async function loadExercise(id, userId, pastAllenamentoIds) {
   return prisma.exercise.findFirst({
@@ -51,6 +47,7 @@ function withComputed(exercise) {
 export async function GET(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'view_allenamenti')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id } = await params;
   const pastAllenamentoIds = await getPastAllenamentoIds(session.userId);
   const exercise = await loadExercise(id, session.userId, pastAllenamentoIds);
@@ -61,6 +58,7 @@ export async function GET(request, { params }) {
 export async function PATCH(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_esercizi')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id } = await params;
 
   const existing = await prisma.exercise.findFirst({ where: { id, userId: session.userId } });
@@ -81,7 +79,7 @@ export async function PATCH(request, { params }) {
   if (typeof body.larghezzaCampo !== 'undefined') data.larghezzaCampo = Number(body.larghezzaCampo);
   if (typeof body.lunghezzaCampo !== 'undefined') data.lunghezzaCampo = Number(body.lunghezzaCampo);
   if (typeof body.categoria === 'string') {
-    if (!SCHEMA_CATEGORIE_VALIDE.has(body.categoria)) {
+    if (!(await isValidCategoria(session.userId, body.categoria))) {
       return Response.json({ error: 'categoria non valida' }, { status: 400 });
     }
     data.categoria = body.categoria;
@@ -103,6 +101,7 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_esercizi')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id } = await params;
   const existing = await prisma.exercise.findFirst({ where: { id, userId: session.userId } });
   if (!existing) return Response.json({ error: 'not found' }, { status: 404 });

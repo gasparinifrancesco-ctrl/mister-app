@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
+import { hasPermission } from '@/lib/permissions';
 
 // Una progressione (A/B/C...) è un nuovo livello dello STESSO esercizio, non un esercizio
 // separato: eredita dimensioni/tag dall'esercizio padre, ma ha il proprio disegno campo,
@@ -7,6 +8,7 @@ import { getSchemaSessionOrNull } from '@/lib/dal';
 export async function POST(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_esercizi')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id } = await params;
 
   const exercise = await prisma.exercise.findFirst({ where: { id, userId: session.userId } });

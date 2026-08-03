@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/dal';
+import { hasPermission } from '@/lib/permissions';
 
 // Solo l'identità (etichetta/società/tipo/livello) è modificabile, e su qualunque stagione
 // (anche chiusa: è per correggere un refuso, non per riaprire l'archivio alla modifica dei
@@ -7,6 +8,7 @@ import { getSession } from '@/lib/dal';
 export async function PATCH(request, { params }) {
   const session = await getSession();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'manage_stagioni')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id } = await params;
 
   const existing = await prisma.stagione.findFirst({ where: { id, userId: session.userId } });

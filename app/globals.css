@@ -70,6 +70,12 @@
   .sidebar-backup{ display:flex; flex-direction:column; gap:6px; padding:12px 10px; border-top:1px solid var(--border); }
   .sidebar-backup .btn{ width:100%; }
   .sidebar-backup form{ display:contents; }
+  /* Su desktop/tablet il wrapper è invisibile al layout (i figli restano dove sono oggi);
+     su telefono (vedi media query sotto) i due figli diventano posizionati "fixed" e
+     escono del tutto dalla barra orizzontale di navigazione, quindi il wrapper può
+     restare "contents" a ogni larghezza. */
+  .sidebar-more{ display:contents; }
+  .mobile-more-toggle{ display:none; }
 
   .app-main{ flex:1; min-width:0; display:flex; flex-direction:column; }
   .app-content{ padding: 20px 26px 60px; display:flex; flex-direction:column; gap: 16px; flex:1; min-width:0; width:100%; }
@@ -91,10 +97,28 @@
     .sidebar-brand .brand-title{ font-size:0.92rem; }
     .side-nav{ flex-direction:row; padding:6px 8px; }
     .side-nav-btn{ width:auto; white-space:nowrap; }
-    .sidebar-backup{ flex-direction:row; border-top:none; border-left:1px solid var(--border); flex-shrink:0; }
-    .sidebar-backup .btn{ width:auto; white-space:nowrap; }
     .app-content{ padding: 16px 16px 60px; }
     .next-match-bar{ padding:8px 16px; }
+    /* "Esporta/Importa backup" ed "Esci" si usano di rado: su telefono non hanno senso
+       incollati alla barra di navigazione che scorre (competerebbero per lo stesso spazio
+       stretto delle 6 voci principali). Il pulsante "⋯" resta sempre raggiungibile in un
+       angolo fisso dello schermo, indipendente dallo scroll orizzontale della barra sotto;
+       il menu si apre/chiude anche cliccando fuori (gestito in AppShell.js). */
+    .mobile-more-toggle{
+      display:flex; align-items:center; justify-content:center;
+      position:fixed; top:10px; right:10px; z-index:1000;
+      width:34px; height:34px; border-radius:50%;
+      background:var(--panel); border:1px solid var(--border); color:var(--text-dim);
+      font-size:1.3rem; line-height:1; cursor:pointer;
+    }
+    .sidebar-backup{
+      display:none; position:fixed; top:52px; right:10px; z-index:1000;
+      flex-direction:column; gap:6px; width:180px; padding:10px;
+      background:var(--panel); border:1px solid var(--border); border-radius:8px;
+      box-shadow:0 10px 28px rgba(0,0,0,0.55);
+    }
+    .sidebar-backup-open{ display:flex; }
+    .sidebar-backup .btn{ width:100%; white-space:normal; }
   }
   /* Su schermi da telefono la barra orizzontale sopra (marchio + le 6 voci di
      navigazione) non ci sta tutta: il blocco marchio da solo occupava più metà di uno
@@ -123,6 +147,17 @@
   .auth-card input{ width:100%; box-sizing:border-box; }
   .auth-card .btn-primary{ width:100%; margin-top:6px; }
   .auth-error{ color: var(--danger); font-size:0.85rem; margin:-4px 0 10px; }
+  .auth-invite-banner{ background:var(--panel-2); border:1px solid var(--accent-dim); border-radius:7px; padding:8px 12px; font-size:0.85rem; color:var(--text); margin:-4px 0 14px; }
+  .auth-invite-banner ul{ margin:6px 0 0; padding-left:18px; }
+
+  /* Checkbox raggruppate per sezione, usate sia nel form invito che nel modale "Permessi"
+     di un collaboratore esistente (vedi permissionCheckboxesHTML in app.js): un fieldset
+     per sezione (Rosa, Calendario...) invece del vecchio <select> a ruolo unico. */
+  .permission-groups{ display:flex; flex-direction:column; gap:10px; margin:10px 0 14px; }
+  .permission-group{ border:1px solid var(--border); border-radius:7px; padding:8px 12px; margin:0; }
+  .permission-group legend{ font-size:0.72rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-dim); padding:0 4px; }
+  .permission-check{ display:flex; align-items:center; gap:7px; font-size:0.88rem; padding:3px 0; cursor:pointer; }
+  .permission-check input{ padding:0; }
   .auth-switch{ margin-top:16px; font-size:0.85rem; color:var(--text-dim); text-align:center; }
   .auth-switch a{ color:var(--accent); }
 
@@ -144,6 +179,14 @@
   input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible{
     border-color: var(--accent); box-shadow: 0 0 0 2px rgba(62,143,214,0.28);
   }
+  /* Aspetto "sola lettura" esplicito quando un permesso manca: usato ovunque nell'app invece
+     di lasciare un controllo cliccabile che poi fallisce silenziosamente al salvataggio (403
+     dal server). Sui campi si vede da subito che non sono editabili; su interi blocchi (es.
+     il campo da disegno) la classe .readonly-block spegne anche il click/drag. */
+  input:disabled, select:disabled, textarea:disabled{
+    opacity: 0.6; cursor: not-allowed; background: var(--panel);
+  }
+  .readonly-block{ pointer-events: none; opacity: 0.6; }
   /* Autodimensionate via JS (vedi autosizeTextarea in app.js): niente resize manuale,
      l'altezza segue sempre il contenuto cosi il testo ha sempre margini giusti. */
   textarea{ font-family:'Inter',sans-serif; resize: none; overflow: hidden; width:100%; }
@@ -250,6 +293,8 @@
   .schema-cat-chip{ display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:999px; color:#0B141C; white-space:nowrap; }
   .schema-cat-filter-chip{ color:#0B141C; opacity:0.6; border:none; cursor:pointer; }
   .schema-cat-filter-chip-active{ opacity:1; box-shadow:0 0 0 2px var(--text); }
+  .schema-cat-add-chip{ background:none; border:1px dashed var(--border); color:var(--text-dim); cursor:pointer; }
+  .schema-cat-add-chip:hover{ border-color:var(--accent); color:var(--accent); }
   .schema-field-wrap{ max-width:520px; }
   .schema-field-svg{ background:#1E5631; }
   .schema-note-recent{ background:var(--panel-2); border:1px solid var(--accent-dim); border-radius:8px; padding:10px 12px; margin-bottom:10px; }
@@ -258,6 +303,11 @@
   .schema-note-history summary{ cursor:pointer; color:var(--text-dim); font-size:0.85rem; }
   .schema-note-item{ padding:8px 0; border-bottom:1px solid var(--border); }
   .schema-note-item p{ margin:4px 0 0; color:var(--text-dim); }
+  .schema-consid-list{ display:flex; flex-direction:column; gap:8px; margin-top:6px; }
+  .schema-consid-row{ background:var(--panel-2); border-left:3px solid var(--border); border-radius:0 7px 7px 0; padding:8px 10px; }
+  .schema-consid-head{ display:flex; align-items:center; justify-content:space-between; }
+  .schema-consid-author{ font-family:'Oswald',sans-serif; font-weight:700; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; }
+  .schema-consid-testo{ margin:4px 0 0; color:var(--text); font-size:0.88rem; }
   .schema-load-pill{ font-family:'Oswald',sans-serif; }
   .star-input{ display:inline-flex; gap:2px; }
   .star-input-btn{ background:none; border:none; padding:2px; cursor:pointer; line-height:0; }
@@ -293,6 +343,9 @@
   .schema-arrow-handle{ opacity:0; transition:opacity 0.12s; }
   .schema-arrow:hover .schema-arrow-handle{ opacity:0.5; }
   .schema-arrow-handle:hover{ opacity:0.95 !important; }
+  /* Touch non ha uno stato ":hover" prima del tocco: senza questa regola le maniglie
+     resterebbero invisibili (e quindi introvabili) su telefono/tablet. */
+  @media (hover: none){ .schema-arrow-handle{ opacity:0.45; } }
   .schema-picker-overlay{ position:fixed; inset:0; z-index:2000; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; }
   .schema-picker-box{ background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; max-width:360px; width:90%; box-shadow:0 12px 32px rgba(0,0,0,0.5); }
   .schema-picker-options{ display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }

@@ -1,22 +1,19 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
+import { hasPermission } from '@/lib/permissions';
 
-// Fase di allenamento a scelta vincolata: le stesse chiavi usate lato client in
-// SCHEMA_CATEGORIE (public/app.js). '' = non categorizzato, sempre ammesso.
-const SCHEMA_CATEGORIE_VALIDE = new Set([
-  '',
-  'riscaldamento',
-  'tecnica-individuale',
-  'tecnica-collettiva',
-  'tattica',
-  'finalizzazione',
-  'partita-tema',
-  'portieri',
-]);
+// Fase di allenamento a scelta vincolata, ma non più una lista fissa: deve corrispondere a
+// una Categoria dell'account (o essere '' = non categorizzato).
+async function isValidCategoria(userId, categoria) {
+  if (!categoria) return true;
+  const found = await prisma.categoria.findFirst({ where: { userId, chiave: categoria } });
+  return !!found;
+}
 
 export async function GET(request) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'view_allenamenti')) return Response.json({ error: 'forbidden' }, { status: 403 });
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get('search') || '';
@@ -56,6 +53,7 @@ export async function GET(request) {
 export async function POST(request) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_esercizi')) return Response.json({ error: 'forbidden' }, { status: 403 });
 
   let body;
   try {
@@ -68,7 +66,7 @@ export async function POST(request) {
   if (!titolo || !numeroGiocatoriBase) {
     return Response.json({ error: 'titolo e numeroGiocatoriBase sono obbligatori' }, { status: 400 });
   }
-  if (typeof categoria !== 'undefined' && !SCHEMA_CATEGORIE_VALIDE.has(categoria)) {
+  if (typeof categoria !== 'undefined' && !(await isValidCategoria(session.userId, categoria))) {
     return Response.json({ error: 'categoria non valida' }, { status: 400 });
   }
 

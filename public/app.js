@@ -40,26 +40,18 @@ const FORMATIONS = {
 };
 const FORMATION_KEYS = Object.keys(FORMATIONS);
 const SCHEMA_COLORS = ['#4FA8E0','#E0574F','#F2C94C','#6FCF7A'];
-// Fase di allenamento a scelta vincolata (non etichetta libera): stesse chiavi validate
-// server-side in app/api/schema/exercises/route.js e [id]/route.js.
-const SCHEMA_CATEGORIE = [
-  { key:'riscaldamento', label:'Riscaldamento', color:'#F2C94C' },
-  { key:'tecnica-individuale', label:'Tecnica individuale', color:'#4FA8E0' },
-  { key:'tecnica-collettiva', label:'Tecnica collettiva / possesso', color:'#6FCF7A' },
-  // Viola e rosso originali erano al limite del contrasto minimo con il testo scuro dei
-  // chip (~4.9-5:1 su sfondo AA richiesto 4.5:1): schiariti per avere più margine (~7:1),
-  // non scuriti — un colore più scuro abbasserebbe ulteriormente il contrasto col testo scuro.
-  { key:'tattica', label:'Tattica / fasi di gioco', color:'#B591DE' },
-  { key:'finalizzazione', label:'Finalizzazione', color:'#E67F78' },
-  { key:'partita-tema', label:'Partita a tema', color:'#E08A4F' },
-  { key:'portieri', label:'Portieri', color:'#4FD1C5' },
-];
+// Fase di allenamento a scelta vincolata (non etichetta libera): personalizzabile per
+// account (modello Categoria, vedi /api/schema/categorie), non più una lista fissa qui.
+// Stessa palette pre-verificata per il contrasto offerta da /api/schema/categorie per le
+// fasi create da zero — riproposta qui per il menu "cambia colore" di una fase esistente,
+// così non si rischia di scegliere un colore poco leggibile col testo scuro dei chip.
+const SCHEMA_CATEGORIA_COLORI = ['#F2C94C', '#4FA8E0', '#6FCF7A', '#B591DE', '#E67F78', '#E08A4F', '#4FD1C5', '#7FA8C9', '#C9A0DC', '#8FBF6F'];
 function schemaCategoriaInfo(key){
-  return SCHEMA_CATEGORIE.find(c=>c.key===key) || null;
+  return state.schema.categorie.find(c=>c.key===key) || null;
 }
 function schemaCategoriaOptionsHTML(selected){
   return '<option value="" '+(!selected?'selected':'')+'>Non categorizzato</option>' +
-    SCHEMA_CATEGORIE.map(c=>'<option value="'+c.key+'" '+(c.key===selected?'selected':'')+'>'+esc(c.label)+'</option>').join('');
+    state.schema.categorie.map(c=>'<option value="'+c.key+'" '+(c.key===selected?'selected':'')+'>'+esc(c.label)+'</option>').join('');
 }
 const STAGIONE_LIVELLI = {
   'Prima Squadra': ['Terza Categoria','Seconda Categoria','Prima Categoria','Promozione','Eccellenza','Serie D','Serie C','Serie B','Serie A','Altro'],
@@ -103,6 +95,15 @@ let state = {
     newTipo: 'Prima Squadra',
     newLivello: STAGIONE_LIVELLI['Prima Squadra'][0],
   },
+  team: {
+    invites: [],
+    loaded: false,
+    lastInviteLink: null,
+    roster: [],
+    rosterLoaded: false,
+    considerazioniGeneriche: [],
+    newConsiderazioneTesto: '',
+  },
   schema: {
     view: 'library',
     exerciseId: null,
@@ -114,6 +115,8 @@ let state = {
     allenamentoSessions: {},
     availableTags: [],
     tagsLoaded: false,
+    categorie: [],
+    categorieLoaded: false,
     filterSearch: '',
     filterTags: [],
     filterCategoria: '',
@@ -445,12 +448,13 @@ function renderView(){
   } else if(state.currentView==='formazione'){
     const prevScrollY = window.scrollY;
     container.innerHTML = renderFormazioneView();
-    attachDefaultPitchInteractions();
-    attachDefaultRosterInteractions();
+    // Senza edit_formazione non si aggancia proprio il drag/click di assegnazione: niente
+    // interazione silenziosamente inutile, coerente con lo stesso pattern del disegnatore.
+    if(can('edit_formazione')){ attachDefaultPitchInteractions(); attachDefaultRosterInteractions(); }
     window.scrollTo(0, prevScrollY);
   } else if(state.currentView==='pianoSquadra'){
     container.innerHTML = renderPianoSquadraView();
-    attachPianoSquadraInteractions();
+    if(can('edit_piano_squadra')) attachPianoSquadraInteractions();
   } else if(state.currentView==='allenamento'){
     container.innerHTML = renderAllenamentoView();
   } else if(state.currentView==='calendario'){
@@ -495,9 +499,14 @@ function currentSideNavOrder(){
 }
 function getAppUser(){
   const el = document.getElementById('app-user-data');
-  if(!el) return { email:'', schemaUnlocked:false, stagioneEtichetta:'' };
+  if(!el) return { email:'', isOwner:true, permissions:[], schemaUnlocked:false, stagioneEtichetta:'' };
+  let permissions = [];
+  try{ permissions = JSON.parse(el.getAttribute('data-permissions')||'[]'); }catch{ permissions = []; }
   return {
     email: el.getAttribute('data-email')||'',
+    isOwner: el.getAttribute('data-is-owner')==='1',
+    permissions,
+    actorId: el.getAttribute('data-actor-id')||'',
     schemaUnlocked: el.getAttribute('data-schema-unlocked')==='1',
     stagioneEtichetta: el.getAttribute('data-stagione-etichetta')||'',
     stagioneSocieta: el.getAttribute('data-stagione-societa')||'',
@@ -505,11 +514,34 @@ function getAppUser(){
     stagioneLivello: el.getAttribute('data-stagione-livello')||'',
   };
 }
+// Specchio lato client di lib/permissions.js hasPermission: il vero proprietario passa
+// sempre, un collaboratore solo se la chiave (o almeno una, se è un array) è nei permessi
+// che l'admin gli ha assegnato. Duplicato qui perché app.js è uno script statico non
+// bundlizzato da Next, non può fare import da lib/*.
+function can(key){
+  const user = getAppUser();
+  if(user.isOwner) return true;
+  const keys = Array.isArray(key) ? key : [key];
+  return keys.some(k=>user.permissions.includes(k));
+}
+const NAV_VIEW_PERMISSION = { calendario:'view_calendario', pianoSquadra:'view_piano_squadra', formazione:'view_formazione', rosa:'view_rosa', schema:'view_allenamenti' };
 function renderSideNav(){
   const nav = document.getElementById('side-nav');
   const order = currentSideNavOrder();
-  const schemaUnlocked = getAppUser().schemaUnlocked;
-  nav.innerHTML = order.map(key => {
+  const user = getAppUser();
+  // Il modulo Allenamenti/libreria esercizi resta "bloccato" come per un account senza
+  // l'entitlement finché il collaboratore non ha il permesso view_allenamenti, anche se la
+  // squadra ce l'ha (schemaUnlocked è l'entitlement di squadra, non il permesso personale).
+  const schemaUnlocked = user.schemaUnlocked && can('view_allenamenti');
+  nav.innerHTML = order.filter(key => {
+    // Statistiche non ha un permesso proprio: è calcolata da dati Rosa+Calendario già
+    // letti altrove, quindi è visibile solo se si vedono entrambe le sezioni sorgente
+    // (altrimenti la vista si romperebbe silenziosamente sulle fetch sottostanti).
+    if(key==='statistiche') return can('view_rosa') && can('view_calendario');
+    if(key==='schema') return true; // gestito sotto (voce "bloccata" vs attiva, mai nascosta del tutto)
+    const perm = NAV_VIEW_PERMISSION[key];
+    return !perm || can(perm);
+  }).map(key => {
     const label = SIDE_NAV_LABELS[key];
     if(key==='schema'){
       if(!schemaUnlocked){
@@ -653,7 +685,8 @@ function rosaColsForMode(mode){
   return [ ['nome','Nome'], ['ruolo','Ruolo'], ['secondoRuolo','2° ruolo'], ['eta','Età'], ['piede','Piede'], ['valutazione','Valutazione'] ];
 }
 function renderRosaRow(r, mode){
-  const editing = state.editingPlayerId === r.id;
+  const canEdit = can('edit_rosa');
+  const editing = canEdit && state.editingPlayerId === r.id;
   if(editing){
     const roleOpts = ROLE_CODES.map(rc=>'<option value="'+rc+'" '+(r.ruolo===rc?'selected':'')+'>'+rc+'</option>').join('');
     const roleOptsNone = '<option value="" '+(r.secondoRuolo?'':'selected')+'>—</option>' + ROLE_CODES.map(rc=>'<option value="'+rc+'" '+(r.secondoRuolo===rc?'selected':'')+'>'+rc+'</option>').join('');
@@ -686,14 +719,14 @@ function renderRosaRow(r, mode){
   cells.votoMedio = '<td>'+(r.votoMedio!=null?r.votoMedio.toFixed(1):'-')+'</td>';
   cells.percentPresenza = '<td>'+(r.percentPresenza!=null?r.percentPresenza+'%':'-')+'</td>';
   if(mode==='descrizione'){
-    cells.valutazione = '<td onclick="event.stopPropagation();"><select onchange="updatePlayerField(\''+r.id+'\',\'valutazione\',this.value)">'+starOptions+'</select></td>';
-    cells.note = '<td onclick="event.stopPropagation();"><input type="text" class="input-note" placeholder="note libere" value="'+esc(r.note||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'note\',this.value)"></td>';
+    cells.valutazione = '<td onclick="event.stopPropagation();"><select '+(canEdit?'':'disabled')+' onchange="updatePlayerField(\''+r.id+'\',\'valutazione\',this.value)">'+starOptions+'</select></td>';
+    cells.note = '<td onclick="event.stopPropagation();"><input type="text" class="input-note" placeholder="note libere" '+(canEdit?'':'disabled')+' value="'+esc(r.note||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'note\',this.value)"></td>';
   } else {
     cells.valutazione = '<td>'+starRatingHTML(r.valutazione)+'</td>';
   }
   const cols = rosaColsForMode(mode);
-  return '<tr onclick="startEditPlayer(\''+r.id+'\')" style="cursor:pointer;">' +
-    '<td><button class="btn-icon" onclick="event.stopPropagation(); confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button></td>' +
+  return '<tr '+(canEdit?'onclick="startEditPlayer(\''+r.id+'\')" style="cursor:pointer;"':'')+'>' +
+    '<td>'+(canEdit?'<button class="btn-icon" onclick="event.stopPropagation(); confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button>':'')+'</td>' +
     cols.map(([key])=>cells[key]).join('') +
   '</tr>';
 }
@@ -755,6 +788,10 @@ function renderRosaView(){
   const roleOptionsWithNone = '<option value="">—</option>' + roleOptions;
   const mode = state.rosaViewMode || 'generali';
   const cols = rosaColsForMode(mode);
+  // Anagrafica: solo admin può aggiungere/modificare/eliminare giocatori (passa dal PUT
+  // generico su /api/storage/players, riservato all'admin — vedi Fase 3). Un collaboratore
+  // vede comunque tutta la rosa e le statistiche, in sola lettura.
+  const canEditRosa = can('edit_rosa');
 
   return '' +
   '<div class="card">' +
@@ -779,6 +816,7 @@ function renderRosaView(){
       '<p class="hint" style="margin-top:8px;">Clicca un\'intestazione per ordinare, clicca una riga per modificare i dati del giocatore. Le statistiche derivano dai tabellini partita e dalle presenze allenamento; "Gol subiti" conta solo per i portieri.</p>'
     ) +
   '</div>' +
+  (canEditRosa ? (
   '<div class="card">' +
     '<h2>Aggiungi giocatore</h2>' +
     '<div class="form-row">' +
@@ -797,7 +835,8 @@ function renderRosaView(){
     '<div class="card-header-row"><h2>Importa da Excel</h2></div>' +
     '<p class="hint">Aggiunge i giocatori estratti da "Stagione_26_27_United.xlsx". I nomi già presenti in rosa non vengono duplicati.</p>' +
     '<button class="btn btn-primary" onclick="importRosaEstratta()">Importa rosa estratta</button>' +
-  '</div>';
+  '</div>'
+  ) : '');
 }
 function addPlayer(){
   const nomeEl = document.getElementById('new-nome');
@@ -1058,13 +1097,14 @@ function renderPianoSquadraView(){
       '<p class="hint">Imposta prima una formazione predefinita nella pagina Rosa (scegli un modulo e posiziona i titolari): il Piano Squadra userà lo stesso modulo e le stesse posizioni per organizzare le scelte per ruolo.</p>' +
     '</div>';
   }
+  const canEdit = can('edit_piano_squadra');
   return '' +
   '<div class="card" id="piano-squadra-pitch-card">' +
     '<div class="card-header-row"><h2>Piano Squadra</h2>' +
       '<div class="pitch-actions"><button class="btn btn-small" onclick="exportPageImage(\'piano-squadra\')">Esporta immagine</button></div>' +
     '</div>' +
-    '<p class="hint">Modulo <strong>' + esc(def.modulo) + '</strong>, ereditato dalla formazione predefinita in Rosa. Su ogni posizione scegli direttamente dal campo la 1ª, 2ª e 3ª scelta: se più posizioni condividono lo stesso ruolo, condividono anche le stesse scelte.</p>' +
-    renderPianoSquadraPitch(def) +
+    (canEdit ? '<p class="hint">Modulo <strong>' + esc(def.modulo) + '</strong>, ereditato dalla formazione predefinita in Rosa. Su ogni posizione scegli direttamente dal campo la 1ª, 2ª e 3ª scelta: se più posizioni condividono lo stesso ruolo, condividono anche le stesse scelte.</p>' : '<p class="hint">Sola lettura: non hai il permesso di modificare il Piano Squadra.</p>') +
+    '<div'+(canEdit?'':' class="readonly-block"')+'>' + renderPianoSquadraPitch(def) + '</div>' +
   '</div>';
 }
 
@@ -1105,6 +1145,7 @@ function updateMatchField(id, field, value){
 function renderMatchView(){
   const match = getMatch(state.currentMatchId);
   if(!match){ state.currentView='calendario'; return renderCalendarioView(); }
+  const canEdit = can('edit_calendario');
   const tabs = [['convocazione','Formazione'],['avversari','Avversari'],['tabellino','Tabellino'],['valutazioni','Valutazioni']];
   const gf = (match.golFatti||[]).length, gs = (match.golSubiti||[]).length;
   const stato = computeMatchStato(match);
@@ -1114,13 +1155,13 @@ function renderMatchView(){
     '<div class="match-header-main">' +
       '<h2 class="content-title">vs ' + esc(match.avversario) + '</h2>' +
       '<div class="match-header-fields">' +
-        '<input type="date" value="' + esc(match.data) + '" onchange="updateMatchField(\'' + match.id + '\',\'data\',this.value)">' +
-        '<input type="time" value="' + esc(match.ora||'') + '" onchange="updateMatchField(\'' + match.id + '\',\'ora\',this.value)">' +
-        '<select onchange="updateMatchField(\'' + match.id + '\',\'sede\',this.value)">' +
+        '<input type="date" value="' + esc(match.data) + '" '+(canEdit?'':'disabled')+' onchange="updateMatchField(\'' + match.id + '\',\'data\',this.value)">' +
+        '<input type="time" value="' + esc(match.ora||'') + '" '+(canEdit?'':'disabled')+' onchange="updateMatchField(\'' + match.id + '\',\'ora\',this.value)">' +
+        '<select '+(canEdit?'':'disabled')+' onchange="updateMatchField(\'' + match.id + '\',\'sede\',this.value)">' +
           '<option value="Casa" ' + (match.sede==='Casa'?'selected':'') + '>Casa</option>' +
           '<option value="Trasferta" ' + (match.sede==='Trasferta'?'selected':'') + '>Trasferta</option>' +
         '</select>' +
-        '<select onchange="updateMatchField(\'' + match.id + '\',\'tipo\',this.value)">' +
+        '<select '+(canEdit?'':'disabled')+' onchange="updateMatchField(\'' + match.id + '\',\'tipo\',this.value)">' +
           '<option value="Campionato" ' + (match.tipo!=='Amichevole'?'selected':'') + '>Campionato</option>' +
           '<option value="Amichevole" ' + (match.tipo==='Amichevole'?'selected':'') + '>Amichevole</option>' +
         '</select>' +
@@ -1129,7 +1170,7 @@ function renderMatchView(){
         '<button class="btn btn-small" onclick="exportMatchPDF(\'' + match.id + '\')">PDF</button>' +
         '<button class="btn btn-small" onclick="exportMatchXLSX(\'' + match.id + '\')">XLSX</button>' +
         '<button class="btn btn-small" onclick="exportPageImage(\'partita-' + match.id + '\')">Esporta immagine</button>' +
-        '<button class="btn btn-small btn-danger" onclick="deleteMatch(\'' + match.id + '\')">Elimina</button>' +
+        (canEdit ? '<button class="btn btn-small btn-danger" onclick="deleteMatch(\'' + match.id + '\')">Elimina</button>' : '') +
       '</div>' +
     '</div>' +
   '</div>' +
@@ -1148,16 +1189,19 @@ function renderMatchTab(){
   if(!holder) return;
   const match = getMatch(state.currentMatchId);
   if(!match) return;
+  // Senza edit_calendario, tutto il contenuto delle tab (convocazione/avversari/tabellino/
+  // valutazioni) diventa sola lettura in un colpo solo: niente drag/click che poi fallirebbe
+  // silenziosamente al salvataggio.
+  const canEdit = can('edit_calendario');
+  holder.classList.toggle('readonly-block', !canEdit);
   const prevScrollEl = holder.querySelector('.roster-side-list');
   const prevScrollTop = prevScrollEl ? prevScrollEl.scrollTop : null;
   if(state.currentMatchTab==='convocazione'){
     holder.innerHTML = renderConvocazioneTab(match);
-    attachNostraPitchInteractions(match.id);
-    attachNostraBenchDrag(match.id);
+    if(canEdit){ attachNostraPitchInteractions(match.id); attachNostraBenchDrag(match.id); }
   } else if(state.currentMatchTab==='avversari'){
     holder.innerHTML = renderAvversariTab(match);
-    attachAvversariaPitchInteractions(match.id);
-    attachAvversariaBenchDrag(match.id);
+    if(canEdit){ attachAvversariaPitchInteractions(match.id); attachAvversariaBenchDrag(match.id); }
   } else if(state.currentMatchTab==='tabellino'){
     holder.innerHTML = renderTabellinoTab(match);
   } else if(state.currentMatchTab==='valutazioni'){
@@ -1776,9 +1820,56 @@ function assignDefaultPlayerToSlot(playerId, slotNumero){
     alert('Hai già selezionato il massimo di ' + MAX_SQUAD_SELECTION + ' giocatori.');
     return;
   }
-  state.formazioneDefault.chips = state.formazioneDefault.chips.filter(c=>c.playerId!==playerId && c.numero!==slotNumero);
-  state.formazioneDefault.chips.push({ playerId, numero: slotNumero, x: slot.x, y: slot.y });
+  const chips = state.formazioneDefault.chips || [];
+  // Chi arriva scaccia chi c'era: quel giocatore non sparisce, prende il posto lasciato
+  // libero da chi arriva — la stessa posizione titolare se veniva da lì, altrimenti riserva
+  // (da riserva, o da fuori selezione: non ha un'altra posizione titolare "sua" da riavere).
+  const occupantChip = chips.find(c=>c.numero===slotNumero && c.playerId!==playerId);
+  const previousChip = chips.find(c=>c.playerId===playerId);
+  state.formazioneDefault.chips = chips.filter(c=>c.playerId!==playerId && c.numero!==slotNumero);
   state.formazioneDefault.riserve = (state.formazioneDefault.riserve||[]).filter(id=>id!==playerId);
+  if(occupantChip){
+    if(previousChip){
+      const prevSlot = (state.formazioneDefault.slots||[]).find(s=>s.numero===previousChip.numero);
+      state.formazioneDefault.chips.push({ playerId: occupantChip.playerId, numero: previousChip.numero, x: prevSlot?prevSlot.x:previousChip.x, y: prevSlot?prevSlot.y:previousChip.y });
+    } else {
+      if(!state.formazioneDefault.riserve) state.formazioneDefault.riserve = [];
+      state.formazioneDefault.riserve.push(occupantChip.playerId);
+    }
+  }
+  state.formazioneDefault.chips.push({ playerId, numero: slotNumero, x: slot.x, y: slot.y });
+  saveFormazioneDefault();
+  renderView();
+}
+// Rilascio nella lista rosa/panchina su un'altra riga invece che sul campo: stesso scambio
+// di assignDefaultPlayerToSlot se il bersaglio è un titolare (ha uno slot), altrimenti
+// (bersaglio in riserva) uno scambio equivalente senza numero di slot fisso.
+function dropOnDefaultFormationTarget(playerId, targetPlayerId){
+  if(playerId===targetPlayerId) return;
+  const targetChip = (state.formazioneDefault.chips||[]).find(c=>c.playerId===targetPlayerId);
+  if(targetChip){
+    assignDefaultPlayerToSlot(playerId, targetChip.numero);
+    return;
+  }
+  if((state.formazioneDefault.riserve||[]).includes(targetPlayerId)){
+    assignDefaultPlayerToReserveSwap(playerId, targetPlayerId);
+  }
+  // Il bersaglio non è selezionato: non ha nessuna posizione da cedere, nessuna azione.
+}
+function assignDefaultPlayerToReserveSwap(playerId, targetPlayerId){
+  if(!isDefaultSelected(playerId) && totalDefaultSelectionCount() >= MAX_SQUAD_SELECTION){
+    alert('Hai già selezionato il massimo di ' + MAX_SQUAD_SELECTION + ' giocatori.');
+    return;
+  }
+  const previousChip = (state.formazioneDefault.chips||[]).find(c=>c.playerId===playerId);
+  state.formazioneDefault.chips = (state.formazioneDefault.chips||[]).filter(c=>c.playerId!==playerId);
+  state.formazioneDefault.riserve = (state.formazioneDefault.riserve||[]).filter(id=>id!==playerId);
+  if(previousChip){
+    // chi era in riserva prende la posizione titolare lasciata libera da chi arriva
+    state.formazioneDefault.riserve = state.formazioneDefault.riserve.filter(id=>id!==targetPlayerId);
+    state.formazioneDefault.chips.push({ playerId: targetPlayerId, numero: previousChip.numero, x: previousChip.x, y: previousChip.y });
+  }
+  if(!state.formazioneDefault.riserve.includes(playerId)) state.formazioneDefault.riserve.push(playerId);
   saveFormazioneDefault();
   renderView();
 }
@@ -1806,6 +1897,47 @@ function toggleDefaultFormationSelection(playerId){
     renderView();
   }
 }
+// Click destro su un giocatore NON in selezione: tendina con i soli posti liberi (titolari
+// senza chip + eventuale voce "Riserva"), riusando lo stesso #player-context-menu/
+// hideContextMenu già usato per la convocazione partita (showPlayerContextMenu) — lì elenca
+// tutti gli slot con l'occupante, qui invece solo quelli vuoti, come richiesto.
+function showAssignDefaultSlotMenu(evt, playerId){
+  const menu = document.getElementById('player-context-menu');
+  let html = '';
+  if(!state.formazioneDefault.modulo){
+    html = '<div class="context-menu-item" style="color:var(--text-dim);">Scegli prima un modulo</div>';
+  } else {
+    const filledNumeri = new Set((state.formazioneDefault.chips||[]).map(c=>c.numero));
+    const emptySlots = (state.formazioneDefault.slots||[]).filter(s=>!filledNumeri.has(s.numero)).sort((a,b)=>a.numero-b.numero);
+    const atMax = totalDefaultSelectionCount() >= MAX_SQUAD_SELECTION;
+    emptySlots.forEach(s=>{
+      html += '<div class="context-menu-item" onclick="assignDefaultPlayerToSlot(\''+playerId+'\','+s.numero+'); hideContextMenu();">N. '+s.numero+' — '+esc(s.ruolo)+'</div>';
+    });
+    if(!atMax){
+      html += '<div class="context-menu-item" onclick="addDefaultPlayerToRiserve(\''+playerId+'\'); hideContextMenu();">Riserva</div>';
+    }
+    if(!html){
+      html = '<div class="context-menu-item" style="color:var(--text-dim);">Nessun posto libero</div>';
+    }
+  }
+  menu.innerHTML = html;
+  const x = Math.min(evt.clientX, window.innerWidth-190);
+  const y = Math.min(evt.clientY, window.innerHeight-220);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+function addDefaultPlayerToRiserve(playerId){
+  if(isDefaultSelected(playerId)) return;
+  if(totalDefaultSelectionCount() >= MAX_SQUAD_SELECTION){
+    alert('Hai già selezionato il massimo di ' + MAX_SQUAD_SELECTION + ' giocatori.');
+    return;
+  }
+  if(!state.formazioneDefault.riserve) state.formazioneDefault.riserve = [];
+  state.formazioneDefault.riserve.push(playerId);
+  saveFormazioneDefault();
+  renderView();
+}
 function benchDefaultHTML(){
   const riserve = state.formazioneDefault.riserve || [];
   if(riserve.length===0) return '<p class="hint">Nessuna riserva selezionata. Click (anche destro) su un giocatore in rosa per aggiungerlo.</p>';
@@ -1819,26 +1951,36 @@ function wireDefaultSelectOrDrag(el, svg, playerId){
   el.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   el.addEventListener('pointerdown', function(e){
     e.preventDefault();
+    const isRightClick = e.button === 2;
     const startX = e.clientX, startY = e.clientY;
     let moved = false;
-    const ghost = document.createElement('div');
-    ghost.className = 'drag-ghost';
-    const p0 = state.players.find(pl=>pl.id===playerId);
-    ghost.textContent = p0 ? displayName(p0.nome) : '';
-    document.body.appendChild(ghost);
-    ghost.style.left = e.clientX + 'px';
-    ghost.style.top = e.clientY + 'px';
+    // Il tasto destro non trascina mai — libera un giocatore già selezionato o apre subito
+    // la tendina dei posti liberi per uno non selezionato, niente fantasma di trascinamento.
+    let ghost = null;
+    if(!isRightClick){
+      ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      const p0 = state.players.find(pl=>pl.id===playerId);
+      ghost.textContent = p0 ? displayName(p0.nome) : '';
+      document.body.appendChild(ghost);
+      ghost.style.left = e.clientX + 'px';
+      ghost.style.top = e.clientY + 'px';
+    }
     try{ el.setPointerCapture(e.pointerId); }catch(err){}
     function onMove(e2){
       if(Math.abs(e2.clientX-startX) > 4 || Math.abs(e2.clientY-startY) > 4) moved = true;
-      ghost.style.left = e2.clientX + 'px';
-      ghost.style.top = e2.clientY + 'px';
+      if(ghost){ ghost.style.left = e2.clientX + 'px'; ghost.style.top = e2.clientY + 'px'; }
     }
     function onUp(e2){
       try{ el.releasePointerCapture(e.pointerId); }catch(err){}
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
-      ghost.remove();
+      if(ghost) ghost.remove();
+      if(isRightClick){
+        if(isDefaultSelected(playerId)) removeFromDefaultFormation(playerId);
+        else showAssignDefaultSlotMenu(e2, playerId);
+        return;
+      }
       if(moved && svg){
         const rect = svg.getBoundingClientRect();
         if(e2.clientX>=rect.left && e2.clientX<=rect.right && e2.clientY>=rect.top && e2.clientY<=rect.bottom){
@@ -1850,6 +1992,18 @@ function wireDefaultSelectOrDrag(el, svg, playerId){
           let best = null, bestDist = Infinity;
           slots.forEach(s=>{ const d = Math.hypot(s.x-p.x, s.y-p.y); if(d<bestDist){ bestDist=d; best=s.numero; } });
           if(best!=null) assignDefaultPlayerToSlot(playerId, best);
+          return;
+        }
+      }
+      if(moved){
+        // Rilascio dentro la lista rosa/panchina invece che sul campo: se cade su un'altra
+        // riga, scambia le posizioni esattamente come un rilascio sullo slot corrispondente
+        // sul campo — comodo perché non serve più puntare con precisione l'icona piccola.
+        const dropEl = document.elementFromPoint(e2.clientX, e2.clientY);
+        const targetRow = dropEl ? dropEl.closest('[data-player-id]') : null;
+        const targetPlayerId = targetRow ? targetRow.getAttribute('data-player-id') : null;
+        if(targetPlayerId && targetPlayerId!==playerId){
+          dropOnDefaultFormationTarget(playerId, targetPlayerId);
           return;
         }
       }
@@ -2074,6 +2228,7 @@ function renderFormazioneView(){
   return renderDefaultFormationCard();
 }
 function renderDefaultFormationCard(){
+  const canEdit = can('edit_formazione');
   const formationOptions = '<option value="">Scegli modulo…</option>' + FORMATION_KEYS.map(k=>'<option value="'+k+'" '+(state.formazioneDefault.modulo===k?'selected':'')+'>'+k+'</option>').join('');
   const sortMode = state.defaultFormationSort || 'ruolo';
   const playersSorted = sortPlayersForDefaultFormation(state.players);
@@ -2085,16 +2240,16 @@ function renderDefaultFormationCard(){
     '<div class="card-header-row"><h2>Formazione predefinita</h2>' +
       '<div class="pitch-actions">' +
         '<span class="pill pill-muted">' + totalCount + ' / ' + MAX_SQUAD_SELECTION + ' selezionati</span>' +
-        '<button class="btn btn-small ' + (state.drawMode.formazioneDefault?'btn-active':'') + '" onclick="toggleDefaultDrawMode()">' + (state.drawMode.formazioneDefault?'Termina disegno':'Disegna movimenti') + '</button>' +
-        '<button class="btn btn-small" onclick="clearDefaultArrows()">Cancella frecce</button>' +
+        (canEdit ? '<button class="btn btn-small ' + (state.drawMode.formazioneDefault?'btn-active':'') + '" onclick="toggleDefaultDrawMode()">' + (state.drawMode.formazioneDefault?'Termina disegno':'Disegna movimenti') + '</button>' : '') +
+        (canEdit ? '<button class="btn btn-small" onclick="clearDefaultArrows()">Cancella frecce</button>' : '') +
         '<button class="btn btn-small" onclick="exportDefaultFormationXLSX()">Esporta convocati XLSX</button>' +
-        '<button class="btn btn-small" onclick="clearDefaultFormation()">Svuota</button>' +
+        (canEdit ? '<button class="btn btn-small" onclick="clearDefaultFormation()">Svuota</button>' : '') +
       '</div>' +
     '</div>' +
-    '<p class="hint">Scegli il modulo, poi su ogni giocatore in rosa clicca (sinistro o destro) per aggiungerlo/rimuoverlo dal primo posto libero, oppure trascinalo direttamente sulla posizione in campo. Verrà usata per popolare automaticamente le nuove partite quando convochi questi giocatori. Il modulo scelto qui — o cambiato dentro una partita — resta il modulo predefinito anche per le partite successive.</p>' +
-    '<div class="form-row"><div class="field"><label>Modulo</label><select onchange="if(this.value) applyDefaultFormationModulo(this.value)">'+formationOptions+'</select></div></div>' +
+    (canEdit ? '<p class="hint">Scegli il modulo, poi su ogni giocatore in rosa clicca (sinistro o destro) per aggiungerlo/rimuoverlo dal primo posto libero, oppure trascinalo direttamente sulla posizione in campo. Verrà usata per popolare automaticamente le nuove partite quando convochi questi giocatori. Il modulo scelto qui — o cambiato dentro una partita — resta il modulo predefinito anche per le partite successive.</p>' : '<p class="hint">Sola lettura: non hai il permesso di modificare la formazione predefinita.</p>') +
+    '<div class="form-row"><div class="field"><label>Modulo</label><select '+(canEdit?'':'disabled')+' onchange="if(this.value) applyDefaultFormationModulo(this.value)">'+formationOptions+'</select></div></div>' +
     '<div class="tactic-layout">' +
-      '<div>' +
+      '<div'+(canEdit?'':' class="readonly-block"')+'>' +
         '<div class="pitch-wrap">' + renderDefaultPitchSVG() + '</div>' +
         '<h3>Riserve</h3><div id="default-formation-bench">' + benchDefaultHTML() + '</div>' +
       '</div>' +
@@ -2105,7 +2260,7 @@ function renderDefaultFormationCard(){
             '<button class="btn btn-small ' + (sortMode==='numero'?'btn-active':'') + '" onclick="setDefaultFormationSort(\'numero\')">Selezione</button>' +
           '</div>' +
         '</div>' +
-        '<div class="roster-side-list default-formation-roster">' +
+        '<div class="roster-side-list default-formation-roster'+(canEdit?'':' readonly-block')+'">' +
           playersSorted.map(p=>{
             const isStarter = chipIds.has(p.id);
             const isReserve = riserveIds.has(p.id);
@@ -2509,19 +2664,23 @@ function renderAllenamentoView(){
   if(!a){ state.currentView='calendario'; return renderCalendarioView(); }
   const sortMode = state.allenamentoSort || 'cognome';
   const players = sortPlayersForAllenamento(state.players);
+  const canEditCalendario = can('edit_calendario');
+  // Chi non ha edit_calendario su questa vista può solo segnare le presenze: data/ora/
+  // eliminazione dell'allenamento restano nascoste, non solo bloccate lato server. La
+  // scheda della seduta Allenamenti resta visibile solo con view_allenamenti.
   return '' +
   '<div class="match-header">' +
     '<button class="btn-link" onclick="backToCalendario()">← Calendario</button>' +
     '<div class="match-header-main"><h2 class="content-title">Allenamento del ' + formatDate(a.data) + '</h2>' +
       '<div class="match-header-fields">' +
-        '<input type="date" value="'+esc(a.data)+'" onchange="updateAllenamentoData(\''+a.id+'\',this.value)">' +
-        '<input type="time" value="'+esc(a.ora||'')+'" onchange="updateAllenamentoOra(\''+a.id+'\',this.value)">' +
+        (canEditCalendario ? '<input type="date" value="'+esc(a.data)+'" onchange="updateAllenamentoData(\''+a.id+'\',this.value)">' : '') +
+        (canEditCalendario ? '<input type="time" value="'+esc(a.ora||'')+'" onchange="updateAllenamentoOra(\''+a.id+'\',this.value)">' : '') +
         '<button class="btn btn-small" onclick="exportPageImage(\'allenamento-'+a.id+'\')">Esporta immagine</button>' +
-        '<button class="btn btn-small btn-danger" onclick="deleteAllenamento(\''+a.id+'\')">Elimina</button>' +
+        (canEditCalendario ? '<button class="btn btn-small btn-danger" onclick="deleteAllenamento(\''+a.id+'\')">Elimina</button>' : '') +
       '</div>' +
     '</div>' +
   '</div>' +
-  schemaSessionsCardForAllenamento(a) +
+  (can('view_allenamenti') ? schemaSessionsCardForAllenamento(a) : '') +
   '<div class="card"><h2>Presenze</h2>' +
     '<p class="hint">Di default disponibili, tranne i giocatori aggregati alla prima squadra (non disponibili di default). Seleziona per cambiare lo stato di un giocatore.</p>' +
     '<div class="pitch-actions" style="margin-bottom:8px;">' +
@@ -2534,7 +2693,7 @@ function renderAllenamentoView(){
         return '<div class="presenza-row">' +
           '<span class="roster-name">' + esc(displayName(p.nome)) + '</span>' +
           '<span class="roster-role">' + esc(p.ruolo) + '</span>' +
-          '<select onchange="updatePresenza(\''+a.id+'\',\''+p.id+'\',this.value)">' +
+          '<select '+(can('edit_presenze')?'':'disabled')+' onchange="updatePresenza(\''+a.id+'\',\''+p.id+'\',this.value)">' +
             PRESENZA_STATI.map(st=>'<option value="'+st+'" '+(v===st?'selected':'')+'>'+st+'</option>').join('') +
           '</select>' +
         '</div>';
@@ -2542,11 +2701,21 @@ function renderAllenamentoView(){
     ) +
   '</div>';
 }
-function updatePresenza(allenamentoId, playerId, value){
+// Endpoint mirato (non il PUT generico dell'intero blob calendario): permette a chi ha il
+// permesso edit_presenze di segnare le presenze senza poter toccare nient'altro.
+async function updatePresenza(allenamentoId, playerId, value){
   const a = state.allenamenti.find(x=>x.id===allenamentoId);
   if(!a.presenze) a.presenze = {};
   a.presenze[playerId] = value;
-  saveAllenamenti();
+  try{
+    const r = await fetch('/api/presenze', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ allenamentoId, playerId, stato: value }),
+    });
+    const res = await r.json();
+    if(!res || !res.ok) throw new Error(res && res.error || 'errore sconosciuto');
+    reportSaveOk();
+  }catch(e){ console.error('errore presenze', e); reportSaveError(); }
 }
 
 /* ---------- vista CALENDARIO ---------- */
@@ -2651,6 +2820,7 @@ function confirmAddMatchFromCalendar(){
 function pad2(n){ return n<10 ? '0'+n : ''+n; }
 function renderCalendarioView(){
   initCalendarCursor();
+  const canEditCal = can('edit_calendario');
   const year = state.calendarCursor.year, month = state.calendarCursor.month;
   const firstOfMonth = new Date(year, month, 1);
   const startWeekday = (firstOfMonth.getDay() + 6) % 7;
@@ -2675,7 +2845,7 @@ function renderCalendarioView(){
     const dateStr = year + '-' + pad2(month+1) + '-' + pad2(d);
     const evs = eventsByDate[dateStr] || [];
     const isToday = dateStr===todayStr;
-    cells += '<div class="cal-cell' + (isToday?' cal-cell-today':'') + '" oncontextmenu="event.preventDefault(); showAddEventModal(\''+dateStr+'\')"><div class="cal-daynum">' + d + '</div>' +
+    cells += '<div class="cal-cell' + (isToday?' cal-cell-today':'') + '" '+(canEditCal?'oncontextmenu="event.preventDefault(); showAddEventModal(\''+dateStr+'\')"':'')+'><div class="cal-daynum">' + d + '</div>' +
       evs.map(e=>{
         const cls = e.type==='match' ? ('cal-event ' + (e.tipo==='Amichevole' ? 'cal-event-match-amichevole' : 'cal-event-match-campionato')) : 'cal-event cal-event-training';
         const action = e.type==='match' ? "openMatch('"+e.id+"')" : "openAllenamento('"+e.id+"')";
@@ -3369,11 +3539,11 @@ async function apiGet(url){ const r = await fetch(url); return r.json(); }
 async function apiPost(url, body){ const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); return r.json(); }
 async function apiPatch(url, body){ const r = await fetch(url, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); return r.json(); }
 async function apiDelete(url){ const r = await fetch(url, { method:'DELETE' }); return r.json(); }
-function starInputHTML(current){
+function starInputHTML(current, readonly){
   const v = current || 0;
-  let out = '<span class="star-input">';
+  let out = '<span class="star-input'+(readonly?' star-input-readonly':'')+'">';
   for(let i=1;i<=5;i++){
-    out += '<button type="button" class="star-input-btn" onclick="setSchemaVotoPreferenza('+i+')" aria-label="'+i+' stelle">' + starIconSVG(i<=v ? 'var(--yellow)' : 'var(--border)', 20) + '</button>';
+    out += '<button type="button" class="star-input-btn" '+(readonly?'disabled':'onclick="setSchemaVotoPreferenza('+i+')"')+' aria-label="'+i+' stelle">' + starIconSVG(i<=v ? 'var(--yellow)' : 'var(--border)', 20) + '</button>';
   }
   out += '</span>';
   return out;
@@ -3406,6 +3576,14 @@ async function ensureSchemaTags(){
   state.schema.availableTags = res.tags || [];
   state.schema.tagsLoaded = true;
 }
+async function ensureSchemaCategorie(){
+  const res = await apiGet('/api/schema/categorie');
+  // "key" qui rispecchia "chiave" lato server: nome interno già usato ovunque nel client
+  // (schemaCategoriaInfo, i filtri, le card libreria) prima che le fasi diventassero
+  // personalizzabili — evita di dover rinominare quei riferimenti.
+  state.schema.categorie = (res.categorie || []).map(c=>({ id:c.id, key:c.chiave, label:c.label, color:c.color }));
+  state.schema.categorieLoaded = true;
+}
 async function openSchemaLibrary(){
   state.currentView = 'schema';
   state.schema.view = 'library';
@@ -3413,6 +3591,7 @@ async function openSchemaLibrary(){
   state.currentAllenamentoId = null;
   await ensureSchemaObjectives();
   await ensureSchemaTags();
+  await ensureSchemaCategorie();
   await loadSchemaLibrary();
   renderView();
 }
@@ -3426,6 +3605,7 @@ async function openSchemaExercise(id){
   state.schema.view = 'sheet';
   state.schema.activeLivelloId = null;
   await ensureSchemaTags();
+  await ensureSchemaCategorie();
   await loadSchemaExercise(id);
   renderView();
 }
@@ -3440,6 +3620,8 @@ async function openSchemaSessionBuilder(id){
   state.currentView = 'schema';
   state.schema.view = 'sessionBuilder';
   await ensureSchemaObjectives();
+  await ensureSchemaCategorie();
+  await ensureTeamRoster();
   await loadSchemaLibrary();
   await loadSchemaSessionDetail(id);
   renderView();
@@ -3453,6 +3635,7 @@ function renderSchemaView(){
   else if(v==='sheet') html = renderSchemaExerciseSheet();
   else if(v==='sessions') html = renderSchemaSessionsList();
   else if(v==='sessionBuilder') html = renderSchemaSessionBuilder();
+  else if(v==='considerazioni') html = renderSchemaConsiderazioniView();
   else html = renderSchemaLibrary();
   return html + schemaLivelloPickerHTML() + schemaDuplicatePickerHTML();
 }
@@ -3463,7 +3646,43 @@ function schemaSubNavHTML(active){
   return '<div class="pitch-actions" style="margin-bottom:12px;">' +
     '<button class="btn btn-small '+(active==='library'?'btn-active':'')+'" onclick="openSchemaLibrary()">Libreria esercizi</button>' +
     '<button class="btn btn-small '+(active==='sessions'?'btn-active':'')+'" onclick="openSchemaSessions()">Sedute</button>' +
+    '<button class="btn btn-small '+(active==='considerazioni'?'btn-active':'')+'" onclick="openSchemaConsiderazioni()">Considerazioni</button>' +
   '</div>';
+}
+// Considerazioni "aperte", non legate a nessuna seduta specifica — a differenza di quelle
+// dentro il costruttore seduta, che invece sono sempre agganciate a una particolare sedutaId.
+async function openSchemaConsiderazioni(){
+  state.currentView = 'schema';
+  state.schema.view = 'considerazioni';
+  await ensureTeamRoster();
+  const res = await apiGet('/api/schema/considerazioni');
+  state.team.considerazioniGeneriche = res.considerazioni || [];
+  renderView();
+}
+async function addSchemaConsiderazioneGenerica(){
+  const el = document.getElementById('schema-consid-generica-input');
+  const testo = el.value.trim();
+  if(!testo) return;
+  const res = await apiPost('/api/schema/considerazioni', { testo });
+  if(res.considerazione){
+    state.team.considerazioniGeneriche = state.team.considerazioniGeneriche.concat(res.considerazione);
+    el.value = '';
+    renderView();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
+function renderSchemaConsiderazioniView(){
+  return schemaSubNavHTML('considerazioni') +
+    '<div class="card">' +
+      '<h2>Considerazioni</h2>' +
+      '<p class="hint">Pensieri aperti, non legati a una seduta specifica — per quelle di una seduta, vai nella seduta stessa.</p>' +
+      schemaConsiderazioniListHTML(state.team.considerazioniGeneriche) +
+      (can('write_considerazioni') ? (
+        '<div class="form-row" style="margin-top:10px;">' +
+          '<textarea id="schema-consid-generica-input" rows="2" placeholder="Scrivi una considerazione..." style="flex:1;"></textarea>' +
+          '<button class="btn btn-small btn-primary" onclick="addSchemaConsiderazioneGenerica()">Aggiungi</button>' +
+        '</div>'
+      ) : '') +
+    '</div>';
 }
 
 /* ---------- libreria esercizi ---------- */
@@ -3485,18 +3704,76 @@ function setSchemaFilterCategoria(key){
   state.schema.filterCategoria = state.schema.filterCategoria===key ? '' : key;
   loadSchemaLibrary().then(renderView);
 }
+function showSchemaCategoriaContextMenu(evt, key){
+  evt.preventDefault();
+  evt.stopPropagation();
+  const menu = document.getElementById('player-context-menu');
+  let html = '<div class="context-menu-item" onclick="renameSchemaCategoria(\''+key+'\'); hideContextMenu();">Rinomina</div>';
+  html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
+    SCHEMA_CATEGORIA_COLORI.map(c=>'<span onclick="recolorSchemaCategoria(\''+key+'\',\''+c+'\'); hideContextMenu();" style="width:16px;height:16px;border-radius:4px;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
+  '</div>';
+  html += '<div class="context-menu-item" onclick="deleteSchemaCategoria(\''+key+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
+  menu.innerHTML = html;
+  const x = Math.min(evt.clientX, window.innerWidth-190);
+  const y = Math.min(evt.clientY, window.innerHeight-110);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+async function renameSchemaCategoria(key){
+  const c = state.schema.categorie.find(x=>x.key===key);
+  if(!c) return;
+  const label = prompt('Nome della fase di allenamento:', c.label);
+  if(label===null) return;
+  const trimmed = label.trim();
+  if(!trimmed) return;
+  const res = await apiPatch('/api/schema/categorie/'+c.id, { label: trimmed });
+  if(res.categoria){ c.label = res.categoria.label; renderView(); }
+}
+async function recolorSchemaCategoria(key, color){
+  const c = state.schema.categorie.find(x=>x.key===key);
+  if(!c) return;
+  const res = await apiPatch('/api/schema/categorie/'+c.id, { color });
+  if(res.categoria){ c.color = res.categoria.color; renderView(); }
+}
+function deleteSchemaCategoria(key){
+  const c = state.schema.categorie.find(x=>x.key===key);
+  if(!c) return;
+  showConfirmModal('Eliminare la fase "'+c.label+'"? Gli esercizi che la usano diventeranno "non categorizzati".', async function(){
+    const res = await apiDelete('/api/schema/categorie/'+c.id);
+    if(res.ok){
+      state.schema.categorie = state.schema.categorie.filter(x=>x.key!==key);
+      if(state.schema.filterCategoria===key) state.schema.filterCategoria = '';
+      await loadSchemaLibrary();
+      renderView();
+    }
+  });
+}
+async function createSchemaCategoria(){
+  const label = prompt('Nome della nuova fase di allenamento:', '');
+  if(label===null) return;
+  const trimmed = label.trim();
+  if(!trimmed) return;
+  const res = await apiPost('/api/schema/categorie', { label: trimmed });
+  if(res.categoria){
+    state.schema.categorie = state.schema.categorie.concat({ id:res.categoria.id, key:res.categoria.chiave, label:res.categoria.label, color:res.categoria.color });
+    renderView();
+  }
+}
 function renderSchemaLibrary(){
   const s = state.schema;
+  // Senza edit_esercizi la libreria è in sola lettura: niente pulsanti di creazione.
+  const canEditLibrary = can('edit_esercizi');
   const tagChips = s.availableTags.map(t=>
-    '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" onclick="toggleSchemaFilterTag(\''+esc(t)+'\')">'+esc(t)+'</button>'
+    '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" onclick="toggleSchemaFilterTag(\''+esc(t)+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaTagContextMenu(event,\''+esc(t).replace(/'/g,"\\'")+'\')" title="Clic destro per rinominare o eliminare"':'')+'>'+esc(t)+'</button>'
   ).join('');
-  const categoriaChips = SCHEMA_CATEGORIE.map(c=>
-    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategoria===c.key?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="setSchemaFilterCategoria(\''+c.key+'\')">'+esc(c.label)+'</button>'
-  ).join('');
+  const categoriaChips = s.categorie.map(c=>
+    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategoria===c.key?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="setSchemaFilterCategoria(\''+c.key+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaCategoriaContextMenu(event,\''+c.key+'\')" title="Clic destro per rinominare, cambiare colore o eliminare"':'')+'>'+esc(c.label)+'</button>'
+  ).join('') + (canEditLibrary ? '<button type="button" class="schema-cat-chip schema-cat-add-chip" onclick="createSchemaCategoria()">+ Nuova fase</button>' : '');
   return schemaSubNavHTML('library') +
     '<div class="card">' +
       '<div class="card-header-row"><h2>Libreria esercizi</h2>' +
-        '<div class="pitch-actions"><button class="btn btn-primary btn-small" onclick="openSchemaNewExercise()">+ Nuovo esercizio</button></div>' +
+        (canEditLibrary ? '<div class="pitch-actions"><button class="btn btn-primary btn-small" onclick="openSchemaNewExercise()">+ Nuovo esercizio</button></div>' : '') +
       '</div>' +
       '<div class="form-row">' +
         '<div class="field field-grow"><label>Cerca</label><input id="schema-filter-search" type="text" placeholder="titolo o etichetta" value="'+esc(s.filterSearch)+'" oninput="onSchemaFilterChange()"></div>' +
@@ -3928,67 +4205,111 @@ async function removeSchemaTag(tag){
   if(res.exercise) state.schema.currentExercise = res.exercise;
   renderView();
 }
+// Le etichette non sono un'entità a sé, solo stringhe dentro Exercise.tags: rinominare o
+// eliminare un'etichetta dal filtro libreria (click destro su un chip) agisce su TUTTI gli
+// esercizi dell'account che la usano, non solo su quello aperto — vedi PATCH /api/schema/tags.
+function showSchemaTagContextMenu(evt, tag){
+  evt.preventDefault();
+  evt.stopPropagation();
+  const menu = document.getElementById('player-context-menu');
+  menu.innerHTML =
+    '<div class="context-menu-item" onclick="renameSchemaTagGlobal(\''+esc(tag).replace(/'/g,"\\'")+'\'); hideContextMenu();">Rinomina</div>' +
+    '<div class="context-menu-item" onclick="deleteSchemaTagGlobal(\''+esc(tag).replace(/'/g,"\\'")+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
+  const x = Math.min(evt.clientX, window.innerWidth-190);
+  const y = Math.min(evt.clientY, window.innerHeight-90);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+async function renameSchemaTagGlobal(tag){
+  const nome = prompt('Nuovo nome per l\'etichetta "'+tag+'" (verrà rinominata su tutti gli esercizi che la usano):', tag);
+  if(nome===null) return;
+  const trimmed = nome.trim();
+  if(!trimmed || trimmed===tag) return;
+  const res = await apiPatch('/api/schema/tags', { from: tag, to: trimmed });
+  if(res.ok){
+    state.schema.filterTags = state.schema.filterTags.map(t=>t===tag?trimmed:t);
+    await ensureSchemaTags();
+    await loadSchemaLibrary();
+    renderView();
+  }
+}
+function deleteSchemaTagGlobal(tag){
+  showConfirmModal('Eliminare l\'etichetta "'+tag+'" da tutti gli esercizi che la usano? Non è annullabile.', async function(){
+    const res = await apiPatch('/api/schema/tags', { from: tag, to: '' });
+    if(res.ok){
+      state.schema.filterTags = state.schema.filterTags.filter(t=>t!==tag);
+      await ensureSchemaTags();
+      await loadSchemaLibrary();
+      renderView();
+    }
+  });
+}
 function renderSchemaExerciseSheet(){
   const e = state.schema.currentExercise;
   if(!e){ return schemaSubNavHTML('library') + '<div class="card"><p class="hint">Esercizio non trovato.</p></div>'; }
+  // Senza edit_esercizi la scheda è sola lettura per davvero: input disabilitati, pulsanti di
+  // modifica non renderizzati, disegnatore non interattivo — non solo "il salvataggio fallirà
+  // silenziosamente col 403", l'utente deve vedere subito che non può toccare nulla.
+  const canEdit = can('edit_esercizi');
   const livello = schemaActiveLivello();
   const noteRecente = e.note[0];
   const altreNote = e.note.slice(1);
   const currentTags = schemaExerciseTags(e);
   const tagChipsHtml = currentTags.map(t=>
-    '<span class="schema-tag-chip schema-tag-chip-removable">'+esc(t)+' <button type="button" onclick="removeSchemaTag(\''+esc(t).replace(/'/g,"\\'")+'\')" aria-label="Rimuovi">×</button></span>'
+    '<span class="schema-tag-chip'+(canEdit?' schema-tag-chip-removable':'')+'">'+esc(t)+(canEdit ? ' <button type="button" onclick="removeSchemaTag(\''+esc(t).replace(/'/g,"\\'")+'\')" aria-label="Rimuovi">×</button>' : '')+'</span>'
   ).join('');
   const tagDatalist = '<datalist id="schema-tag-suggestions">' + state.schema.availableTags.map(t=>'<option value="'+esc(t)+'">').join('') + '</datalist>';
   const livelloTabsHtml = e.livelli.map(l=>
-    '<button class="btn btn-small '+(l.id===livello.id?'btn-active':'')+'" onclick="switchSchemaLivello(\''+l.id+'\')" oncontextmenu="showSchemaLivelloContextMenu(event,\''+l.id+'\')" title="Clic destro per rinominare">'+esc(schemaLivelloLabel(l))+'</button>'
-  ).join('') + '<button class="btn btn-small" onclick="addSchemaLivello()">+ Livello vuoto</button>' +
-    '<button class="btn btn-small" onclick="duplicateSchemaLivello()" title="Crea un nuovo livello partendo dal disegno e dai dati del livello '+esc(schemaLivelloLabel(livello))+'">Duplica livello '+esc(schemaLivelloLabel(livello))+' →</button>';
+    '<button class="btn btn-small '+(l.id===livello.id?'btn-active':'')+'" onclick="switchSchemaLivello(\''+l.id+'\')" '+(canEdit ? 'oncontextmenu="showSchemaLivelloContextMenu(event,\''+l.id+'\')" title="Clic destro per rinominare"' : '')+'>'+esc(schemaLivelloLabel(l))+'</button>'
+  ).join('') + (canEdit ? '<button class="btn btn-small" onclick="addSchemaLivello()">+ Livello vuoto</button>' +
+    '<button class="btn btn-small" onclick="duplicateSchemaLivello()" title="Crea un nuovo livello partendo dal disegno e dai dati del livello '+esc(schemaLivelloLabel(livello))+'">Duplica livello '+esc(schemaLivelloLabel(livello))+' →</button>' : '');
   return schemaSubNavHTML('library') +
     '<div class="card">' +
       '<div class="card-header-row"><h2 class="content-title">'+esc(e.titolo)+'</h2>' +
-        '<div class="pitch-actions"><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button><button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaExercise()">Elimina</button></div>' +
+        '<div class="pitch-actions"><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button>'+(canEdit ? '<button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaExercise()">Elimina</button>' : '')+'</div>' +
       '</div>' +
       '<div class="form-row">' +
-        '<div class="field field-grow"><label>Titolo</label><input value="'+esc(e.titolo)+'" onchange="saveSchemaExerciseField(\'titolo\', this.value)"></div>' +
-        '<div class="field"><label>N. giocatori</label><input type="number" min="1" value="'+e.numeroGiocatoriBase+'" onchange="saveSchemaExerciseField(\'numeroGiocatoriBase\', this.value)"></div>' +
-        '<div class="field"><label>Fase di allenamento</label><select onchange="saveSchemaExerciseField(\'categoria\', this.value)">'+schemaCategoriaOptionsHTML(e.categoria)+'</select></div>' +
+        '<div class="field field-grow"><label>Titolo</label><input value="'+esc(e.titolo)+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'titolo\', this.value)"></div>' +
+        '<div class="field"><label>N. giocatori</label><input type="number" min="1" value="'+e.numeroGiocatoriBase+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'numeroGiocatoriBase\', this.value)"></div>' +
+        '<div class="field"><label>Fase di allenamento</label><select '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'categoria\', this.value)">'+schemaCategoriaOptionsHTML(e.categoria)+'</select></div>' +
       '</div>' +
-      '<div class="field"><label>Descrizione generale</label><textarea rows="2" onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea><span class="hint">Solo a schermo, non compare in anteprima/stampa: usala per annotare a te stesso perché/a cosa serve questo esercizio.</span></div>' +
+      '<div class="field"><label>Descrizione generale</label><textarea rows="2" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea><span class="hint">Solo a schermo, non compare in anteprima/stampa: usala per annotare a te stesso perché/a cosa serve questo esercizio.</span></div>' +
       '<div class="field field-grow">' +
         '<label>Etichette</label>' +
         '<div class="schema-tag-chip-row">' + tagChipsHtml + '</div>' +
-        '<div style="display:flex; gap:6px; margin-top:6px;">' +
+        (canEdit ? '<div style="display:flex; gap:6px; margin-top:6px;">' +
           '<input id="schema-tag-input" list="schema-tag-suggestions" type="text" placeholder="aggiungi etichetta e premi Invio" onkeydown="onSchemaTagInputKeydown(event)" style="flex:1;">' +
           '<button type="button" class="btn btn-small" onclick="addSchemaTagFromInput()">Aggiungi</button>' +
-        '</div>' +
+        '</div>' : '') +
         tagDatalist +
       '</div>' +
     '</div>' +
     '<div class="card">' +
       '<h3>Progressione</h3>' +
       '<div class="pitch-actions" style="margin-bottom:12px;">'+livelloTabsHtml+'</div>' +
-      (e.livelli.length>1 ? '<button class="btn btn-small btn-danger" style="margin-bottom:12px;" onclick="deleteSchemaLivello(\''+livello.id+'\')">Elimina livello '+esc(schemaLivelloLabel(livello))+'</button>' : '') +
-      '<div class="field"><label>Svolgimento di questo livello</label><textarea id="schema-livello-descrizione" class="schema-rich-text" rows="2" title="Seleziona del testo e clicca col destro per grassetto/dimensione" onchange="saveSchemaLivelloField(\'descrizione\', this.value)">'+esc(livello.descrizione)+'</textarea><span class="hint">L\'unica descrizione che compare in anteprima/stampa: come si svolge questo livello.</span></div>' +
+      (canEdit && e.livelli.length>1 ? '<button class="btn btn-small btn-danger" style="margin-bottom:12px;" onclick="deleteSchemaLivello(\''+livello.id+'\')">Elimina livello '+esc(schemaLivelloLabel(livello))+'</button>' : '') +
+      '<div class="field"><label>Svolgimento di questo livello</label><textarea id="schema-livello-descrizione" class="schema-rich-text" rows="2" '+(canEdit?'title="Seleziona del testo e clicca col destro per grassetto/dimensione" onchange="saveSchemaLivelloField(\'descrizione\', this.value)"':'disabled')+'>'+esc(livello.descrizione)+'</textarea><span class="hint">L\'unica descrizione che compare in anteprima/stampa: come si svolge questo livello.</span></div>' +
       '<div class="form-row">' +
-        '<div class="field"><label>Ripetizioni</label><input type="number" min="1" value="'+livello.ripetizioni+'" onchange="saveSchemaLivelloField(\'ripetizioni\', this.value)"></div>' +
-        '<div class="field"><label>Durata di ciascuna (min)</label><input type="number" min="1" value="'+livello.durataRipetizione+'" onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
-        '<div class="field"><label>Recupero (sec)</label><input type="number" min="0" value="'+livello.recuperoSecondi+'" onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
+        '<div class="field"><label>Ripetizioni</label><input type="number" min="1" value="'+livello.ripetizioni+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'ripetizioni\', this.value)"></div>' +
+        '<div class="field"><label>Durata di ciascuna (min)</label><input type="number" min="1" value="'+livello.durataRipetizione+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
+        '<div class="field"><label>Recupero (sec)</label><input type="number" min="0" value="'+livello.recuperoSecondi+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
       '</div>' +
-      schemaToolbarHTML(e) +
-      '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+'">' + renderSchemaFieldSVG(e, livello) + '</div>' +
-      '<p class="hint">Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore). Con giocatore/pallone/porta/portina/cono attivo, clicca sul campo per posizionarlo; con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo.</p>' +
+      (canEdit ? schemaToolbarHTML(e) : '') +
+      '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(e, livello) + '</div>' +
+      (canEdit ? '<p class="hint">Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore). Con giocatore/pallone/porta/portina/cono attivo, clicca sul campo per posizionarlo; con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo.</p>' : '<p class="hint">Sola lettura: non hai il permesso di modificare gli esercizi.</p>') +
     '</div>' +
     '<div class="card">' +
       '<h3>Note</h3>' +
       (noteRecente ? '<div class="schema-note-recent"><strong>'+formatDate(noteRecente.data.slice(0,10))+'</strong><p>'+esc(noteRecente.testo)+'</p></div>' : '<p class="hint">Nessuna nota ancora.</p>') +
-      '<div class="form-row"><div class="field field-grow"><label>Nuova nota</label><textarea id="schema-ex-nuova-nota" rows="2"></textarea></div><button class="btn btn-small" onclick="addSchemaNote()">Aggiungi nota</button></div>' +
+      (canEdit ? '<div class="form-row"><div class="field field-grow"><label>Nuova nota</label><textarea id="schema-ex-nuova-nota" rows="2"></textarea></div><button class="btn btn-small" onclick="addSchemaNote()">Aggiungi nota</button></div>' : '') +
       (altreNote.length ? '<details class="schema-note-history"><summary>Storico note ('+altreNote.length+')</summary>' + altreNote.map(n=>'<div class="schema-note-item"><strong>'+formatDate(n.data.slice(0,10))+'</strong><p>'+esc(n.testo)+'</p></div>').join('') + '</details>' : '') +
     '</div>' +
     '<div class="card">' +
       '<h3>Quanto lo reputi efficace</h3>' +
       '<p class="hint">Una sola valutazione, tua: quanto ti piace/lo reputi efficace questo esercizio. Non è una media delle sedute — dipenderebbe da troppi fattori estranei all\'esercizio in sé. Clicca di nuovo la stessa stella per azzerare.</p>' +
       '<div class="form-row" style="align-items:center;">' +
-        starInputHTML(e.votoPreferenza) +
+        starInputHTML(e.votoPreferenza, !canEdit) +
         '<div class="hint">Usato '+e.utilizzi+' volte, '+e.minutiTotaliStagione+' minuti totali in stagione</div>' +
       '</div>' +
     '</div>';
@@ -4289,9 +4610,23 @@ function recolorSchemaArrow(arrowId, color){
   arrow.color = color;
   saveSchemaCampo(data);
 }
+// Su mouse (puntatore preciso) la gomma cancella subito, com'è sempre stato: è veloce e
+// lo scroll con la rotellina non passa mai sopra un elemento del disegno per sbaglio. Su
+// touch (puntatore "grezzo": telefono/tablet) uno scroll con il dito può facilmente
+// finire su un elemento mentre si scorre la pagina — lì la gomma chiede conferma.
+function isCoarsePointer(){
+  return typeof window!=='undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+}
+function confirmEraserDelete(){
+  return !isCoarsePointer() || confirm('Eliminare questo elemento dal disegno?');
+}
 function attachSchemaFieldInteractions(){
   const svg = document.getElementById('schema-field-svg');
   if(!svg) return;
+  // Senza edit_esercizi il campo si vede ma non si tocca: niente drag di chip/frecce/zone,
+  // niente piazzamento nuovi elementi, niente menu contestuale — semplicemente non si aggancia
+  // nessun listener, invece di lasciare l'interazione attiva e fallire solo al salvataggio.
+  if(!can('edit_esercizi')) return;
   function toPoint(evt){
     const pt = svg.createSVGPoint();
     pt.x = evt.clientX; pt.y = evt.clientY;
@@ -4306,7 +4641,7 @@ function attachSchemaFieldInteractions(){
       if(e.button===2) return;
       e.stopPropagation();
       const id = chipEl.getAttribute('data-id');
-      if(state.schema.eraserMode){ deleteSchemaChip(id); return; }
+      if(state.schema.eraserMode){ if(confirmEraserDelete()) deleteSchemaChip(id); return; }
       chipEl.setPointerCapture(e.pointerId);
       const startPt = toPoint(e);
       let moved = false;
@@ -4354,7 +4689,7 @@ function attachSchemaFieldInteractions(){
         if(e.button===2) return;
         e.stopPropagation();
         const id = arrowEl.getAttribute('data-id');
-        if(state.schema.eraserMode){ deleteSchemaArrow(id); return; }
+        if(state.schema.eraserMode){ if(confirmEraserDelete()) deleteSchemaArrow(id); return; }
         const end = handleEl.getAttribute('data-end');
         handleEl.setPointerCapture(e.pointerId);
         const data = parseSchemaCampo(schemaActiveLivello());
@@ -4381,7 +4716,7 @@ function attachSchemaFieldInteractions(){
     arrowEl.addEventListener('pointerdown', function(e){
       if(e.button===2) return;
       const id = arrowEl.getAttribute('data-id');
-      if(state.schema.eraserMode){ e.stopPropagation(); deleteSchemaArrow(id); return; }
+      if(state.schema.eraserMode){ e.stopPropagation(); if(confirmEraserDelete()) deleteSchemaArrow(id); return; }
       e.stopPropagation();
       arrowEl.setPointerCapture(e.pointerId);
       const startPt = toPoint(e);
@@ -4421,7 +4756,7 @@ function attachSchemaFieldInteractions(){
       if(e.button===2) return;
       e.stopPropagation();
       const id = zoneEl.getAttribute('data-id');
-      if(state.schema.eraserMode){ deleteSchemaZone(id); return; }
+      if(state.schema.eraserMode){ if(confirmEraserDelete()) deleteSchemaZone(id); return; }
       zoneEl.setPointerCapture(e.pointerId);
       const startPt = toPoint(e);
       let moved = false;
@@ -4719,6 +5054,7 @@ function renderSchemaSessionBuilder(){
   }
   // Una seduta eseguita resta comunque modificabile ed eliminabile: lo stato è solo
   // un'informazione (bozza/programmata/eseguita calcolata dal calendario), non un vincolo.
+  const canEditSedute = can('edit_sedute');
   return schemaSubNavHTML('sessions') +
     '<div class="card">' +
       '<div class="card-header-row"><h2 class="content-title">'+esc(schemaSessionDisplayName(sess))+'</h2>' +
@@ -4728,20 +5064,28 @@ function renderSchemaSessionBuilder(){
           '<button class="btn btn-small" onclick="exportSchemaSessionImage()">Esporta immagine</button>' +
           '<button class="btn btn-small" onclick="exportSchemaSessionPDF()">Esporta PDF</button>' +
           '<button class="btn btn-small" onclick="shareSchemaSessionWhatsApp()">Condividi su WhatsApp</button>' +
-          '<button class="btn btn-small" onclick="openSchemaDuplicatePicker()">Duplica in una nuova data</button>' +
-          '<button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaSession()">Elimina</button>' +
+          (canEditSedute ? '<button class="btn btn-small" onclick="openSchemaDuplicatePicker()">Duplica in una nuova data</button>' : '') +
+          (canEditSedute ? '<button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaSession()">Elimina</button>' : '') +
         '</div>' +
       '</div>' +
       '<div class="form-row">' +
-        '<div class="field"><label>Obiettivo fisico</label><select onchange="onSchemaSessionObiettivoChange(this.value)">'+objOptions+'</select></div>' +
-        '<div class="field"><label>Giorno di allenamento</label><select onchange="saveSchemaSessionField(\'allenamentoId\', this.value)">'+allenamentoOptions+'</select></div>' +
-        '<div class="field"><label>RPE seduta (1-10)</label><select onchange="saveSchemaSessionField(\'rpe\', this.value)">'+rpeOptions+'</select></div>' +
+        '<div class="field"><label>Obiettivo fisico</label><select '+(canEditSedute?'':'disabled')+' onchange="onSchemaSessionObiettivoChange(this.value)">'+objOptions+'</select></div>' +
+        '<div class="field"><label>Giorno di allenamento</label><select '+(canEditSedute?'':'disabled')+' onchange="saveSchemaSessionField(\'allenamentoId\', this.value)">'+allenamentoOptions+'</select></div>' +
+        '<div class="field"><label>RPE seduta (1-10)</label><select '+(canEditSedute?'':'disabled')+' onchange="saveSchemaSessionField(\'rpe\', this.value)">'+rpeOptions+'</select></div>' +
       '</div>' +
       '<div class="form-row" style="align-items:center;">'+caricoBadge+'<span class="hint">Durata totale: '+sess.durataTotale+' min</span></div>' +
-      '<div class="field field-grow"><label>Note e considerazioni</label><textarea rows="2" onchange="saveSchemaSessionField(\'note\', this.value)">'+esc(sess.note||'')+'</textarea></div>' +
+      '<div class="field field-grow"><label>Considerazioni su questa seduta</label>' +
+        schemaConsiderazioniListHTML(sess.considerazioni||[]) +
+        (can('write_considerazioni') ? (
+          '<div class="form-row" style="margin-top:6px;">' +
+            '<textarea id="schema-consid-input" rows="2" placeholder="Scrivi una considerazione..." style="flex:1;"></textarea>' +
+            '<button class="btn btn-small" onclick="addSchemaConsiderazioneSeduta()">Aggiungi</button>' +
+          '</div>'
+        ) : '') +
+      '</div>' +
     '</div>' +
     '<div class="grid-2">' +
-      '<div class="card">' +
+      '<div class="card'+(canEditSedute?'':' readonly-block')+'">' +
         '<h3>Libreria esercizi</h3>' +
         '<div class="schema-exercise-grid schema-exercise-grid-compact">' + s.exercises.map(e=>schemaExerciseCardHTML(e, "addSchemaSessionItem('"+e.id+"')", true)).join('') + '</div>' +
       '</div>' +
@@ -4753,12 +5097,12 @@ function renderSchemaSessionBuilder(){
             const nomeLivello = schemaLivelloLabel({ nome: item.livello ? item.livello.nome : item.livelloSnapshot });
             return '<div class="schema-session-item-row">' +
               '<div><strong>'+esc(titolo)+'</strong><div class="hint">'+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div></div>' +
-              '<input type="number" min="1" placeholder="min" style="width:70px;" value="'+(item.durataMinuti!=null?item.durataMinuti:'')+'" onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
+              '<input type="number" min="1" placeholder="min" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
               '<div class="pitch-actions">' +
-                (idx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', -1)">↑</button>' : '') +
-                (idx<sess.items.length-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', 1)">↓</button>' : '') +
-                (item.livello ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.livello.esercizioId+'\')">Nota</button>' : '') +
-                '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi</button>' +
+                (canEditSedute && idx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', -1)">↑</button>' : '') +
+                (canEditSedute && idx<sess.items.length-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', 1)">↓</button>' : '') +
+                (item.livello && can('edit_esercizi') ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.livello.esercizioId+'\')">Nota</button>' : '') +
+                (canEditSedute ? '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi</button>' : '') +
               '</div>' +
             '</div>';
           }).join('')
@@ -4935,7 +5279,12 @@ function schemaSessionExportPages(sess){
     rest = rest.slice(3);
   }
 
-  if(sess.note) pages[pages.length-1] += '<h2>Note</h2><p>'+esc(sess.note).replace(/\n/g,'<br>')+'</p>';
+  const considerazioni = sess.considerazioni||[];
+  if(considerazioni.length){
+    pages[pages.length-1] += '<h2>Considerazioni</h2>' + considerazioni.map(c=>
+      '<p><strong style="color:'+schemaAutoreColor(c.autoreId)+';">'+esc(schemaAutoreShortName(c.autoreNome))+':</strong> '+esc(c.testo).replace(/\n/g,'<br>')+'</p>'
+    ).join('');
+  }
 
   return pages;
 }
@@ -5042,7 +5391,211 @@ function ensureHtml2CanvasPromise(){
 async function openStagioni(){
   state.currentView = 'stagioni';
   await loadStagioni();
+  if(getAppUser().isOwner) await loadTeamInvites();
   renderView();
+}
+async function loadTeamInvites(){
+  const res = await apiGet('/api/team/invites');
+  state.team.invites = res.invites || [];
+  state.team.loaded = true;
+}
+// Aperto a chiunque abbia sessione (a differenza di loadTeamInvites, solo il proprietario):
+// serve a risolvere nome+colore di chi ha scritto una Considerazione, non a gestire la squadra.
+async function ensureTeamRoster(){
+  if(state.team.rosterLoaded) return;
+  const res = await apiGet('/api/team/roster');
+  state.team.roster = res.roster || [];
+  state.team.rosterLoaded = true;
+}
+function schemaAutoreColor(autoreId){
+  const m = state.team.roster.find(r=>r.userId===autoreId);
+  return m ? m.colore : '#8CA0AF';
+}
+// autoreNome è oggi l'email (non c'è ancora un nome visualizzato): si mostra solo la
+// parte prima della "@" per restare leggibile in un chip piccolo.
+function schemaAutoreShortName(autoreNome){
+  const at = (autoreNome||'').indexOf('@');
+  return at>0 ? autoreNome.slice(0,at) : (autoreNome||'?');
+}
+function schemaConsiderazioneRowHTML(c){
+  const color = schemaAutoreColor(c.autoreId);
+  const mine = c.autoreId===getAppUser().actorId;
+  const canDelete = mine || getAppUser().isOwner;
+  return '<div class="schema-consid-row" style="border-left-color:'+color+';">' +
+    '<div class="schema-consid-head"><span class="schema-consid-author" style="color:'+color+';">'+esc(schemaAutoreShortName(c.autoreNome))+'</span>' +
+    (canDelete ? '<button class="btn-icon" onclick="deleteSchemaConsiderazione(\''+c.id+'\')" aria-label="Elimina">×</button>' : '') +
+    '</div>' +
+    '<p class="schema-consid-testo">'+esc(c.testo).replace(/\n/g,'<br>')+'</p>' +
+  '</div>';
+}
+function schemaConsiderazioniListHTML(considerazioni){
+  return considerazioni.length
+    ? '<div class="schema-consid-list">' + considerazioni.map(schemaConsiderazioneRowHTML).join('') + '</div>'
+    : '<p class="hint">Nessuna considerazione ancora.</p>';
+}
+async function addSchemaConsiderazioneSeduta(){
+  const el = document.getElementById('schema-consid-input');
+  const testo = el.value.trim();
+  if(!testo) return;
+  const res = await apiPost('/api/schema/considerazioni', { sedutaId: state.schema.sessionId, testo });
+  if(res.considerazione){
+    state.schema.currentSession.considerazioni = (state.schema.currentSession.considerazioni||[]).concat(res.considerazione);
+    el.value = '';
+    renderView();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
+async function deleteSchemaConsiderazione(id){
+  const res = await apiDelete('/api/schema/considerazioni/'+id);
+  if(res.ok){
+    if(state.schema.currentSession) state.schema.currentSession.considerazioni = (state.schema.currentSession.considerazioni||[]).filter(c=>c.id!==id);
+    state.team.considerazioniGeneriche = state.team.considerazioniGeneriche.filter(c=>c.id!==id);
+    renderView();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
+function inviteLinkFor(token){
+  return window.location.origin + '/register?invite=' + token;
+}
+async function createTeamInvite(){
+  const emailEl = document.getElementById('team-invite-email');
+  const email = emailEl.value.trim();
+  if(!email){ alert('Inserisci l\'email della persona da invitare.'); return; }
+  const permissions = readPermissionCheckboxes('team-invite-permissions');
+  const res = await apiPost('/api/team/invites', { email, permissions });
+  if(res.invite){
+    emailEl.value = '';
+    state.team.lastInviteLink = inviteLinkFor(res.invite.inviteToken);
+    await loadTeamInvites();
+    renderView();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
+function copyInviteLink(token){
+  const link = inviteLinkFor(token);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(link).then(()=>alert('Link copiato:\n'+link)).catch(()=>alert(link));
+  } else alert(link);
+}
+function openEditPermissionsModal(id){
+  const inv = state.team.invites.find(i=>i.id===id);
+  if(!inv) return;
+  const box = document.getElementById('event-modal-box');
+  box.innerHTML =
+    '<h3>Permessi — '+esc(inv.email)+'</h3>' +
+    permissionCheckboxesHTML('edit-permissions-container', inv.permissions) +
+    '<div class="modal-actions"><button class="btn" onclick="closeEventModal()">Annulla</button><button class="btn btn-primary" onclick="saveTeamMemberPermissions(\''+id+'\')">Salva</button></div>';
+  document.getElementById('event-modal-overlay').style.display = 'flex';
+}
+async function saveTeamMemberPermissions(id){
+  const permissions = readPermissionCheckboxes('edit-permissions-container');
+  const res = await apiPatch('/api/team/invites/'+id, { permissions });
+  if(res.teamMember){ closeEventModal(); await loadTeamInvites(); renderView(); }
+  else alert('Errore: '+(res.error||'sconosciuto'));
+}
+function revokeTeamMember(id, email){
+  showConfirmModal('Revocare l\'accesso di '+email+'? Potrai riattivarlo in qualunque momento.', async function(){
+    const res = await apiPatch('/api/team/invites/'+id, { revoke:true });
+    if(res.teamMember){ await loadTeamInvites(); renderView(); }
+    else alert('Errore: '+(res.error||'sconosciuto'));
+  }, 'Revoca');
+}
+async function reactivateTeamMember(id){
+  const res = await apiPatch('/api/team/invites/'+id, { reactivate:true });
+  if(res.teamMember){ await loadTeamInvites(); renderView(); }
+  else alert('Errore: '+(res.error||'sconosciuto'));
+}
+// Stessa lista di lib/permissions.js: duplicata qui perché public/app.js è uno script
+// statico caricato via <script src="/app.js">, non un modulo Next bundlizzato — non può
+// fare import da lib/*. Stesso motivo per cui TEAM_ROLE_LABELS era già duplicata prima.
+const PERMISSION_LABELS = {
+  view_rosa: 'Visualizzare la Rosa',
+  view_calendario: 'Visualizzare il Calendario',
+  view_formazione: 'Visualizzare la Formazione predefinita',
+  view_piano_squadra: 'Visualizzare il Piano Squadra',
+  view_allenamenti: 'Visualizzare il modulo Allenamenti (libreria esercizi, sedute, considerazioni)',
+  edit_rosa: 'Modificare anagrafica giocatori',
+  edit_calendario: 'Modificare partite e allenamenti in calendario',
+  edit_formazione: 'Modificare la formazione predefinita',
+  edit_piano_squadra: 'Modificare il Piano Squadra',
+  edit_presenze: 'Segnare le presenze agli allenamenti',
+  edit_esercizi: 'Creare/modificare esercizi, livelli, fasi ed etichette',
+  edit_sedute: 'Creare/modificare le sedute di allenamento',
+  write_considerazioni: 'Scrivere considerazioni',
+  manage_stagioni: 'Gestire le stagioni (chiudere/aprire, importare giocatori)',
+};
+const PERMISSION_GROUPS = [
+  { section: 'Rosa', keys: ['view_rosa', 'edit_rosa'] },
+  { section: 'Calendario', keys: ['view_calendario', 'edit_calendario', 'edit_presenze'] },
+  { section: 'Formazione', keys: ['view_formazione', 'edit_formazione'] },
+  { section: 'Piano Squadra', keys: ['view_piano_squadra', 'edit_piano_squadra'] },
+  { section: 'Allenamenti', keys: ['view_allenamenti', 'edit_esercizi', 'edit_sedute', 'write_considerazioni'] },
+  { section: 'Stagioni', keys: ['manage_stagioni'] },
+];
+const PERMISSION_IMPLIES_VIEW = {
+  edit_rosa: ['view_rosa'],
+  edit_calendario: ['view_calendario'],
+  edit_formazione: ['view_formazione'],
+  edit_piano_squadra: ['view_piano_squadra'],
+  edit_presenze: ['view_calendario', 'view_rosa'],
+  edit_esercizi: ['view_allenamenti'],
+  edit_sedute: ['view_allenamenti'],
+  write_considerazioni: ['view_allenamenti'],
+  manage_stagioni: ['view_rosa', 'view_calendario'],
+};
+function permissionCheckboxesHTML(containerId, selected){
+  const sel = new Set(selected||[]);
+  return '<div id="'+containerId+'" class="permission-groups">' + PERMISSION_GROUPS.map(g=>
+    '<fieldset class="permission-group"><legend>'+esc(g.section)+'</legend>' +
+      g.keys.map(k=>
+        '<label class="permission-check"><input type="checkbox" value="'+k+'" '+(sel.has(k)?'checked':'')+' onchange="onPermissionCheckboxChange(\''+containerId+'\',\''+k+'\',this.checked)"> '+esc(PERMISSION_LABELS[k])+'</label>'
+      ).join('') +
+    '</fieldset>'
+  ).join('') + '</div>';
+}
+// Quando si spunta una chiave edit/azione, pre-seleziona anche le view implicate (solo un
+// default utile: restano comunque deselezionabili a mano, il server non lo impone — vedi
+// lib/permissions.js).
+function onPermissionCheckboxChange(containerId, key, checked){
+  if(!checked || !PERMISSION_IMPLIES_VIEW[key]) return;
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  PERMISSION_IMPLIES_VIEW[key].forEach(viewKey=>{
+    const el = container.querySelector('input[value="'+viewKey+'"]');
+    if(el && !el.checked) el.checked = true;
+  });
+}
+function readPermissionCheckboxes(containerId){
+  const container = document.getElementById(containerId);
+  if(!container) return [];
+  return Array.from(container.querySelectorAll('input[type=checkbox]:checked')).map(el=>el.value);
+}
+function renderTeamSectionHTML(){
+  if(!getAppUser().isOwner) return '';
+  const t = state.team;
+  const rows = t.invites.map(inv=>{
+    const pending = !inv.joinedAt;
+    const stato = pending ? 'Invito in attesa' : (inv.revokedAt ? 'Revocato' : 'Attivo');
+    const statoClass = pending ? 'pill-muted' : (inv.revokedAt ? 'pill-red' : 'pill-win');
+    const permCount = (inv.permissions||[]).length;
+    return '<div class="schema-session-row" style="cursor:default;">' +
+      '<strong>'+esc(inv.email)+'</strong>' +
+      '<span class="pill '+statoClass+'">'+stato+'</span>' +
+      (inv.revokedAt ? '<span class="hint">Permessi ('+permCount+')</span>' : '<button class="btn btn-small" onclick="openEditPermissionsModal(\''+inv.id+'\')">Permessi ('+permCount+')</button>') +
+      (pending && !inv.revokedAt ? '<button class="btn btn-small" onclick="copyInviteLink(\''+inv.inviteToken+'\')">Copia link invito</button>' : '') +
+      (inv.revokedAt
+        ? '<button class="btn btn-small" onclick="reactivateTeamMember(\''+inv.id+'\')">Riattiva</button>'
+        : '<button class="btn btn-small btn-danger" onclick="revokeTeamMember(\''+inv.id+'\', \''+esc(inv.email).replace(/'/g,"\\'")+'\')">Revoca</button>'
+      ) +
+    '</div>';
+  }).join('');
+  return '<div class="card"><h3>Collaboratori</h3>' +
+    '<p class="hint">Invita una persona e scegli quali sezioni può vedere e cosa può modificare — nessun ruolo preimpostato, i permessi sono tuoi da scegliere per ciascuno. Nessuna email viene inviata: copia il link e condividilo tu.</p>' +
+    '<div class="form-row">' +
+      '<div class="field field-grow"><label>Email da invitare</label><input id="team-invite-email" type="email" placeholder="email@esempio.it"></div>' +
+    '</div>' +
+    permissionCheckboxesHTML('team-invite-permissions', []) +
+    '<div class="form-row"><button class="btn btn-primary btn-small" onclick="createTeamInvite()">Invita</button></div>' +
+    (t.lastInviteLink ? '<p class="hint">Ultimo link generato: <code>'+esc(t.lastInviteLink)+'</code> <button class="btn btn-small" onclick="copyInviteLink(\''+t.lastInviteLink.split('invite=')[1]+'\')">Copia</button></p>' : '') +
+    (rows ? rows : '<p class="hint">Nessun collaboratore invitato finora.</p>') +
+  '</div>';
 }
 async function loadStagioni(){
   const res = await apiGet('/api/stagioni');
@@ -5173,9 +5726,10 @@ function renderStagioneArchivioDetail(){
     '</div>' +
     '<h4>Rosa ('+d.players.length+')</h4>' +
     (d.players.length===0 ? '<p class="hint">Nessun giocatore in questa stagione.</p>' :
-      '<div class="pitch-actions" style="margin-bottom:8px;">' +
-        '<button class="btn btn-small" onclick="importSelectedStagionePlayers()">Importa selezionati nella stagione attiva</button>' +
-      '</div>' +
+      (can('manage_stagioni') ?
+        '<div class="pitch-actions" style="margin-bottom:8px;">' +
+          '<button class="btn btn-small" onclick="importSelectedStagionePlayers()">Importa selezionati nella stagione attiva</button>' +
+        '</div>' : '') +
       d.players.slice().sort((a,b)=>surnameOf(a.nome).localeCompare(surnameOf(b.nome))).map(p=>
         '<label class="presenza-row" style="cursor:pointer;">' +
           '<input type="checkbox" '+(sel.includes(p.id)?'checked':'')+' onchange="toggleStagionePlayerSelection(\''+p.id+'\')" style="margin-right:8px;">' +
@@ -5188,13 +5742,14 @@ function renderStagioneArchivioDetail(){
 }
 function renderStagioniView(){
   const s = state.stagioni;
+  const isAdmin = can('manage_stagioni');
   const attiva = s.list.find(x=>x.attiva);
   const chiuse = s.list.filter(x=>!x.attiva);
   return '<div class="card">' +
     '<div class="card-header-row"><h2>Stagioni</h2><button class="btn btn-small" onclick="backToCalendarioFromStagioni()">← Torna al gestionale</button></div>' +
     (attiva ? '<p class="hint">Stagione attiva: <strong>'+esc(attiva.societa)+' — '+esc(attiva.tipoSquadra)+' '+esc(attiva.livello)+'</strong> ('+esc(attiva.etichetta)+')</p>' : '<p class="hint">Nessuna stagione attiva trovata.</p>') +
-    '<button class="btn btn-primary btn-small" onclick="toggleNewStagioneForm()">'+(s.showNewForm?'Annulla':'+ Chiudi stagione e iniziane una nuova')+'</button>' +
-    (s.showNewForm ? renderNewStagioneForm() : '') +
+    (isAdmin ? '<button class="btn btn-primary btn-small" onclick="toggleNewStagioneForm()">'+(s.showNewForm?'Annulla':'+ Chiudi stagione e iniziane una nuova')+'</button>' : '') +
+    (isAdmin && s.showNewForm ? renderNewStagioneForm() : '') +
   '</div>' +
   '<div class="card"><h3>Archivio stagioni chiuse</h3>' +
     (chiuse.length===0 ? '<p class="hint">Nessuna stagione chiusa ancora.</p>' :
@@ -5207,6 +5762,7 @@ function renderStagioniView(){
       ).join('')
     ) +
   '</div>' +
+  renderTeamSectionHTML() +
   (state.stagioni.detailId ? renderStagioneArchivioDetail() : '');
 }
 

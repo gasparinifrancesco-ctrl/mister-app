@@ -1,6 +1,25 @@
 import { prisma } from '@/lib/prisma';
 import { getSession } from '@/lib/dal';
+import { hasPermission, requireOwner } from '@/lib/permissions';
 import { ALLOWED_STORAGE_KEYS, isSeasonScopedKey, getActiveStagione, GLOBAL_STAGIONE_ID } from '@/lib/stagioni';
+
+// Mappa chiave KV → permesso granulare richiesto. 'sidebar-order' non compare: è una
+// preferenza personale dell'account, mai stata delegabile ai collaboratori (in lettura
+// libera per chiunque abbia sessione, in scrittura resta owner-only, vedi PUT sotto).
+const VIEW_PERMISSION_BY_KEY = {
+  players: 'view_rosa',
+  matches: 'view_calendario',
+  allenamenti: 'view_calendario',
+  'formazione-default': 'view_formazione',
+  'piano-squadra': 'view_piano_squadra',
+};
+const EDIT_PERMISSION_BY_KEY = {
+  players: 'edit_rosa',
+  matches: 'edit_calendario',
+  allenamenti: 'edit_calendario',
+  'formazione-default': 'edit_formazione',
+  'piano-squadra': 'edit_piano_squadra',
+};
 
 export async function GET(request, { params }) {
   const session = await getSession();
@@ -10,6 +29,10 @@ export async function GET(request, { params }) {
   const { key } = await params;
   if (!ALLOWED_STORAGE_KEYS.has(key)) {
     return Response.json({ error: 'unknown key' }, { status: 400 });
+  }
+  const viewPermission = VIEW_PERMISSION_BY_KEY[key];
+  if (viewPermission && !hasPermission(session, viewPermission)) {
+    return Response.json({ error: 'forbidden' }, { status: 403 });
   }
 
   let stagioneId = GLOBAL_STAGIONE_ID;
@@ -39,6 +62,14 @@ export async function PUT(request, { params }) {
   const { key } = await params;
   if (!ALLOWED_STORAGE_KEYS.has(key)) {
     return Response.json({ error: 'unknown key' }, { status: 400 });
+  }
+  // Scrittura "a blob intero": ogni chiave richiede il permesso edit_* granulare
+  // corrispondente. 'sidebar-order' non ha una chiave nella mappa — resta owner-only,
+  // mai stata delegabile a un collaboratore.
+  const editPermission = EDIT_PERMISSION_BY_KEY[key];
+  const allowed = editPermission ? hasPermission(session, editPermission) : requireOwner(session);
+  if (!allowed) {
+    return Response.json({ error: 'forbidden' }, { status: 403 });
   }
   let body;
   try {

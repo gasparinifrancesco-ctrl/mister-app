@@ -46,3 +46,6 @@ next-env.d.ts
 *.db
 *.db-journal
 *.db.backup_*
+
+# migrazioni SQLite pre-Postgres: solo riferimento storico locale, non serve nel deploy
+/prisma/migrations_sqlite_archive

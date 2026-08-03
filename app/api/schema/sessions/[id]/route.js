@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
+import { hasPermission } from '@/lib/permissions';
 import { getPastAllenamentoIds, schemaSessionStato } from '@/lib/schemaAllenamenti';
 
 async function loadSession(id, userId) {
@@ -10,6 +11,7 @@ async function loadSession(id, userId) {
         orderBy: { ordine: 'asc' },
         include: { livello: { include: { esercizio: true } } },
       },
+      considerazioni: { orderBy: { creataIl: 'asc' } },
     },
   });
 }
@@ -29,13 +31,14 @@ async function withComputed(sessionRow, userId) {
   const pastAllenamentoIds = await getPastAllenamentoIds(userId);
   const stato = schemaSessionStato(sessionRow, pastAllenamentoIds);
   const hasNoteOnItems = await prisma.note.count({ where: { sedutaId: sessionRow.id } });
-  const hasNote = Boolean(sessionRow.note) || hasNoteOnItems > 0;
+  const hasNote = hasNoteOnItems > 0 || sessionRow.considerazioni.length > 0;
   return { ...sessionRow, durataTotale, caricoTotale, stato, hasNote };
 }
 
 export async function GET(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'view_allenamenti')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id } = await params;
   const row = await loadSession(id, session.userId);
   if (!row) return Response.json({ error: 'not found' }, { status: 404 });
@@ -47,6 +50,7 @@ export async function GET(request, { params }) {
 export async function PATCH(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_sedute')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id } = await params;
   const existing = await prisma.session.findFirst({ where: { id, userId: session.userId } });
   if (!existing) return Response.json({ error: 'not found' }, { status: 404 });
@@ -61,7 +65,6 @@ export async function PATCH(request, { params }) {
   // Una seduta resta modificabile anche dopo essere stata svolta: lo stato eseguita/
   // programmata/bozza è solo un'informazione derivata dal calendario, non un blocco.
   const data = {};
-  if (typeof body.note === 'string') data.note = body.note;
   if (typeof body.rpe !== 'undefined') data.rpe = body.rpe === null || body.rpe === '' ? null : Number(body.rpe);
   if (typeof body.titolo === 'string') data.titolo = body.titolo;
   if (typeof body.obiettivoId !== 'undefined') data.obiettivoId = body.obiettivoId || null;
@@ -77,6 +80,7 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_sedute')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id } = await params;
   const existing = await prisma.session.findFirst({ where: { id, userId: session.userId } });
   if (!existing) return Response.json({ error: 'not found' }, { status: 404 });

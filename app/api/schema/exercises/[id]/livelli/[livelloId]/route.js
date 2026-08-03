@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
+import { hasPermission } from '@/lib/permissions';
 
 async function ownedLivello(esercizioId, livelloId, userId) {
   const livello = await prisma.livello.findFirst({
@@ -13,6 +14,7 @@ async function ownedLivello(esercizioId, livelloId, userId) {
 export async function PATCH(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_esercizi')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id, livelloId } = await params;
 
   const existing = await ownedLivello(id, livelloId, session.userId);
@@ -40,6 +42,7 @@ export async function PATCH(request, { params }) {
 export async function DELETE(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!hasPermission(session, 'edit_esercizi')) return Response.json({ error: 'forbidden' }, { status: 403 });
   const { id, livelloId } = await params;
 
   const existing = await ownedLivello(id, livelloId, session.userId);
