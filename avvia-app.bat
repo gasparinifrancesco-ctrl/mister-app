@@ -1,9 +1,9 @@
 @echo off
-title United Carpi - Server
+title Mister - Server
 cd /d "%~dp0"
 set PATH=C:\Program Files\nodejs;%PATH%
 
-echo Avvio United Carpi (Juniores elite)...
+echo Avvio Mister...
 echo Non chiudere questa finestra finche' stai usando l'app.
 echo.
 

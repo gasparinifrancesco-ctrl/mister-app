@@ -10,7 +10,8 @@ export default function LoginPage() {
   return (
     <div className="auth-page">
       <div className="card auth-card">
-        <h2>Mister — Accedi</h2>
+        <img className="auth-logo" src="/mister-logo.svg" alt="Mister" />
+        <h2>Accedi</h2>
         <form action={action}>
           <div className="field">
             <label htmlFor="email">Email</label>

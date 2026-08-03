@@ -34,7 +34,8 @@ function RegisterForm() {
   return (
     <div className="auth-page">
       <div className="card auth-card">
-        <h2>Mister — Crea account</h2>
+        <img className="auth-logo" src="/mister-logo.svg" alt="Mister" />
+        <h2>Crea account</h2>
         {inviteToken && invite?.email && (
           <div className="auth-invite-banner">
             <p>Stai accettando un invito a collaborare con questi permessi:</p>

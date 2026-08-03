@@ -6,7 +6,7 @@
 //
 // Uso: DATABASE_URL="postgresql://..." node scripts/migrate-sqlite-to-postgres.mjs
 import Database from 'better-sqlite3';
-import { PrismaClient } from '../app/generated/prisma/client.js';
+import { PrismaClient } from '../app/generated/prisma/client.ts';
 import { PrismaNeon } from '@prisma/adapter-neon';
 
 const sqlite = new Database('dev.db', { readonly: true });

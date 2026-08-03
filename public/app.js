@@ -39,7 +39,21 @@ const FORMATIONS = {
   ]
 };
 const FORMATION_KEYS = Object.keys(FORMATIONS);
-const SCHEMA_COLORS = ['#4FA8E0','#E0574F','#F2C94C','#6FCF7A'];
+// L'arancione è riservato all'accent dell'app (pulsanti primari, stato "selezionato"): usarlo
+// anche come colore giocatore lo renderebbe ambiguo con quel significato. Al suo posto il
+// giallo, già un colore noto dell'app (--yellow, usato per il pareggio), resta comunque
+// "caldo" per il ruolo Attacco senza sovrapporsi al linguaggio dei controlli.
+const SCHEMA_COLORS = ['#E4C13B','#4DA3FF','#E5E7EB','#EF4444','#10B981'];
+const SCHEMA_COLOR_LABELS = { '#E4C13B':'Attacco', '#4DA3FF':'Difesa', '#E5E7EB':'Neutro', '#EF4444':'Portiere', '#10B981':'Collaboratore' };
+// Paletta estesa (pulsante "+" nella toolbar): include le 5 di base più varianti sullo
+// stesso family di tonalità, cosi resta coerente con lo stile scuro/desaturato dell'app
+// invece di un color picker qualsiasi. Mai il vero #FF8A00 dell'accent, per lo stesso
+// motivo di sopra.
+const SCHEMA_EXTENDED_COLORS = [
+  '#E4C13B','#4DA3FF','#E5E7EB','#EF4444','#10B981',
+  '#2563EB','#38BDF8','#14B8A6','#34D399','#FB7185',
+  '#DC2626','#FBBF24','#A78BFA','#8B5CF6','#94A3B8','#FFFFFF',
+];
 // Fase di allenamento a scelta vincolata (non etichetta libera): personalizzabile per
 // account (modello Categoria, vedi /api/schema/categorie), non più una lista fissa qui.
 // Stessa palette pre-verificata per il contrasto offerta da /api/schema/categorie per le
@@ -127,6 +141,7 @@ let state = {
     placeMode: null,
     eraserMode: false,
     activeColor: SCHEMA_COLORS[0],
+    colorPickerOpen: false,
     activeLineType: 'passaggio',
     livelloPicker: null,
     duplicatePicker: null,
@@ -659,7 +674,7 @@ function starRatingHTML(value, size){
     const fillPct = Math.max(0, Math.min(1, v - i)) * 100;
     out += '<span style="position:relative; display:inline-block; width:'+size+'px; height:'+size+'px; line-height:0;">' +
       '<span style="position:absolute; top:0; left:0;">' + starIconSVG('var(--border)', size) + '</span>' +
-      '<span style="position:absolute; top:0; left:0; width:'+fillPct+'%; overflow:hidden;">' + starIconSVG('var(--yellow)', size) + '</span>' +
+      '<span style="position:absolute; top:0; left:0; width:'+fillPct+'%; overflow:hidden;">' + starIconSVG('var(--accent)', size) + '</span>' +
     '</span>';
   }
   out += '</span>';
@@ -1367,7 +1382,7 @@ function pitchMarkingsSVG(light){
   const n = 8, bandH = 103/n;
   for(let i=0;i<n;i++){
     const y = 1 + i*bandH;
-    const fill = i%2===0 ? '#1E5631' : '#215C34';
+    const fill = i%2===0 ? '#234A38' : '#26503C';
     bands += '<rect x="1" y="' + y.toFixed(2) + '" width="66" height="' + bandH.toFixed(2) + '" fill="' + fill + '"/>';
   }
   return bands +
@@ -3543,7 +3558,7 @@ function starInputHTML(current, readonly){
   const v = current || 0;
   let out = '<span class="star-input'+(readonly?' star-input-readonly':'')+'">';
   for(let i=1;i<=5;i++){
-    out += '<button type="button" class="star-input-btn" '+(readonly?'disabled':'onclick="setSchemaVotoPreferenza('+i+')"')+' aria-label="'+i+' stelle">' + starIconSVG(i<=v ? 'var(--yellow)' : 'var(--border)', 20) + '</button>';
+    out += '<button type="button" class="star-input-btn" '+(readonly?'disabled':'onclick="setSchemaVotoPreferenza('+i+')"')+' aria-label="'+i+' stelle">' + starIconSVG(i<=v ? 'var(--accent)' : 'var(--border)', 20) + '</button>';
   }
   out += '</span>';
   return out;
@@ -3589,10 +3604,7 @@ async function openSchemaLibrary(){
   state.schema.view = 'library';
   state.currentMatchId = null;
   state.currentAllenamentoId = null;
-  await ensureSchemaObjectives();
-  await ensureSchemaTags();
-  await ensureSchemaCategorie();
-  await loadSchemaLibrary();
+  await Promise.all([ensureSchemaObjectives(), ensureSchemaTags(), ensureSchemaCategorie(), loadSchemaLibrary()]);
   renderView();
 }
 async function openSchemaNewExercise(){
@@ -3604,26 +3616,25 @@ async function openSchemaExercise(id){
   state.currentView = 'schema';
   state.schema.view = 'sheet';
   state.schema.activeLivelloId = null;
-  await ensureSchemaTags();
-  await ensureSchemaCategorie();
-  await loadSchemaExercise(id);
+  await Promise.all([ensureSchemaTags(), ensureSchemaCategorie(), loadSchemaExercise(id)]);
   renderView();
 }
 async function openSchemaSessions(){
   state.currentView = 'schema';
   state.schema.view = 'sessions';
-  await ensureSchemaObjectives();
-  await loadSchemaSessions();
+  await Promise.all([ensureSchemaObjectives(), loadSchemaSessions()]);
   renderView();
 }
 async function openSchemaSessionBuilder(id){
   state.currentView = 'schema';
   state.schema.view = 'sessionBuilder';
-  await ensureSchemaObjectives();
-  await ensureSchemaCategorie();
-  await ensureTeamRoster();
-  await loadSchemaLibrary();
-  await loadSchemaSessionDetail(id);
+  await Promise.all([
+    ensureSchemaObjectives(),
+    ensureSchemaCategorie(),
+    ensureTeamRoster(),
+    loadSchemaLibrary(),
+    loadSchemaSessionDetail(id),
+  ]);
   renderView();
 }
 
@@ -3654,8 +3665,7 @@ function schemaSubNavHTML(active){
 async function openSchemaConsiderazioni(){
   state.currentView = 'schema';
   state.schema.view = 'considerazioni';
-  await ensureTeamRoster();
-  const res = await apiGet('/api/schema/considerazioni');
+  const [, res] = await Promise.all([ensureTeamRoster(), apiGet('/api/schema/considerazioni')]);
   state.team.considerazioniGeneriche = res.considerazioni || [];
   renderView();
 }
@@ -3921,8 +3931,10 @@ function schemaColorMarkerId(color){
   return 'schema-arrowhead-'+(idx>=0?idx:0);
 }
 function schemaFieldDefsSVG(){
+  // Punta a "freccia" con incavo posteriore invece del triangolo pieno: più elegante e
+  // riconoscibile come freccia vera, non solo un cuneo.
   const markers = SCHEMA_COLORS.map((c,i)=>
-    '<marker id="schema-arrowhead-'+i+'" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="'+c+'"/></marker>'
+    '<marker id="schema-arrowhead-'+i+'" markerWidth="2.4" markerHeight="2.4" refX="1.95" refY="1.2" orient="auto"><path d="M0,0 L2.4,1.2 L0,2.4 L0.68,1.2 Z" fill="'+c+'"/></marker>'
   ).join('');
   return '<defs>'+markers+'</defs>';
 }
@@ -3979,24 +3991,27 @@ function schemaChipSVG(c, w, printMode){
   }
   if(c.tipo==='porta' || c.tipo==='portina') return schemaGoalSVG(c, w, printMode);
   if(c.tipo==='cono') return schemaConeSVG(c, w);
-  const r = w*0.032;
+  // Raggio/bordo leggermente più generosi e font Inter SemiBold per il numero, invece
+  // dell'Oswald condensato usato altrove: più leggibili e coerenti con la nuova identità.
+  const r = w*0.036;
   const numeroLabel = c.numero!=null ? String(c.numero) : (c.label ? c.label.charAt(0).toUpperCase() : '');
   // Il portiere ha una forma distinta (quadrato arrotondato) invece del cerchio, cosi si
   // riconosce a colpo d'occhio senza dover leggere il numero.
   const shape = c.ruolo==='portiere'
-    ? '<rect x="'+(-r)+'" y="'+(-r)+'" width="'+(r*2)+'" height="'+(r*2)+'" rx="'+(r*0.3)+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.005)+'"/>'
-    : '<circle r="'+r+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.005)+'"/>';
+    ? '<rect x="'+(-r)+'" y="'+(-r)+'" width="'+(r*2)+'" height="'+(r*2)+'" rx="'+(r*0.3)+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.006)+'"/>'
+    : '<circle r="'+r+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.006)+'"/>';
   return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
     shape +
-    (numeroLabel ? '<text text-anchor="middle" dy="'+(w*0.014)+'" font-size="'+(w*0.04)+'" fill="#0B141C" font-family="Oswald, sans-serif" font-weight="600">'+esc(numeroLabel)+'</text>' : '') +
-    (c.label ? '<text text-anchor="middle" dy="'+(w*0.075)+'" font-size="'+(w*0.028)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.012)+'">'+esc(c.label)+'</text>' : '') +
+    (numeroLabel ? '<text text-anchor="middle" dy="'+(w*0.014)+'" font-size="'+(w*0.038)+'" fill="#0B141C" font-family="Inter, sans-serif" font-weight="600">'+esc(numeroLabel)+'</text>' : '') +
+    (c.label ? '<text text-anchor="middle" dy="'+(w*0.078)+'" font-size="'+(w*0.028)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.012)+'">'+esc(c.label)+'</text>' : '') +
   '</g>';
 }
 function schemaZoneSVG(z, printMode){
   if(z.stile==='contorno'){
     // Solo bordo, nessuna tinta: per marcature reali del campo (area di rigore, area
-    // piccola...) invece che zone tattiche colorate. Bianco sul verde, grigio in stampa.
-    const color = printMode ? '#555' : '#F4F1EA';
+    // piccola...) invece che zone tattiche colorate. Bianco traslucido sul campo tecnico
+    // scuro, grigio in stampa.
+    const color = printMode ? '#555' : 'rgba(255,255,255,0.18)';
     return '<rect class="schema-zone" data-id="'+z.id+'" x="'+z.x+'" y="'+z.y+'" width="'+z.w+'" height="'+z.h+'" fill="none" stroke="'+color+'" stroke-width="0.2"/>';
   }
   return '<rect class="schema-zone" data-id="'+z.id+'" x="'+z.x+'" y="'+z.y+'" width="'+z.w+'" height="'+z.h+'" fill="'+z.color+'" fill-opacity="0.22" stroke="'+z.color+'" stroke-width="0.15" stroke-dasharray="0.4,0.3"/>';
@@ -4048,32 +4063,50 @@ function schemaArrowGeometry(a){
   }
   return { tag:'line', x1:a.x1, y1:a.y1, x2:a.x2, y2:a.y2, mid:{x:(a.x1+a.x2)/2, y:(a.y1+a.y2)/2} };
 }
+// Coppia fill/contorno per il numero di sequenza sulle frecce, scelta in base alla
+// luminosità del colore della freccia: testo bianco con contorno scuro sui colori più
+// scuri/saturi, testo scuro con contorno chiaro su quelli quasi bianchi (es. Neutro) —
+// cosi resta leggibile qualunque sia il colore scelto, senza bisogno di un pallino di
+// sfondo che lo garantisca a prescindere.
+function schemaContrastPair(hex){
+  const h = (hex||'#000000').replace('#','');
+  const r = parseInt(h.substring(0,2),16)||0, g = parseInt(h.substring(2,4),16)||0, b = parseInt(h.substring(4,6),16)||0;
+  const luminance = 0.299*r + 0.587*g + 0.114*b;
+  return luminance > 170 ? { fill:'#0B141C', stroke:'#FFFFFF' } : { fill:'#FFFFFF', stroke:'#0B141C' };
+}
 function schemaArrowGroupSVG(a, w, numero, printMode){
-  const strokeW = w*0.005;
+  const strokeW = w*0.0035;
   const geo = schemaArrowGeometry(a);
   const shapeAttrs = geo.tag==='path' ? 'd="'+geo.d+'"' : 'x1="'+geo.x1+'" y1="'+geo.y1+'" x2="'+geo.x2+'" y2="'+geo.y2+'"';
   let visible;
-  const neutralColor = printMode ? '#555' : '#F4F1EA';
+  const neutralColor = printMode ? '#555' : 'rgba(255,255,255,0.18)';
   if(a.tipo==='divisore'){
-    // Bianco sul verde dell'editor, grigio scuro in stampa (sfondo bianco): altrimenti
-    // invisibile.
+    // Bianco traslucido sul campo tecnico scuro dell'editor, grigio scuro in stampa
+    // (sfondo bianco): altrimenti invisibile.
     visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="'+neutralColor+'" stroke-width="'+strokeW+'" stroke-dasharray="'+(w*0.006)+','+(w*0.012)+'" opacity="0.65"/>';
   } else if(a.tipo==='campo-linea'){
-    // Riga bianca del campo (es. limite area), continua e senza freccia — non è
-    // un'indicazione tattica ma una marcatura reale del terreno.
+    // Riga del campo (es. limite area), continua e senza freccia — non è
+    // un'indicazione tattica ma una marcatura reale del terreno: resta sottile e neutra,
+    // a differenza delle frecce tattiche che devono essere il punto focale del disegno.
     visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="'+neutralColor+'" stroke-width="'+strokeW+'"/>';
   } else {
+    // Le frecce tattiche sono il punto focale del disegno: colori brillanti (palette
+    // utente), spessore leggermente maggiore delle righe campo, estremi arrotondati per
+    // una linea più morbida.
     const markerId = schemaColorMarkerId(a.color);
     const dash = a.tipo==='movimento' ? ' stroke-dasharray="'+(w*0.02)+','+(w*0.014)+'"' : '';
-    visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="'+a.color+'" stroke-width="'+strokeW+'"'+dash+' marker-end="url(#'+markerId+')"/>';
+    visible = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="'+a.color+'" stroke-width="'+(strokeW*1.2)+'" stroke-linecap="round"'+dash+' marker-end="url(#'+markerId+')"/>';
   }
   const hit = '<'+geo.tag+' '+shapeAttrs+' fill="none" stroke="transparent" stroke-width="'+(w*0.035)+'"/>';
   // Badge numerato SOLO se l'allenatore l'ha impostato da menu contestuale (click destro →
   // Numera): nessuna numerazione automatica. pointer-events:none per non intercettare i
-  // click della gomma, che deve colpire il tratto sottostante.
+  // click della gomma, che deve colpire il tratto sottostante. Solo il numero, senza
+  // pallino di sfondo: il doppio contorno (chiaro/scuro a seconda del colore della freccia,
+  // vedi schemaContrastPair) basta da solo a garantire il contrasto su qualunque sfondo.
+  const badgeColors = numero!=null ? schemaContrastPair(a.color) : null;
   const badge = numero!=null ? '<g transform="translate('+geo.mid.x+','+geo.mid.y+')" pointer-events="none">' +
-    '<circle r="'+(w*0.022)+'" fill="'+a.color+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
-    '<text text-anchor="middle" dy="'+(w*0.0075)+'" font-size="'+(w*0.026)+'" fill="#0B141C" font-family="Oswald, sans-serif" font-weight="700">'+numero+'</text>' +
+    '<text text-anchor="middle" dominant-baseline="central" font-size="'+(w*0.032)+'" font-family="Inter, sans-serif" font-weight="700" ' +
+      'fill="'+badgeColors.fill+'" paint-order="stroke" stroke="'+badgeColors.stroke+'" stroke-width="'+(w*0.009)+'" stroke-linejoin="round">'+numero+'</text>' +
   '</g>' : '';
   // Maniglie ai due estremi: permettono di trascinare partenza o punta singolarmente
   // (mantenendo fermo l'altro estremo) invece di dover cancellare e ridisegnare. Solo
@@ -4093,9 +4126,12 @@ function renderSchemaFieldSVG(exercise, livello, withId, printMode){
   const idAttr = withId===false ? '' : ' id="schema-field-svg"';
   const thumbClass = withId===false ? ' schema-field-svg-thumb' : '';
   // Sfondo bianco/grigio in stampa (anteprima/esportazione seduta) per risparmiare
-  // inchiostro, verde nell'editor live.
-  const bgFill = printMode ? '#FFFFFF' : '#1E5631';
-  const bgStroke = printMode ? '#888' : '#F4F1EA';
+  // inchiostro; campo tecnico scuro (non verde) nell'editor/libreria live — a differenza
+  // di Piano Squadra/Formazione/Convocazioni, qui il campo è solo un supporto grafico per
+  // il disegno tattico, non lo spazio di lavoro reale, quindi non deve competere visivamente
+  // con il resto dell'interfaccia dark.
+  const bgFill = printMode ? '#FFFFFF' : '#1A2738';
+  const bgStroke = printMode ? '#888' : 'rgba(255,255,255,0.18)';
   return '<svg'+idAttr+' viewBox="0 0 '+w+' '+h+'" class="pitch-svg schema-field-svg'+thumbClass+'">' +
     schemaFieldDefsSVG() +
     '<rect x="0" y="0" width="'+w+'" height="'+h+'" fill="'+bgFill+'" stroke="'+bgStroke+'" stroke-width="'+(w*0.005)+'"/>' +
@@ -4104,10 +4140,33 @@ function renderSchemaFieldSVG(exercise, livello, withId, printMode){
     '<g class="chips-layer">'+chipsSvg+'</g>' +
   '</svg>';
 }
+function showSchemaGuidaModal(){
+  const box = document.getElementById('event-modal-box');
+  box.innerHTML =
+    '<h3>Guida rapida disegnatore</h3>' +
+    '<p>Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore). Con giocatore/pallone/porta/portina/cono attivo, clicca sul campo per posizionarlo; con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo.</p>' +
+    '<div class="modal-actions"><button type="button" class="btn btn-primary" onclick="closeEventModal()">Ho capito</button></div>';
+  document.getElementById('event-modal-overlay').style.display = 'flex';
+}
+// Paletta estesa in un pannello interno all'app (stesso linguaggio grafico di card/menu
+// contestuali), non il color picker nativo del sistema operativo.
+function schemaColorPickerPanelHTML(){
+  const s = state.schema;
+  const swatches = SCHEMA_EXTENDED_COLORS.map(c=>
+    '<button type="button" class="schema-color-swatch'+(s.activeColor===c?' schema-color-swatch-active':'')+'" style="background:'+c+';" onclick="setSchemaActiveColor(\''+c+'\')" title="'+c+'"></button>'
+  ).join('');
+  return '<div class="schema-color-picker-panel"><div class="schema-color-picker-grid">'+swatches+'</div></div>';
+}
+function schemaToolGroupHTML(buttonsHtml){
+  return '<div class="schema-tool-group">'+buttonsHtml+'</div>';
+}
+function schemaToolBtn(active, onclick, title, icon){
+  return '<button type="button" class="schema-tool-btn'+(active?' schema-tool-btn-active':'')+'" onclick="'+onclick+'" title="'+title+'">'+icon+'</button>';
+}
 function schemaToolbarHTML(exercise){
   const s = state.schema;
   const colorSwatches = SCHEMA_COLORS.map(c=>
-    '<button type="button" class="schema-color-swatch '+(s.activeColor===c?'schema-color-swatch-active':'')+'" style="background:'+c+';" onclick="setSchemaActiveColor(\''+c+'\')" title="Colore attivo"></button>'
+    '<button type="button" class="schema-color-swatch '+(s.activeColor===c?'schema-color-swatch-active':'')+'" style="background:'+c+';" onclick="setSchemaActiveColor(\''+c+'\')" title="'+(SCHEMA_COLOR_LABELS[c]||'Colore')+'"></button>'
   ).join('');
   const lineTypes = [
     ['movimento', SCHEMA_ICON_MOVIMENTO, 'Movimento'],
@@ -4117,26 +4176,40 @@ function schemaToolbarHTML(exercise){
     ['campo-linea', SCHEMA_ICON_RIGACAMPO, 'Riga bianca del campo'],
   ];
   const lineButtons = lineTypes.map(([key,icon,title])=>
-    '<button class="btn btn-small btn-icon '+(s.drawMode && s.activeLineType===key?'btn-active':'')+'" onclick="setSchemaLineTypeAndDraw(\''+key+'\')" title="'+title+'">'+icon+'</button>'
+    schemaToolBtn(s.drawMode && s.activeLineType===key, "setSchemaLineTypeAndDraw('"+key+"')", title, icon)
   ).join('');
+  const campoGroup = schemaToolGroupHTML(
+    '<span class="hint schema-toolbar-label">Campo (m)</span>' +
+    '<input id="schema-ex-larghezza" type="number" step="1" min="1" value="'+Math.round(exercise.larghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input schema-property-input" title="Larghezza campo">' +
+    '<span class="hint">×</span>' +
+    '<input id="schema-ex-lunghezza" type="number" step="1" min="1" value="'+Math.round(exercise.lunghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input schema-property-input" title="Lunghezza campo">'
+  );
+  const giocatoriGroup = schemaToolGroupHTML(
+    schemaToolBtn(s.placeMode==='giocatore', "setSchemaPlaceMode('giocatore')", 'Aggiungi giocatore', SCHEMA_ICON_GIOCATORE) +
+    schemaToolBtn(s.placeMode==='pallone', "setSchemaPlaceMode('pallone')", 'Aggiungi pallone', SCHEMA_ICON_PALLONE)
+  );
+  const oggettiGroup = schemaToolGroupHTML(
+    schemaToolBtn(s.placeMode==='porta', "setSchemaPlaceMode('porta')", 'Aggiungi porta grande', SCHEMA_ICON_PORTA) +
+    schemaToolBtn(s.placeMode==='portina', "setSchemaPlaceMode('portina')", 'Aggiungi portina', SCHEMA_ICON_PORTINA) +
+    schemaToolBtn(s.placeMode==='cono', "setSchemaPlaceMode('cono')", 'Aggiungi cono', SCHEMA_ICON_CONO) +
+    schemaToolBtn(s.placeMode==='zona', "setSchemaPlaceMode('zona')", "Disegna una zona: trascina da un angolo all'altro", SCHEMA_ICON_ZONA)
+  );
+  const lineeGroup = schemaToolGroupHTML(lineButtons);
+  const cancellaGroup = schemaToolGroupHTML(
+    schemaToolBtn(s.eraserMode, 'setSchemaEraserMode()', 'Gomma: clicca un elemento per eliminarlo', SCHEMA_ICON_GOMMA) +
+    ((s.drawMode || s.placeMode || s.eraserMode) ? '<button class="btn btn-small" onclick="stopSchemaDrawing()">Termina</button>' : '')
+  );
+  const colorGroup =
+    '<span class="hint schema-toolbar-label">Colore</span>' + colorSwatches +
+    '<span class="schema-color-picker-wrap">' +
+      '<button type="button" class="schema-color-swatch schema-color-swatch-custom" onclick="toggleSchemaColorPicker()" title="Altri colori">+</button>' +
+      (s.colorPickerOpen ? schemaColorPickerPanelHTML() : '') +
+    '</span>';
   return '<div class="schema-toolbar">' +
     '<div class="schema-toolbar-row">' +
-      '<span class="hint">Campo (m):</span>' +
-      '<input id="schema-ex-larghezza" type="number" step="1" min="1" value="'+Math.round(exercise.larghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input" title="Larghezza campo">' +
-      '<span class="hint">×</span>' +
-      '<input id="schema-ex-lunghezza" type="number" step="1" min="1" value="'+Math.round(exercise.lunghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input" title="Lunghezza campo">' +
-      '<span class="schema-toolbar-divider"></span>' +
-      '<button class="btn btn-small btn-icon '+(s.placeMode==='giocatore'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'giocatore\')" title="Aggiungi giocatore">'+SCHEMA_ICON_GIOCATORE+'</button>' +
-      '<button class="btn btn-small btn-icon '+(s.placeMode==='pallone'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'pallone\')" title="Aggiungi pallone">'+SCHEMA_ICON_PALLONE+'</button>' +
-      '<button class="btn btn-small btn-icon '+(s.placeMode==='porta'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'porta\')" title="Aggiungi porta grande">'+SCHEMA_ICON_PORTA+'</button>' +
-      '<button class="btn btn-small btn-icon '+(s.placeMode==='portina'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'portina\')" title="Aggiungi portina">'+SCHEMA_ICON_PORTINA+'</button>' +
-      '<button class="btn btn-small btn-icon '+(s.placeMode==='cono'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'cono\')" title="Aggiungi cono">'+SCHEMA_ICON_CONO+'</button>' +
-      '<button class="btn btn-small btn-icon '+(s.placeMode==='zona'?'btn-active':'')+'" onclick="setSchemaPlaceMode(\'zona\')" title="Disegna una zona: trascina da un angolo all\'altro">'+SCHEMA_ICON_ZONA+'</button>' +
-      lineButtons +
-      '<button class="btn btn-small btn-icon '+(s.eraserMode?'btn-active':'')+'" onclick="setSchemaEraserMode()" title="Gomma: clicca un elemento per eliminarlo">'+SCHEMA_ICON_GOMMA+'</button>' +
-      ((s.drawMode || s.placeMode || s.eraserMode) ? '<button class="btn btn-small" onclick="stopSchemaDrawing()">Termina</button>' : '') +
+      campoGroup + giocatoriGroup + oggettiGroup + lineeGroup + cancellaGroup +
     '</div>' +
-    '<div class="schema-toolbar-row"><span class="hint">Colore:</span>'+colorSwatches+'</div>' +
+    '<div class="schema-toolbar-row schema-toolbar-row-colors">'+colorGroup+'</div>' +
   '</div>';
 }
 function schemaExerciseTags(e){
@@ -4291,13 +4364,15 @@ function renderSchemaExerciseSheet(){
       (canEdit && e.livelli.length>1 ? '<button class="btn btn-small btn-danger" style="margin-bottom:12px;" onclick="deleteSchemaLivello(\''+livello.id+'\')">Elimina livello '+esc(schemaLivelloLabel(livello))+'</button>' : '') +
       '<div class="field"><label>Svolgimento di questo livello</label><textarea id="schema-livello-descrizione" class="schema-rich-text" rows="2" '+(canEdit?'title="Seleziona del testo e clicca col destro per grassetto/dimensione" onchange="saveSchemaLivelloField(\'descrizione\', this.value)"':'disabled')+'>'+esc(livello.descrizione)+'</textarea><span class="hint">L\'unica descrizione che compare in anteprima/stampa: come si svolge questo livello.</span></div>' +
       '<div class="form-row">' +
-        '<div class="field"><label>Ripetizioni</label><input type="number" min="1" value="'+livello.ripetizioni+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'ripetizioni\', this.value)"></div>' +
-        '<div class="field"><label>Durata di ciascuna (min)</label><input type="number" min="1" value="'+livello.durataRipetizione+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
-        '<div class="field"><label>Recupero (sec)</label><input type="number" min="0" value="'+livello.recuperoSecondi+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
+        '<div class="field"><label>Ripetizioni</label><input class="schema-property-input" type="number" min="1" value="'+livello.ripetizioni+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'ripetizioni\', this.value)"></div>' +
+        '<div class="field"><label>Durata di ciascuna (min)</label><input class="schema-property-input" type="number" min="1" value="'+livello.durataRipetizione+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
+        '<div class="field"><label>Recupero (sec)</label><input class="schema-property-input" type="number" min="0" value="'+livello.recuperoSecondi+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
       '</div>' +
       (canEdit ? schemaToolbarHTML(e) : '') +
       '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(e, livello) + '</div>' +
-      (canEdit ? '<p class="hint">Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore). Con giocatore/pallone/porta/portina/cono attivo, clicca sul campo per posizionarlo; con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo.</p>' : '<p class="hint">Sola lettura: non hai il permesso di modificare gli esercizi.</p>') +
+      (canEdit ? '<p class="hint">Trascina per spostare qualsiasi elemento, comprese le linee.<br>Click destro su un elemento per le opzioni (rinomina, colore, numerazione...). ' +
+        '<button type="button" class="btn-link" onclick="showSchemaGuidaModal()">ⓘ Guida rapida</button></p>'
+        : '<p class="hint">Sola lettura: non hai il permesso di modificare gli esercizi.</p>') +
     '</div>' +
     '<div class="card">' +
       '<h3>Note</h3>' +
@@ -4422,6 +4497,11 @@ async function saveSchemaLivelloField(field, value){
 /* ---------- disegno campo: chip (giocatori/palloni) + frecce (4 tipi) + gomma ---------- */
 function setSchemaActiveColor(color){
   state.schema.activeColor = color;
+  state.schema.colorPickerOpen = false;
+  renderView();
+}
+function toggleSchemaColorPicker(){
+  state.schema.colorPickerOpen = !state.schema.colorPickerOpen;
   renderView();
 }
 function setSchemaPlaceMode(tipo){
