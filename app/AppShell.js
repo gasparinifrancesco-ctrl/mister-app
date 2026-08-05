@@ -56,10 +56,7 @@ export default function AppShell({ email, isOwner, permissions, actorId, schemaU
       <div className="app-frame">
         <aside className="sidebar">
           <div className="sidebar-brand">
-            <span className="app-brand-tag">
-              <img className="app-brand-mark" src="/brand/mister-symbol.svg" alt="" width="18" height="18" />
-              Mister
-            </span>
+            <img className="app-brand-logo" src="/brand/mister-logo-horizontal-white.svg" alt="Mister" />
             <button className="brand-title brand-title-btn" onClick={() => window.openStagioni && window.openStagioni()} title="Gestisci stagioni">
               {stagione?.societa || "Società non impostata"}
             </button>

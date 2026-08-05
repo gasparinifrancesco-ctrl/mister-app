@@ -34,7 +34,7 @@ function RegisterForm() {
   return (
     <div className="auth-page">
       <div className="card auth-card">
-        <img className="auth-logo" src="/mister-logo.svg" alt="Mister" />
+        <img className="auth-logo" src="/brand/mister-logo-horizontal-white.svg" alt="Mister" />
         <h2>Crea account</h2>
         {inviteToken && invite?.email && (
           <div className="auth-invite-banner">

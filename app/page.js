@@ -1,10 +1,16 @@
 import { getCurrentUser, getSession, getTeamModules } from "@/lib/dal";
 import { getActiveStagione } from "@/lib/stagioni";
 import AppShell from "@/app/AppShell";
+import LandingPage from "@/app/LandingPage";
 
 export default async function Page() {
-  const user = await getCurrentUser();
+  // getSession non reindirizza (a differenza di getCurrentUser/verifySession): serve per
+  // decidere QUI se mostrare la landing pubblica o la dashboard, senza già forzare il
+  // redirect a /login che verifySession farebbe per un visitatore anonimo su "/".
   const session = await getSession();
+  if (!session) return <LandingPage />;
+
+  const user = await getCurrentUser();
   // Entitlement (modulo Allenamenti sbloccato) letta dal proprietario della squadra, non
   // dall'account personale di chi è collegato: un collaboratore deve vedere lo stesso
   // sblocco dell'admin, non il proprio (che parte sempre senza moduli extra).

@@ -1,11 +1,11 @@
 :root{
-    --bg: #0F1C2D;
-    --panel: #172536;
-    --panel-2: #203248;
-    --border: rgba(215,221,229,0.09);
+    --bg: #000000;
+    --panel: #141414;
+    --panel-2: #1F1F1F;
+    --border: rgba(255,255,255,0.10);
     --chalk: #FFFFFF;
-    --text: #D7DDE5;
-    --text-dim: #8C98A8;
+    --text: #E8E8E8;
+    --text-dim: #9A9A9A;
     --accent: #FF8A00;
     --accent-hover: #FFA333;
     --accent-dim: #7A4A17;
@@ -14,7 +14,7 @@
     --danger: #C1443C;
     --success: #3E8E63;
     --yellow: #E4C13B;
-    --radius: 12px;
+    --radius: 2px;
     --shadow-card: 0 1px 2px rgba(0,0,0,0.18);
     --shadow-elevated: 0 10px 28px rgba(0,0,0,0.45);
   }
@@ -28,7 +28,7 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
-  h1,h2,h3,h4{ font-family: 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 12px; color: var(--chalk); }
+  h1,h2,h3,h4{ font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 12px; color: var(--chalk); }
   h2{ font-size: 1.15rem; }
   /* Titoli che mostrano un dato specifico (nome esercizio, avversario, nome seduta...)
      invece di un'etichetta di sezione fissa: niente maiuscolo/spaziatura, cosi si
@@ -51,8 +51,7 @@
     display:flex; flex-direction:column; position:sticky; top:0; align-self:flex-start; height:100vh; overflow-y:auto;
   }
   .sidebar-brand{ padding: 18px 18px 16px; border-bottom:1px solid var(--border); margin-bottom:8px; }
-  .sidebar-brand .app-brand-tag{ display:flex; align-items:center; gap:6px; font-family:'Inter',sans-serif; font-weight:700; font-size:0.72rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--chalk); margin-bottom:10px; }
-  .app-brand-mark{ flex-shrink:0; border-radius:4px; display:block; }
+  .app-brand-logo{ display:block; height:20px; width:auto; margin-bottom:10px; }
   .sidebar-brand .brand-title{ display:block; font-family:'Inter',sans-serif; font-weight:700; font-size:1.05rem; letter-spacing:0.02em; color: var(--chalk); line-height:1.25; }
   .sidebar-brand .brand-title-btn{ background:none; border:none; padding:0; text-align:left; cursor:pointer; width:100%; }
   .sidebar-brand .brand-title-btn:hover{ color: var(--accent); }
@@ -63,7 +62,7 @@
   .side-nav-btn{
     position:relative; display:flex; align-items:center; gap:11px; background:transparent; border:none; color:var(--text-dim);
     font-family:'Inter',sans-serif; font-weight:600; font-size:0.86rem; padding:10px 12px; border-radius:9px;
-    cursor:pointer; text-align:left; transition: background .18s ease-in-out, color .18s ease-in-out; width:100%;
+    cursor:pointer; text-align:left; transition: background .28s ease, color .28s ease; width:100%;
   }
   .side-nav-btn svg{ width:19px; height:19px; flex-shrink:0; }
   .side-nav-btn:hover{ background:var(--panel-2); color:var(--chalk); }
@@ -205,9 +204,9 @@
   .btn{
     background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
     font-family:'Inter',sans-serif; font-weight:600; font-size: 0.85rem; padding: 9px 16px;
-    border-radius: 9px; cursor:pointer; transition: background .18s ease-in-out, border-color .18s ease-in-out, transform .12s ease-in-out;
+    border-radius: 9px; cursor:pointer; transition: background .28s cubic-bezier(.22,1,.36,1), transform .28s cubic-bezier(.22,1,.36,1);
   }
-  .btn:hover{ background: var(--accent-wash); border-color: var(--accent-dim); }
+  .btn:hover{ background: var(--accent-wash); border-color: var(--accent-dim); transform: translateY(-2px); }
   .btn:active{ transform: scale(0.98); }
   .btn-primary{ background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
   .btn-primary:hover{ background: var(--accent-hover); border-color: var(--accent-hover); }
@@ -242,6 +241,8 @@
   .rosa-table td:first-child, .rosa-table th:first-child{ white-space:nowrap; }
   .roster-name{ font-weight:500; }
   .roster-role{ color: var(--text-dim); font-size: 0.82rem; }
+  .roster-num-cell{ width:1%; white-space:nowrap; text-align:center; color:var(--text-dim); font-variant-numeric:tabular-nums; }
+  .roster-note-cell{ max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-dim); }
 
   /* piano squadra */
   .piano-pitch-wrap{ position:relative; width:100%; max-width:920px; aspect-ratio:105/68; margin-top:10px; border-radius:8px; overflow:visible; border:1px solid var(--border); background:#234A38; }
@@ -249,7 +250,7 @@
   .piano-pitch-cards{ position:absolute; inset:0; }
   .piano-pitch-card{
     position:absolute; transform:translate(-50%,-50%); width:92px; z-index:2; cursor:pointer;
-    background:rgba(15,28,45,0.94); border:1px solid var(--border); border-radius:8px; padding:4px 6px 5px;
+    background:rgba(20,20,20,0.94); border:1px solid var(--border); border-radius:8px; padding:4px 6px 5px;
     box-shadow: var(--shadow-card); transition: transform .12s ease-in-out;
   }
   .piano-pitch-card-expanded{ width:132px; z-index:20; box-shadow: var(--shadow-elevated); cursor:default; }
@@ -314,7 +315,7 @@
   .schema-cat-add-chip{ background:none; border:1px dashed var(--border); color:var(--text-dim); cursor:pointer; }
   .schema-cat-add-chip:hover{ border-color:var(--accent); color:var(--accent); }
   .schema-field-wrap{ max-width:624px; }
-  .schema-field-svg{ background:#1A2738; }
+  .schema-field-svg{ background:#1F1F1F; }
   .schema-note-recent{ background:var(--panel-2); border:1px solid var(--accent-dim); border-radius:8px; padding:10px 12px; margin-bottom:10px; }
   .schema-note-recent p{ margin:4px 0 0; }
   .schema-note-history{ margin-top:8px; }
@@ -329,7 +330,7 @@
   .schema-load-pill{ font-family:'Inter',sans-serif; }
   .star-input{ display:inline-flex; gap:2px; }
   .star-input-btn{ background:none; border:none; padding:2px; cursor:pointer; line-height:0; }
-  .schema-toolbar{ display:flex; flex-direction:column; gap:10px; margin-top:12px; padding:12px; background:#172536; border:1px solid var(--border); border-radius:10px; }
+  .schema-toolbar{ display:flex; flex-direction:column; gap:10px; margin-top:12px; padding:12px; background:var(--panel); border:1px solid var(--border); border-radius:10px; }
   .schema-toolbar-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-height:36px; }
   .schema-toolbar-label{ margin-right:2px; white-space:nowrap; }
   /* Gruppi di strumenti separati da una sottile linea verticale, cosi la toolbar si legge
@@ -354,7 +355,7 @@
   .schema-color-swatch:hover{ transform: scale(1.08); }
   /* Doppio bordo bianco sul colore selezionato: un anello bianco staccato dal cerchio
      colorato da un filo di spazio dello sfondo toolbar, non un semplice bordo attaccato. */
-  .schema-color-swatch-active{ box-shadow: 0 0 0 2px #172536, 0 0 0 4px #FFFFFF; }
+  .schema-color-swatch-active{ box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #FFFFFF; }
   .schema-color-swatch-custom{
     display:flex; align-items:center; justify-content:center; background:var(--panel-2);
     border:2px dashed rgba(255,255,255,0.35); color:var(--text-dim); font-size:14px; line-height:1; font-weight:700;
@@ -422,7 +423,7 @@
   /* Campo (larghezza/lunghezza), Ripetizioni, Durata, Recupero: stessa altezza, stesso
      sfondo, stesso radius, cosi si leggono come un unico gruppo di controlli coerenti
      invece di input generici sparsi nella scheda esercizio. */
-  .schema-property-input{ height:40px; background:#223248; border-radius:8px; box-sizing:border-box; }
+  .schema-property-input{ height:40px; background:var(--panel-2); border-radius:8px; box-sizing:border-box; }
   .schema-toolbar-divider{ width:1px; height:24px; background:var(--border); margin:0 4px; }
   .schema-session-preview{ background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px; }
   .schema-lineup-pitch .piano-pitch-card{ cursor:default; }
@@ -447,7 +448,7 @@
      dover toccare ogni singola classe una per una. */
   .schema-print-page{
     --text:#161616; --text-dim:#5a5a5a; --border:#cfcfcf; --panel-2:#f6f6f6;
-    --success:#1f7a4d; --danger:#b3392f; --chalk:#161616; --accent:#2a5f8f;
+    --success:#1f7a4d; --danger:#b3392f; --chalk:#161616; --accent:#7A4A17;
     color:#161616; font-family: Arial, Helvetica, sans-serif;
   }
   /* Un foglio = una pagina reale, in proporzione A4: l'anteprima a schermo nel
@@ -485,7 +486,7 @@
   .match-header{ display:flex; flex-direction:column; gap:6px; }
   .match-header-main{ display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
   .match-header-fields{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .score-badge{ font-family:'Inter',sans-serif; font-weight:700; font-size:1.1rem; color:var(--accent); background:var(--panel-2); border:1px solid var(--border); padding:8px 14px; border-radius:7px; }
+  .score-badge{ font-family:'Roboto Condensed','Arial Narrow',sans-serif; font-weight:700; font-size:1.1rem; color:var(--accent); background:var(--panel-2); border:1px solid var(--border); padding:8px 14px; border-radius:7px; }
   .tabs{ display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; border-bottom:1px solid var(--border); }
   .tab{
     background:none; border:none; color: var(--text-dim); font-family:'Inter',sans-serif; font-weight:600;
@@ -516,7 +517,7 @@
   /* convocazione */
   .convocazione-list{ display:flex; flex-direction:column; gap:2px; margin-top:8px; }
   .convoca-row{ display:flex; align-items:center; gap:10px; padding:9px 6px; border-bottom:1px solid var(--border); border-radius:7px; }
-  .convoca-row.convoca-on{ background: rgba(62,143,214,0.08); }
+  .convoca-row.convoca-on{ background: rgba(255,138,0,0.08); }
   .convoca-toggle{ flex:1; display:flex; align-items:center; gap:10px; background:none; border:none; text-align:left; cursor:pointer; color:var(--text); font-family:'Inter',sans-serif; padding:6px 0; }
   .convoca-toggle:hover .roster-name{ color:var(--accent); }
   .convoca-state{ font-size: 0.78rem; color: var(--text-dim); }
@@ -527,7 +528,7 @@
   .roster-side-list{ display:flex; flex-direction:column; gap:1px; max-height:660px; overflow-y:auto; margin-top:8px; border:1px solid var(--border); border-radius:8px; padding:4px; }
   .roster-side-row{ display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:6px; cursor:pointer; font-size:0.82rem; user-select:none; }
   .roster-side-row:hover{ background:var(--panel-2); }
-  .roster-side-on{ background:rgba(62,143,214,0.12); }
+  .roster-side-on{ background:rgba(255,138,0,0.12); }
   .roster-side-num{ width:20px; font-family:'Inter',sans-serif; font-weight:600; color:var(--accent); text-align:center; flex-shrink:0; }
   .roster-side-slotrole{ width:26px; font-family:'Inter',sans-serif; font-weight:600; font-size:0.68rem; color:var(--accent); text-align:center; flex-shrink:0; }
   .roster-side-name{ flex:1; }
@@ -569,7 +570,7 @@
   /* statistiche stagione */
   .stat-cards{ display:flex; gap:14px; flex-wrap:wrap; margin-top:12px; }
   .stat-card{ background: var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px 18px; min-width:120px; }
-  .stat-card-value{ font-family:'Inter',sans-serif; font-size:1.8rem; font-weight:700; color: var(--accent); }
+  .stat-card-value{ font-family:'Roboto Condensed','Arial Narrow',sans-serif; font-size:1.8rem; font-weight:700; color: var(--accent); }
   .stat-card-label{ font-size:0.72rem; color: var(--text-dim); text-transform:uppercase; letter-spacing:0.04em; margin-top:2px; }
   .donut-row{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-top:8px; }
   .chart-legend{ display:flex; flex-direction:column; gap:5px; }
@@ -593,7 +594,7 @@
   .cal-daynum{ font-family:'Inter',sans-serif; font-weight:600; font-size:0.8rem; color:var(--text-dim); }
   .cal-event{ font-size:0.68rem; padding:3px 6px; border-radius:5px; cursor:pointer; line-height:1.3; }
   .cal-event:hover{ filter:brightness(1.2); }
-  .cal-event-match-campionato{ background:rgba(62,143,214,0.25); color:var(--accent); border:1px solid var(--accent-dim); font-weight:600; }
+  .cal-event-match-campionato{ background:rgba(255,138,0,0.25); color:var(--accent); border:1px solid var(--accent-dim); font-weight:600; }
   .cal-event-match-amichevole{ background:rgba(62,142,99,0.25); color:var(--success); border:1px solid var(--success); font-weight:600; }
   .cal-event-training{ background:rgba(140,160,175,0.15); color:var(--text-dim); border:1px solid var(--border); }
   .cal-event-sub{ display:block; font-size:0.6rem; opacity:0.85; font-weight:400; }
@@ -634,6 +635,104 @@
   @media (max-width: 560px){
     .rosa-table th, .rosa-table td{ font-size:0.66rem; padding:5px 3px; }
   }
+
+  /* landing: pagina pubblica mostrata su "/" a chi non ha una sessione (vedi app/page.js).
+     Prefisso landing- per restare isolata dal resto delle classi dell'app. La barra di
+     navigazione e il footer restano sul tema scuro dell'app (i loghi in public/brand sono
+     bianchi su trasparente, pensati per sfondi scuri: su bianco sarebbero invisibili);
+     tutto il resto del contenuto (<main>) ridefinisce le stesse variabili di colore in
+     chiave chiara, cosi le regole .landing-* esistenti (che usano var(--panel) ecc.)
+     diventano automaticamente "a sfondo bianco" senza dover riscrivere ogni singola
+     regola due volte. */
+  /* Sfondo bianco di base: header/footer restano scuri (background proprio, sotto) —
+     questo copre solo i margini laterali di <main> sugli schermi più larghi di 1120px. */
+  .landing{ min-height:100vh; display:flex; flex-direction:column; background:#FFFFFF; }
+  .landing-nav{ position:sticky; top:0; z-index:100; background:rgba(0,0,0,0.92); backdrop-filter:blur(6px); border-bottom:1px solid var(--border); }
+  .landing-nav-inner{ max-width:1120px; margin:0 auto; padding:14px 24px; display:flex; align-items:center; gap:24px; }
+  .landing-nav-logo{ height:32px; display:block; }
+  .landing-nav-links{ display:flex; gap:22px; margin-left:8px; flex:1; }
+  .landing-nav-links a{ color:var(--text-dim); font-weight:600; font-size:0.88rem; text-decoration:none; }
+  .landing-nav-links a:hover{ color:var(--chalk); }
+  .landing-nav-actions{ display:flex; align-items:center; gap:14px; }
+  @media (max-width:700px){ .landing-nav-links{ display:none; } }
+
+  .landing main{
+    --bg:#FFFFFF; --panel:#FFFFFF; --panel-2:#F1F4F8; --border:#E2E7ED;
+    --chalk:#132230; --text:#33414D; --text-dim:#6B7885;
+    --accent:#D9600A; --accent-hover:#C1540A; --accent-dim:#F2C9A0; --accent-wash:rgba(217,96,10,0.09);
+    --success:#1F7A4D; --danger:#B3392F;
+    --shadow-card:0 1px 3px rgba(20,30,45,0.07); --shadow-elevated:0 16px 36px rgba(20,30,45,0.10);
+    background:var(--bg); color:var(--text);
+    max-width:1120px; margin:0 auto; padding:0 24px; width:100%;
+  }
+  .landing-section-title{ font-size:1.7rem; text-align:center; margin-bottom:28px; }
+
+  .landing-hero{ display:flex; flex-direction:column; align-items:center; text-align:center; max-width:760px; margin:0 auto; padding:80px 0 64px; }
+  .landing-eyebrow{ display:inline-block; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--accent); background:var(--accent-wash); padding:5px 12px; border-radius:999px; margin-bottom:20px; }
+  .landing-hero h1{ font-size:2.7rem; line-height:1.15; margin-bottom:18px; }
+  .landing-hero-sub{ font-size:1.1rem; color:var(--text-dim); max-width:560px; margin-bottom:26px; }
+  .landing-hero-cta{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+  .landing-hero-cta .btn{ font-size:0.95rem; padding:12px 22px; }
+  .landing-hero-note{ color:var(--text-dim); font-size:0.82rem; margin-top:14px; }
+  @media (max-width:640px){ .landing-hero h1{ font-size:2.1rem; } }
+
+  .landing-icon{ width:20px; height:20px; }
+  .landing-feature-icon{ display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:9px; background:var(--accent-wash); color:var(--accent); margin-bottom:10px; }
+
+  .landing-problems{ padding:48px 0; background:var(--panel-2); margin:0 -24px; padding-inline:24px; }
+  .landing-problems-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+  .landing-problem-card{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:22px; box-shadow:var(--shadow-card); }
+  .landing-problem-before{ color:var(--text-dim); font-size:0.88rem; margin:0 0 10px; }
+  .landing-problem-before::before{ content:"✕ "; color:var(--danger); font-weight:700; }
+  .landing-problem-after{ color:var(--chalk); font-weight:600; font-size:0.94rem; margin:0; }
+  .landing-problem-after::before{ content:"✓ "; color:var(--success); font-weight:700; }
+  @media (max-width:860px){ .landing-problems-grid{ grid-template-columns:1fr; } }
+
+  .landing-features{ padding:56px 0; }
+  .landing-features-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:18px; }
+  .landing-feature-card{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow-card); }
+  .landing-feature-title{ font-size:1rem; margin-bottom:6px; }
+  .landing-feature-card p{ color:var(--text-dim); font-size:0.86rem; margin:0; }
+  @media (max-width:960px){ .landing-features-grid{ grid-template-columns:repeat(2,1fr); } }
+  @media (max-width:560px){ .landing-features-grid{ grid-template-columns:1fr; } }
+
+  .landing-steps{ padding:48px 0; background:var(--panel-2); margin:0 -24px; padding-inline:24px; }
+  .landing-steps-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+  .landing-step-card{ text-align:center; padding:22px; }
+  .landing-step-num{ display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:var(--accent); color:#fff; font-weight:700; margin-bottom:12px; }
+  .landing-step-card p{ color:var(--text-dim); font-size:0.88rem; }
+  @media (max-width:860px){ .landing-steps-grid{ grid-template-columns:1fr; } }
+
+  .landing-early-access{ padding:56px 0; max-width:640px; margin:0 auto; }
+  .landing-early-access-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:14px; }
+  .landing-early-access-list li{ position:relative; padding-left:28px; color:var(--text); font-size:0.98rem; }
+  .landing-early-access-list li::before{ content:"✓"; position:absolute; left:0; top:0; color:var(--success); font-weight:700; }
+
+  .landing-example{ max-width:760px; margin:32px auto 0; background:var(--panel); border-left:3px solid var(--accent); border-radius:0 var(--radius) var(--radius) 0; padding:18px 22px; box-shadow:var(--shadow-card); }
+  .landing-example p{ margin:0; color:var(--text); font-size:0.94rem; }
+  .landing-example strong{ color:var(--chalk); }
+
+  .landing-waitlist{ padding:56px 0 64px; max-width:640px; margin:0 auto; text-align:center; }
+  .landing-waitlist-intro{ color:var(--text-dim); margin:-8px 0 28px; }
+  .landing-waitlist-card{ background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:28px; box-shadow:var(--shadow-elevated); text-align:left; }
+  .waitlist-form .form-row{ text-align:left; }
+  .waitlist-form select{ width:100%; }
+  .waitlist-form .btn-primary{ width:100%; margin-top:4px; }
+  .waitlist-privacy{ color:var(--text-dim); font-size:0.76rem; margin:12px 0 0; line-height:1.5; }
+  .waitlist-done{ text-align:center; padding:12px 0; }
+  .waitlist-done p{ color:var(--success); font-weight:600; font-size:1.02rem; margin:0; }
+
+  .landing-faq{ padding:0 0 72px; }
+  .landing-faq-list{ max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+  .landing-faq-item{ background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 18px; }
+  .landing-faq-item summary{ cursor:pointer; font-weight:600; color:var(--chalk); }
+  .landing-faq-item p{ color:var(--text-dim); margin:10px 0 0; font-size:0.9rem; }
+
+  .landing-footer{ border-top:1px solid var(--border); padding:32px 24px; text-align:center; display:flex; flex-direction:column; align-items:center; gap:8px; background:#000000; }
+  .landing-footer-logo{ height:26px; opacity:0.9; }
+  .landing-footer p{ color:var(--text-dim); font-size:0.85rem; margin:0; }
+  .landing-footer-links{ display:flex; gap:16px; margin-top:6px; }
+  .landing-footer-links a{ font-size:0.85rem; }
 
   @media print{
     /* Margine 0 sulla pagina fisica: ogni .schema-print-sheet ha il proprio padding

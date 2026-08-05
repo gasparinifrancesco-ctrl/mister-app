@@ -226,3 +226,17 @@ model SessionItem {
 
   @@map("session_items")
 }
+
+// Iscrizione alla lista d'attesa dalla landing page pubblica (nessun account creato qui:
+// vedi app/api/waitlist/route.js). Attivazione rigorosamente cronologica su createdAt, mai
+// per priorità soggettiva — coerente col posizionamento "semplice, per tutti".
+model WaitlistSignup {
+  id                  String   @id @default(cuid())
+  email               String   @unique
+  ruolo               String // "allenatore" | "dirigente" | "collaboratore-staff"
+  categoria           String
+  numeroCollaboratori Int
+  createdAt           DateTime @default(now())
+
+  @@map("waitlist_signups")
+}

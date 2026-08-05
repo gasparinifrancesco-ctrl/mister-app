@@ -680,7 +680,7 @@ function starRatingHTML(value, size){
   out += '</span>';
   return out;
 }
-const ROSA_VIEW_MODES = [['generali','Info generali'],['statistiche','Statistiche'],['descrizione','Descrizione']];
+const ROSA_VIEW_MODES = [['generali','Info generali'],['statistiche','Statistiche']];
 function setRosaViewMode(mode){
   state.rosaViewMode = mode;
   renderView();
@@ -694,34 +694,50 @@ function rosaColsForMode(mode){
       ['votoMedio','Voto medio'], ['percentPresenza','% Pres.']
     ];
   }
-  if(mode==='descrizione'){
-    return [ ['nome','Nome'], ['valutazione','Valutazione'], ['note','Note'] ];
-  }
-  return [ ['nome','Nome'], ['ruolo','Ruolo'], ['secondoRuolo','2° ruolo'], ['eta','Età'], ['piede','Piede'], ['valutazione','Valutazione'] ];
+  return [
+    ['nome','Nome'], ['ruolo','Ruolo'], ['secondoRuolo','2° ruolo'], ['eta','Età'], ['piede','Piede'],
+    ['altezza','Altezza'], ['valutazione','Valutazione'], ['aggregatoPrimaSquadra','Aggregato'], ['note','Note'],
+  ];
 }
-function renderRosaRow(r, mode){
+function renderRosaRow(r, mode, idx){
   const canEdit = can('edit_rosa');
-  const editing = canEdit && state.editingPlayerId === r.id;
+  // La modifica (click sulla riga) è possibile solo da "Info generali": è l'unica vista con
+  // tutti i campi anagrafici, quindi è l'unico posto dove la riga di modifica si allinea
+  // correttamente alle colonne mostrate. Se stavi modificando un giocatore e cambi vista, la
+  // riga torna automaticamente in sola lettura invece di restare aperta disallineata.
+  const editing = canEdit && state.editingPlayerId === r.id && mode==='generali';
+  // Numero di riga fisso a sinistra (posizione nell'ordinamento corrente, non un id): resta
+  // sempre visibile quanti giocatori ci sono in totale, qualunque sia la colonna scelta per
+  // ordinare. La "X" per rimuovere il giocatore va invece sempre in fondo a destra.
+  const numCell = '<td class="roster-num-cell">'+(idx+1)+'</td>';
   if(editing){
     const roleOpts = ROLE_CODES.map(rc=>'<option value="'+rc+'" '+(r.ruolo===rc?'selected':'')+'>'+rc+'</option>').join('');
     const roleOptsNone = '<option value="" '+(r.secondoRuolo?'':'selected')+'>—</option>' + ROLE_CODES.map(rc=>'<option value="'+rc+'" '+(r.secondoRuolo===rc?'selected':'')+'>'+rc+'</option>').join('');
     const footOpts = FOOT_OPTIONS.map(f=>'<option value="'+f+'" '+(r.piede===f?'selected':'')+'>'+(f||'—')+'</option>').join('');
-    return '<tr style="background:rgba(62,143,214,0.07);">' +
-      '<td style="white-space:nowrap;"><button class="btn btn-small btn-primary" onclick="stopEditPlayer()">OK</button> <button class="btn-icon" onclick="confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button></td>' +
+    const starOptions = [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>'<option value="'+v+'" '+(Number(r.valutazione||0)===v?'selected':'')+'>'+v.toFixed(1)+'</option>').join('');
+    // Stesso ordine delle colonne di "Info generali" (nome, ruolo, 2° ruolo, età←anno
+    // nascita, piede, altezza, valutazione, aggregato, note), cosi ogni campo modificabile
+    // resta sotto l'intestazione giusta invece di richiedere celle vuote di riempimento.
+    return '<tr style="background:rgba(255,138,0,0.07);">' +
+      numCell +
       '<td><input type="text" style="width:150px;" value="'+esc(r.nome)+'" onchange="updatePlayerField(\''+r.id+'\',\'nome\',this.value)"></td>' +
       '<td><select onchange="updatePlayerField(\''+r.id+'\',\'ruolo\',this.value)">'+roleOpts+'</select></td>' +
       '<td><select onchange="updatePlayerField(\''+r.id+'\',\'secondoRuolo\',this.value)">'+roleOptsNone+'</select></td>' +
+      '<td><input type="number" min="1995" max="2020" style="width:75px;" value="'+esc(r.annoNascita||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'annoNascita\',this.value)" title="Anno di nascita"></td>' +
       '<td><select onchange="updatePlayerField(\''+r.id+'\',\'piede\',this.value)">'+footOpts+'</select></td>' +
-      '<td><input type="number" min="1995" max="2020" style="width:75px;" value="'+esc(r.annoNascita||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'annoNascita\',this.value)"></td>' +
-      '<td><label style="display:flex;align-items:center;gap:4px;font-size:0.68rem;white-space:nowrap;"><input type="checkbox" '+(r.aggregatoPrimaSquadra?'checked':'')+' style="width:auto;" onchange="updatePlayerCheckboxField(\''+r.id+'\',\'aggregatoPrimaSquadra\',this.checked)"> 1a squadra</label></td>' +
+      '<td><input type="number" min="100" max="220" style="width:70px;" value="'+esc(r.altezza||'')+'" placeholder="cm" onchange="updatePlayerField(\''+r.id+'\',\'altezza\',this.value)"></td>' +
+      '<td><select onchange="updatePlayerField(\''+r.id+'\',\'valutazione\',this.value)">'+starOptions+'</select></td>' +
+      '<td><label style="display:flex;align-items:center;gap:4px;font-size:0.68rem;white-space:nowrap;"><input type="checkbox" '+(r.aggregatoPrimaSquadra?'checked':'')+' style="width:auto;" onchange="updatePlayerCheckboxField(\''+r.id+'\',\'aggregatoPrimaSquadra\',this.checked)" title="Aggregato: non disponibile di default per gli allenamenti"> Aggregato</label></td>' +
+      '<td><input type="text" class="input-note" placeholder="note libere" value="'+esc(r.note||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'note\',this.value)"></td>' +
+      '<td style="white-space:nowrap; text-align:right;"><button class="btn btn-small btn-primary" onclick="stopEditPlayer()">OK</button> <button class="btn-icon" onclick="confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button></td>' +
     '</tr>';
   }
-  const starOptions = [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>'<option value="'+v+'" '+(Number(r.valutazione||0)===v?'selected':'')+'>'+v.toFixed(1)+'</option>').join('');
   const cells = { nome: '<td oncontextmenu="showRosaPlayerContextMenu(event,\''+r.id+'\')" title="Clic destro per esportare le statistiche">'+esc(displayName(r.nome))+'</td>' };
   cells.ruolo = '<td>'+esc(r.ruolo)+'</td>';
   cells.secondoRuolo = '<td>'+esc(r.secondoRuolo)+'</td>';
   cells.eta = '<td>'+(computeAge(r.annoNascita)!=null?computeAge(r.annoNascita):'-')+'</td>';
   cells.piede = '<td>'+esc(r.piede)+'</td>';
+  cells.altezza = '<td>'+(r.altezza?r.altezza+' cm':'-')+'</td>';
   cells.convocazioni = '<td>'+r.convocazioni+'</td>';
   cells.titolare = '<td>'+r.titolare+'</td>';
   cells.subentrato = '<td>'+r.subentrato+'</td>';
@@ -733,16 +749,14 @@ function renderRosaRow(r, mode){
   cells.rossi = '<td>'+r.rossi+'</td>';
   cells.votoMedio = '<td>'+(r.votoMedio!=null?r.votoMedio.toFixed(1):'-')+'</td>';
   cells.percentPresenza = '<td>'+(r.percentPresenza!=null?r.percentPresenza+'%':'-')+'</td>';
-  if(mode==='descrizione'){
-    cells.valutazione = '<td onclick="event.stopPropagation();"><select '+(canEdit?'':'disabled')+' onchange="updatePlayerField(\''+r.id+'\',\'valutazione\',this.value)">'+starOptions+'</select></td>';
-    cells.note = '<td onclick="event.stopPropagation();"><input type="text" class="input-note" placeholder="note libere" '+(canEdit?'':'disabled')+' value="'+esc(r.note||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'note\',this.value)"></td>';
-  } else {
-    cells.valutazione = '<td>'+starRatingHTML(r.valutazione)+'</td>';
-  }
+  cells.aggregatoPrimaSquadra = '<td>'+(r.aggregatoPrimaSquadra ? '<span class="pill pill-muted">Aggregato</span>' : '—')+'</td>';
+  cells.valutazione = '<td>'+starRatingHTML(r.valutazione)+'</td>';
+  cells.note = '<td class="roster-note-cell">'+(r.note?esc(r.note):'—')+'</td>';
   const cols = rosaColsForMode(mode);
-  return '<tr '+(canEdit?'onclick="startEditPlayer(\''+r.id+'\')" style="cursor:pointer;"':'')+'>' +
-    '<td>'+(canEdit?'<button class="btn-icon" onclick="event.stopPropagation(); confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button>':'')+'</td>' +
+  return '<tr '+(canEdit && mode==='generali'?'onclick="startEditPlayer(\''+r.id+'\')" style="cursor:pointer;"':'')+'>' +
+    numCell +
     cols.map(([key])=>cells[key]).join('') +
+    '<td style="text-align:right;">'+(canEdit?'<button class="btn-icon" onclick="event.stopPropagation(); confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button>':'')+'</td>' +
   '</tr>';
 }
 function startEditPlayer(playerId){
@@ -762,6 +776,8 @@ function updatePlayerField(playerId, field, value){
     p.nome = trimmed;
   } else if(field==='annoNascita'){
     p.annoNascita = value ? parseInt(value,10) : null;
+  } else if(field==='altezza'){
+    p.altezza = value ? parseInt(value,10) : null;
   } else if(field==='valutazione'){
     p.valutazione = value ? parseFloat(value) : 0;
   } else {
@@ -784,6 +800,7 @@ function computePlayerStatsRow(playerId, stats){
   const st = stats.perPlayer[p.id] || {};
   return {
     id: p.id, nome: p.nome, ruolo: p.ruolo, secondoRuolo: p.secondoRuolo||'', piede: p.piede||'', annoNascita: p.annoNascita||null,
+    altezza: p.altezza||null,
     aggregatoPrimaSquadra: !!p.aggregatoPrimaSquadra,
     eta: computeAge(p.annoNascita), valutazione: p.valutazione||0, note: p.note||'',
     convocazioni: st.convocazioni||0, titolare: st.titolare||0, subentrato: st.subentrato||0,
@@ -823,10 +840,11 @@ function renderRosaView(){
     '</div>' +
     (rows.length===0 ? '<p class="hint">Nessun giocatore in rosa. Aggiungilo o importalo qui sotto.</p>' :
       '<div class="rosa-table-wrap"><table class="rosa-table"><thead><tr>' +
-        '<th></th>' +
+        '<th class="roster-num-cell">#</th>' +
         cols.map(([key,label])=>rosaTh(label,key)).join('') +
+        '<th></th>' +
       '</tr></thead><tbody>' +
-        rows.map(r=>renderRosaRow(r, mode)).join('') +
+        rows.map((r,i)=>renderRosaRow(r, mode, i)).join('') +
       '</tbody></table></div>' +
       '<p class="hint" style="margin-top:8px;">Clicca un\'intestazione per ordinare, clicca una riga per modificare i dati del giocatore. Le statistiche derivano dai tabellini partita e dalle presenze allenamento; "Gol subiti" conta solo per i portieri.</p>'
     ) +
@@ -842,7 +860,8 @@ function renderRosaView(){
         FOOT_OPTIONS.map(f=>'<option value="'+f+'">'+(f||'—')+'</option>').join('') +
       '</select></div>' +
       '<div class="field"><label>Anno nascita</label><input id="new-anno" type="number" min="1995" max="2020" placeholder="2008"></div>' +
-      '<label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-dim);padding-top:18px;"><input type="checkbox" id="new-aggregato" style="width:auto;padding:0;"> Aggregato prima squadra</label>' +
+      '<div class="field"><label>Altezza (cm)</label><input id="new-altezza" type="number" min="100" max="220" placeholder="170"></div>' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text-dim);padding-top:18px;"><input type="checkbox" id="new-aggregato" style="width:auto;padding:0;" title="Aggregato: non disponibile di default per gli allenamenti"> Aggregato</label>' +
       '<button class="btn btn-primary" onclick="addPlayer()">Aggiungi</button>' +
     '</div>' +
   '</div>' +
@@ -859,6 +878,7 @@ function addPlayer(){
   const secondoEl = document.getElementById('new-secondo-ruolo');
   const piedeEl = document.getElementById('new-piede');
   const annoEl = document.getElementById('new-anno');
+  const altezzaEl = document.getElementById('new-altezza');
   const aggregatoEl = document.getElementById('new-aggregato');
   const nome = nomeEl.value.trim();
   if(!nome){ nomeEl.focus(); return; }
@@ -868,6 +888,7 @@ function addPlayer(){
     secondoRuolo: secondoEl.value || '',
     piede: piedeEl.value || '',
     annoNascita: annoEl.value ? parseInt(annoEl.value,10) : null,
+    altezza: altezzaEl.value ? parseInt(altezzaEl.value,10) : null,
     aggregatoPrimaSquadra: aggregatoEl.checked,
     valutazione: 0,
     note: ''
@@ -1401,7 +1422,7 @@ function pitchMarkingsSVG(light){
 }
 function arrowSVG(a, side){
   const marker = side==='nostra' ? 'arrowhead-nostra' : (side==='default' ? 'arrowhead-default' : 'arrowhead-avversaria');
-  const color = side==='avversaria' ? '#E0A458' : '#4FA8E0';
+  const color = side==='avversaria' ? '#E0A458' : '#FF8A00';
   return '<line x1="' + a.x1 + '" y1="' + a.y1 + '" x2="' + a.x2 + '" y2="' + a.y2 + '" stroke="' + color + '" stroke-width="0.5" marker-end="url(#' + marker + ')"/>';
 }
 function slotToXY(slot, side){
@@ -1414,21 +1435,21 @@ function renderNostraPitchSVG(match){
   const chips = match.formazioneNostra.chips || [];
   const filled = new Set(chips.map(c=>c.numero));
   const emptySvg = slots.filter(s=>!filled.has(s.numero)).map(s=>
-    '<g><circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="#4FA8E0" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.55"/>' +
-    '<text x="'+s.x+'" y="'+(s.y+0.9)+'" text-anchor="middle" font-size="2.4" fill="#4FA8E0" opacity="0.75" font-family="Oswald, sans-serif">'+s.numero+'</text></g>'
+    '<g><circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="#FF8A00" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.55"/>' +
+    '<text x="'+s.x+'" y="'+(s.y+0.9)+'" text-anchor="middle" font-size="2.4" fill="#FF8A00" opacity="0.75" font-family="Oswald, sans-serif">'+s.numero+'</text></g>'
   ).join('');
   const chipsSvg = chips.map(c=>{
     const p = state.players.find(pl=>pl.id===c.playerId);
     const cognome = p ? surnameOf(p.nome) : '';
     return '<g class="chip" data-side="nostra" data-id="'+c.playerId+'" transform="translate('+c.x+','+c.y+')">' +
-      '<circle r="2.6" fill="#0E2233" stroke="#4FA8E0" stroke-width="0.35"/>' +
+      '<circle r="2.6" fill="#0E2233" stroke="#FF8A00" stroke-width="0.35"/>' +
       '<text text-anchor="middle" dy="0.9" font-size="2.6" fill="#F4F1EA" font-family="Oswald, sans-serif">'+esc(c.numero)+'</text>' +
       '<text text-anchor="middle" dy="4.3" font-size="1.7" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="0.35">'+esc(cognome)+'</text>' +
     '</g>';
   }).join('');
   const arrowsSvg = (match.formazioneNostra.arrows||[]).map(a=>arrowSVG(a,'nostra')).join('');
   return '<svg id="pitch-nostra-'+match.id+'" viewBox="0 0 68 105" class="pitch-svg">' +
-    '<defs><marker id="arrowhead-nostra" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="#4FA8E0"/></marker></defs>' +
+    '<defs><marker id="arrowhead-nostra" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="#FF8A00"/></marker></defs>' +
     pitchMarkingsSVG() +
     '<g class="arrows-layer">'+arrowsSvg+'</g>' +
     '<g class="slots-layer">'+emptySvg+'</g>' +
@@ -1690,7 +1711,7 @@ function attachNostraPitchInteractions(matchId){
       const tempLine = document.createElementNS('http://www.w3.org/2000/svg','line');
       tempLine.setAttribute('x1', start.x); tempLine.setAttribute('y1', start.y);
       tempLine.setAttribute('x2', start.x); tempLine.setAttribute('y2', start.y);
-      tempLine.setAttribute('stroke', '#4FA8E0'); tempLine.setAttribute('stroke-width', '0.5');
+      tempLine.setAttribute('stroke', '#FF8A00'); tempLine.setAttribute('stroke-width', '0.5');
       svg.querySelector('.arrows-layer').appendChild(tempLine);
       function onMove(e2){ const p=toPoint(e2); tempLine.setAttribute('x2',p.x); tempLine.setAttribute('y2',p.y); }
       function onUp(e2){
@@ -1780,21 +1801,21 @@ function renderDefaultPitchSVG(){
   const chips = state.formazioneDefault.chips || [];
   const filled = new Set(chips.map(c=>c.numero));
   const emptySvg = slots.filter(s=>!filled.has(s.numero)).map(s=>
-    '<g><circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="#4FA8E0" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.55"/>' +
-    '<text x="'+s.x+'" y="'+(s.y+0.9)+'" text-anchor="middle" font-size="2.4" fill="#4FA8E0" opacity="0.75" font-family="Oswald, sans-serif">'+s.numero+'</text></g>'
+    '<g><circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="#FF8A00" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.55"/>' +
+    '<text x="'+s.x+'" y="'+(s.y+0.9)+'" text-anchor="middle" font-size="2.4" fill="#FF8A00" opacity="0.75" font-family="Oswald, sans-serif">'+s.numero+'</text></g>'
   ).join('');
   const chipsSvg = chips.map(c=>{
     const p = state.players.find(pl=>pl.id===c.playerId);
     const cognome = p ? surnameOf(p.nome) : '';
     return '<g class="chip" data-id="'+c.playerId+'" transform="translate('+c.x+','+c.y+')">' +
-      '<circle r="2.6" fill="#0E2233" stroke="#4FA8E0" stroke-width="0.35"/>' +
+      '<circle r="2.6" fill="#0E2233" stroke="#FF8A00" stroke-width="0.35"/>' +
       '<text text-anchor="middle" dy="0.9" font-size="2.6" fill="#F4F1EA" font-family="Oswald, sans-serif">'+esc(c.numero)+'</text>' +
       '<text text-anchor="middle" dy="4.3" font-size="1.7" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="0.35">'+esc(cognome)+'</text>' +
     '</g>';
   }).join('');
   const arrowsSvg = (state.formazioneDefault.arrows||[]).map(a=>arrowSVG(a,'default')).join('');
   return '<svg id="pitch-default" viewBox="0 0 68 105" class="pitch-svg">' +
-    '<defs><marker id="arrowhead-default" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="#4FA8E0"/></marker></defs>' +
+    '<defs><marker id="arrowhead-default" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="#FF8A00"/></marker></defs>' +
     pitchMarkingsSVG() +
     '<g class="arrows-layer">'+arrowsSvg+'</g>' +
     '<g class="slots-layer">'+emptySvg+'</g>' +
@@ -2083,7 +2104,7 @@ function attachDefaultPitchInteractions(){
       const tempLine = document.createElementNS('http://www.w3.org/2000/svg','line');
       tempLine.setAttribute('x1', start.x); tempLine.setAttribute('y1', start.y);
       tempLine.setAttribute('x2', start.x); tempLine.setAttribute('y2', start.y);
-      tempLine.setAttribute('stroke', '#4FA8E0'); tempLine.setAttribute('stroke-width', '0.5');
+      tempLine.setAttribute('stroke', '#FF8A00'); tempLine.setAttribute('stroke-width', '0.5');
       svg.querySelector('.arrows-layer').appendChild(tempLine);
       function onMove(e2){ const p=toPoint(e2); tempLine.setAttribute('x2',p.x); tempLine.setAttribute('y2',p.y); }
       function onUp(e2){
@@ -3377,13 +3398,13 @@ function buildLavagnaPrintSVG(match){
   const chips = match.formazioneNostra.chips || [];
   const filled = new Set(chips.map(c=>c.numero));
   const emptySvg = slots.filter(s=>!filled.has(s.numero)).map(s=>
-    '<circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="#4FA8E0" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.5"/>'
+    '<circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="#FF8A00" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.5"/>'
   ).join('');
   const chipsSvg = chips.map(c=>{
     const p = state.players.find(pl=>pl.id===c.playerId);
     const cognome = p ? surnameOf(p.nome) : '';
     return '<g transform="translate('+c.x+','+c.y+')">' +
-      '<circle r="2.6" fill="#0E2233" stroke="#4FA8E0" stroke-width="0.35"/>' +
+      '<circle r="2.6" fill="#0E2233" stroke="#FF8A00" stroke-width="0.35"/>' +
       '<text text-anchor="middle" dy="0.9" font-size="2.6" fill="#F4F1EA" font-family="Arial, sans-serif" font-weight="bold">'+esc(c.numero)+'</text>' +
       '<text text-anchor="middle" dy="4.3" font-size="1.7" fill="#000">'+esc(cognome)+'</text>' +
     '</g>';
@@ -3848,7 +3869,7 @@ function renderSchemaNewExerciseForm(){
         '<div class="field"><label>N. giocatori</label><input id="schema-new-ex-numgiocatori" type="number" min="1" value="8"></div>' +
         '<div class="field"><label>Fase di allenamento</label><select id="schema-new-ex-categoria">'+schemaCategoriaOptionsHTML('')+'</select></div>' +
       '</div>' +
-      '<div class="field"><label>Descrizione generale</label><textarea id="schema-new-ex-descrizione" rows="3"></textarea><span class="hint">Solo a schermo, non compare in anteprima/stampa: perché/a cosa serve questo esercizio. Lo svolgimento che viene stampato si scrive dopo, nel livello.</span></div>' +
+      '<div class="field"><label>Descrizione generale</label><textarea id="schema-new-ex-descrizione" rows="3"></textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa insieme allo svolgimento, che si scrive dopo, nel livello.</span></div>' +
       '<button class="btn btn-primary" onclick="createSchemaExercise()">Crea esercizio</button>' +
     '</div>';
 }
@@ -3934,7 +3955,7 @@ function schemaFieldDefsSVG(){
   // Punta a "freccia" con incavo posteriore invece del triangolo pieno: più elegante e
   // riconoscibile come freccia vera, non solo un cuneo.
   const markers = SCHEMA_COLORS.map((c,i)=>
-    '<marker id="schema-arrowhead-'+i+'" markerWidth="2.4" markerHeight="2.4" refX="1.95" refY="1.2" orient="auto"><path d="M0,0 L2.4,1.2 L0,2.4 L0.68,1.2 Z" fill="'+c+'"/></marker>'
+    '<marker id="schema-arrowhead-'+i+'" markerWidth="3.4" markerHeight="3.4" refX="2.76" refY="1.7" orient="auto"><path d="M0,0 L3.4,1.7 L0,3.4 L0.96,1.7 Z" fill="'+c+'"/></marker>'
   ).join('');
   return '<defs>'+markers+'</defs>';
 }
@@ -4038,17 +4059,25 @@ function schemaCurveControlPoint(x1,y1,x2,y2,bend){
   const px=-dy/len, py=dx/len;
   return { x: mx+px*bend*2, y: my+py*bend*2 };
 }
+// Punto sulla curva quadratica a t=0.5 (formula di Bézier), NON il punto di controllo:
+// per una quadratica il punto di controllo è due volte più lontano dalla corda del punto
+// reale a metà curva, quindi usarlo come "mid" (bug corretto qui) piazzava il numero
+// visibilmente staccato dalla linea invece che sopra di essa.
+function schemaQuadraticMidpoint(x1,y1,cx,cy,x2,y2){
+  return { x: 0.25*x1 + 0.5*cx + 0.25*x2, y: 0.25*y1 + 0.5*cy + 0.25*y2 };
+}
 function schemaArrowGeometry(a){
   // La freccia "pallone alto" è una quadratica regolare: "bend" (uno scostamento
   // perpendicolare con segno, misurato una volta al rilascio del disegno a mano libera)
   // ne fissa la curvatura, così la forma resta pulita e si adatta da sola quando si
   // trascina un estremo. "points" (tracciato fedele a mano libera) resta letto solo per
   // compatibilità con frecce disegnate prima di questa modifica. "mid" è il punto usato
-  // per posizionare il badge numerato della sequenza.
+  // per posizionare il badge numerato della sequenza — deve stare SULLA curva, non sul
+  // punto di controllo che la definisce.
   if(a.tipo==='pallone-alto'){
     if(a.bend!=null){
       const c = schemaCurveControlPoint(a.x1,a.y1,a.x2,a.y2,a.bend);
-      return { tag:'path', d: 'M'+a.x1+','+a.y1+' Q'+c.x+','+c.y+' '+a.x2+','+a.y2, mid:c };
+      return { tag:'path', d: 'M'+a.x1+','+a.y1+' Q'+c.x+','+c.y+' '+a.x2+','+a.y2, mid: schemaQuadraticMidpoint(a.x1,a.y1,c.x,c.y,a.x2,a.y2) };
     }
     if(a.points){
       const mid = a.points[Math.floor(a.points.length/2)];
@@ -4059,7 +4088,7 @@ function schemaArrowGeometry(a){
     const len=Math.hypot(dx,dy)||1;
     const offset = len*0.25;
     const cx = mx - (dy/len)*offset, cy = my + (dx/len)*offset;
-    return { tag:'path', d: 'M'+a.x1+','+a.y1+' Q'+cx+','+cy+' '+a.x2+','+a.y2, mid:{x:cx,y:cy} };
+    return { tag:'path', d: 'M'+a.x1+','+a.y1+' Q'+cx+','+cy+' '+a.x2+','+a.y2, mid: schemaQuadraticMidpoint(a.x1,a.y1,cx,cy,a.x2,a.y2) };
   }
   return { tag:'line', x1:a.x1, y1:a.y1, x2:a.x2, y2:a.y2, mid:{x:(a.x1+a.x2)/2, y:(a.y1+a.y2)/2} };
 }
@@ -4130,7 +4159,7 @@ function renderSchemaFieldSVG(exercise, livello, withId, printMode){
   // di Piano Squadra/Formazione/Convocazioni, qui il campo è solo un supporto grafico per
   // il disegno tattico, non lo spazio di lavoro reale, quindi non deve competere visivamente
   // con il resto dell'interfaccia dark.
-  const bgFill = printMode ? '#FFFFFF' : '#1A2738';
+  const bgFill = printMode ? '#FFFFFF' : '#1F1F1F';
   const bgStroke = printMode ? '#888' : 'rgba(255,255,255,0.18)';
   return '<svg'+idAttr+' viewBox="0 0 '+w+' '+h+'" class="pitch-svg schema-field-svg'+thumbClass+'">' +
     schemaFieldDefsSVG() +
@@ -4347,7 +4376,7 @@ function renderSchemaExerciseSheet(){
         '<div class="field"><label>N. giocatori</label><input type="number" min="1" value="'+e.numeroGiocatoriBase+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'numeroGiocatoriBase\', this.value)"></div>' +
         '<div class="field"><label>Fase di allenamento</label><select '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'categoria\', this.value)">'+schemaCategoriaOptionsHTML(e.categoria)+'</select></div>' +
       '</div>' +
-      '<div class="field"><label>Descrizione generale</label><textarea rows="2" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea><span class="hint">Solo a schermo, non compare in anteprima/stampa: usala per annotare a te stesso perché/a cosa serve questo esercizio.</span></div>' +
+      '<div class="field"><label>Descrizione generale</label><textarea rows="2" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa, insieme allo svolgimento del livello scelto.</span></div>' +
       '<div class="field field-grow">' +
         '<label>Etichette</label>' +
         '<div class="schema-tag-chip-row">' + tagChipsHtml + '</div>' +
@@ -5310,10 +5339,10 @@ function schemaSessionExportItemHTML(item, idx){
   const tempoTotale = item.durataMinuti!=null ? item.durataMinuti : totaleCalcolato;
   // Il "Livello" (A/B/C) è uno strumento di lavoro in libreria per scegliere quale
   // versione usare: una volta scelta per la seduta non ha senso etichettarla sulla
-  // stampa, conta solo il contenuto di quella versione. La descrizione generale
-  // dell'esercizio è solo a monitor (perché/a cosa serve): qui va SOLO lo svolgimento
-  // del livello scelto, mai la descrizione generale, e con la formattazione (grassetto/
-  // dimensione, marcatori **/++) e gli a-capo preservati.
+  // stampa, conta solo il contenuto di quella versione. In stampa vanno sia la
+  // descrizione generale (perché/a cosa serve) sia lo svolgimento del livello scelto
+  // (come si fa) — due informazioni diverse, entrambe utili in campo — con la
+  // formattazione (grassetto/dimensione, marcatori **/++) e gli a-capo preservati.
   return '<div class="schema-export-item">' +
     '<div class="schema-export-item-text">' +
       '<h3>'+(idx+1)+'. '+esc(ex.titolo)+'</h3>' +
@@ -5323,6 +5352,7 @@ function schemaSessionExportItemHTML(item, idx){
         (cat ? '<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>' : 'Non categorizzato') +
         (tags.length ? ' · '+esc(tags.join(', ')) : '') +
       '</p>' +
+      (ex.descrizione ? '<p>'+schemaRichTextToHTML(ex.descrizione)+'</p>' : '') +
       (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
     '</div>' +
     '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(ex, item.livello, false, true) + '</div>' +
