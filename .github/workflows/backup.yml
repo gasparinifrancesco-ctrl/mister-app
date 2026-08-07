@@ -29,11 +29,14 @@ jobs:
           sudo apt-get install -y postgresql-client-17
 
       - name: Dump database
+        # Il comando "pg_dump" semplice punta alla versione 16 installata di default da
+        # postgresql-common (non quella 17 usata dal database) — bisogna chiamare il
+        # binario versionato esplicitamente, altrimenti fallisce per incompatibilità.
         env:
           DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
         run: |
           mkdir -p dumps
-          pg_dump "$DATABASE_URL" --format=custom --file="dumps/$(date -u +%Y-%m-%d).dump"
+          /usr/lib/postgresql/17/bin/pg_dump "$DATABASE_URL" --format=custom --file="dumps/$(date -u +%Y-%m-%d).dump"
 
       - name: Remove backups older than 30 days
         run: find dumps -type f -name '*.dump' -mtime +30 -delete
