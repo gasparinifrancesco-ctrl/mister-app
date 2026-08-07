@@ -21,6 +21,7 @@ function RegisterForm() {
   const [state, action, pending] = useActionState(registerAction, undefined);
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get('invite') || '';
+  const accessCode = searchParams.get('accesso') || '';
   const [invite, setInvite] = useState(null); // { email, permissions } | { error } | null (nessun token)
 
   useEffect(() => {
@@ -49,8 +50,12 @@ function RegisterForm() {
         {inviteToken && invite?.error && (
           <p className="auth-error">{invite.error}</p>
         )}
+        {!inviteToken && !accessCode && (
+          <p className="hint">Per registrarti serve un link di invito o un codice di accesso.</p>
+        )}
         <form action={action}>
           <input type="hidden" name="invite" value={inviteToken} />
+          <input type="hidden" name="accesso" value={accessCode} />
           <div className="field">
             <label htmlFor="email">Email</label>
             <input id="email" name="email" type="email" required autoComplete="email" defaultValue={invite?.email || ''} key={invite?.email || 'empty'} />
@@ -62,6 +67,12 @@ function RegisterForm() {
           <div className="field">
             <label htmlFor="password2">Conferma password</label>
             <input id="password2" name="password2" type="password" required autoComplete="new-password" minLength={8} />
+          </div>
+          <div className="field">
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.85rem', color: 'var(--text-dim)', textTransform: 'none', letterSpacing: 'normal' }}>
+              <input type="checkbox" name="privacyConsent" required style={{ width: 'auto', marginTop: '3px' }} />
+              <span>Ho letto e accetto la <Link href="/privacy" target="_blank">Privacy Policy</Link>.</span>
+            </label>
           </div>
           {state?.error && <p className="auth-error">{state.error}</p>}
           <button className="btn btn-primary" type="submit" disabled={pending}>

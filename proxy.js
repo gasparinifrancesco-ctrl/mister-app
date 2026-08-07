@@ -7,7 +7,7 @@ const AUTH_ONLY_ROUTES = ['/login', '/register'];
 // sessione la dashboard (la scelta la fa app/page.js) — quindi non deve mai finire nel
 // redirect-a-/login qui sotto, né nel rimbalzo-via-da-/login qui sopra (altrimenti "/"
 // autenticato rimbalzerebbe su se stesso all'infinito).
-const ALWAYS_ACCESSIBLE = ['/', ...AUTH_ONLY_ROUTES];
+const ALWAYS_ACCESSIBLE = ['/', '/privacy', ...AUTH_ONLY_ROUTES];
 
 export default async function proxy(req) {
   const path = req.nextUrl.pathname;

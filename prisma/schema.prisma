@@ -19,6 +19,20 @@ model User {
   modules      String   @default("[\"united-carpi\"]")
   createdAt    DateTime @default(now())
 
+  // Solo per integrità referenziale a livello di database (constraint FK): nessuna di
+  // queste liste va mai attraversata a partire da uno User nel codice applicativo, che
+  // continua a interrogare le singole tabelle filtrando per userId come già fa oggi.
+  teamMembersOwned           TeamMember[]     @relation("TeamMemberOwner")
+  teamMemberships            TeamMember[]     @relation("TeamMemberUser")
+  kvEntries                  KvEntry[]
+  stagioni                   Stagione[]
+  categorie                  Categoria[]
+  objectives                 Objective[]
+  exercises                  Exercise[]
+  sessions                   Session[]
+  considerazioniProprietarie Considerazione[] @relation("ConsiderazioneOwner")
+  considerazioniScritte      Considerazione[] @relation("ConsiderazioneAutore")
+
   @@map("users")
 }
 
@@ -44,6 +58,9 @@ model TeamMember {
   joinedAt        DateTime?
   revokedAt       DateTime?
 
+  owner User  @relation("TeamMemberOwner", fields: [ownerId], references: [id])
+  user  User? @relation("TeamMemberUser", fields: [userId], references: [id])
+
   @@map("team_members")
 }
 
@@ -59,6 +76,8 @@ model KvEntry {
   key        String
   value      String
   updatedAt  DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id])
 
   @@unique([userId, stagioneId, key])
   @@map("kv_entries")
@@ -80,6 +99,8 @@ model Stagione {
   creataIl    DateTime  @default(now())
   chiusaIl    DateTime?
 
+  user User @relation(fields: [userId], references: [id])
+
   @@map("stagioni")
 }
 
@@ -93,6 +114,8 @@ model Categoria {
   label  String
   color  String
   ordine Int    @default(0)
+
+  user User @relation(fields: [userId], references: [id])
 
   @@unique([userId, chiave])
   @@map("categorie")
@@ -108,6 +131,8 @@ model Objective {
   rpeSuggerito  Int? // 1-10 (scala Borg CR10), solo indicativo per categoria "fisico"
   loadMin       Float
   loadMax       Float
+
+  user User @relation(fields: [userId], references: [id])
 
   @@unique([userId, key])
   @@map("objectives")
@@ -137,6 +162,7 @@ model Exercise {
   votoPreferenza      Int?
   creatoIl            DateTime @default(now())
 
+  user    User      @relation(fields: [userId], references: [id])
   livelli Livello[]
   note    Note[]
 
@@ -181,6 +207,7 @@ model Session {
   rpe           Int? // 1-10, intensità percepita dell'intera seduta (session-RPE, Foster)
   creataIl      DateTime @default(now())
 
+  user            User             @relation(fields: [userId], references: [id])
   items           SessionItem[]
   considerazioni  Considerazione[]
 
@@ -203,6 +230,8 @@ model Considerazione {
   testo      String
   creataIl   DateTime @default(now())
 
+  owner  User     @relation("ConsiderazioneOwner", fields: [ownerId], references: [id])
+  autore User     @relation("ConsiderazioneAutore", fields: [autoreId], references: [id])
   seduta Session? @relation(fields: [sedutaId], references: [id], onDelete: SetNull)
 
   @@map("considerazioni")
@@ -239,4 +268,18 @@ model WaitlistSignup {
   createdAt           DateTime @default(now())
 
   @@map("waitlist_signups")
+}
+
+// Tentativo di login fallito (email sbagliata o password sbagliata), usato per bloccare
+// temporaneamente il login sulla stessa email dopo troppi fallimenti ravvicinati
+// (protezione da brute-force). Nessuna relazione con User: un'email inesistente deve
+// comunque poter essere registrata come tentativo. Le righe vecchie restano nel tempo
+// ma non vengono mai lette oltre la finestra di blocco (vedi loginAction).
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@map("login_attempts")
 }
