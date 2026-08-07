@@ -1,0 +1,40 @@
+name: Backup database
+
+on:
+  schedule:
+    # Ogni giorno alle 03:00 UTC (04:00/05:00 ora italiana a seconda dell'ora legale).
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout backups branch
+        uses: actions/checkout@v4
+        with:
+          ref: backups
+
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-17
+
+      - name: Dump database
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          mkdir -p dumps
+          pg_dump "$DATABASE_URL" --format=custom --file="dumps/$(date -u +%Y-%m-%d).dump"
+
+      - name: Remove backups older than 30 days
+        run: find dumps -type f -name '*.dump' -mtime +30 -delete
+
+      - name: Commit and push
+        run: |
+          git config user.name "mister-backup-bot"
+          git config user.email "actions@github.com"
+          git add dumps/
+          git diff --cached --quiet && echo "Nessuna modifica da salvare" || git commit -m "Backup automatico $(date -u +%Y-%m-%d)"
+          git push
