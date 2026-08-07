@@ -39,13 +39,17 @@ export async function POST(request) {
     if (!seduta) return Response.json({ error: 'seduta non valida' }, { status: 400 });
   }
 
-  const autore = await prisma.user.findUnique({ where: { id: session.actorUserId }, select: { email: true } });
+  const autore = await prisma.user.findUnique({ where: { id: session.actorUserId }, select: { email: true, nome: true, cognome: true } });
+  // Nome vero se il profilo è compilato, altrimenti l'email come prima (schemaAutoreShortName
+  // lato client gestisce già entrambi i casi troncando solo se trova una '@').
+  const nomeCompleto = autore && [autore.nome, autore.cognome].filter(Boolean).join(' ');
+  const autoreNome = nomeCompleto || (autore ? autore.email : 'sconosciuto');
 
   const considerazione = await prisma.considerazione.create({
     data: {
       ownerId: session.userId,
       autoreId: session.actorUserId,
-      autoreNome: autore ? autore.email : 'sconosciuto',
+      autoreNome,
       sedutaId: body.sedutaId || null,
       testo,
     },

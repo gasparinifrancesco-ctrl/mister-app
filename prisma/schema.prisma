@@ -19,6 +19,14 @@ model User {
   modules      String   @default("[\"united-carpi\"]")
   createdAt    DateTime @default(now())
 
+  // Profilo personale minimo (facoltativo): usato per mostrare un nome vero invece
+  // dell'email in sidebar e come autore delle Considerazioni. accentColor sostituisce
+  // solo il colore --accent (mai bg/pannelli/testo): null = arancione di default.
+  nome         String?
+  cognome      String?
+  ruolo        String?
+  accentColor  String?
+
   // Solo per integrità referenziale a livello di database (constraint FK): nessuna di
   // queste liste va mai attraversata a partire da uno User nel codice applicativo, che
   // continua a interrogare le singole tabelle filtrando per userId come già fa oggi.

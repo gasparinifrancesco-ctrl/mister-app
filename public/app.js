@@ -106,8 +106,17 @@ let state = {
     detail: null,
     selectedImportIds: [],
     showNewForm: false,
+    showIdentityForm: false,
     newTipo: 'Prima Squadra',
     newLivello: STAGIONE_LIVELLI['Prima Squadra'][0],
+  },
+  onboarding: {
+    dismissed: [],
+    loaded: false,
+    step: 0,
+  },
+  profile: {
+    tempAccentColor: null,
   },
   team: {
     invites: [],
@@ -354,6 +363,11 @@ async function loadData(){
     const r = await storageGet('sidebar-order');
     state.sideNavOrder = (r && r.value) ? JSON.parse(r.value) : null;
   }catch(e){ state.sideNavOrder = null; }
+  try{
+    const r = await storageGet('onboarding-dismissed');
+    state.onboarding.dismissed = (r && r.value) ? JSON.parse(r.value) : [];
+  }catch(e){ state.onboarding.dismissed = []; }
+  state.onboarding.loaded = true;
   if(!Array.isArray(state.formazioneDefault.riserve)) state.formazioneDefault.riserve = [];
   if(!Array.isArray(state.formazioneDefault.arrows)) state.formazioneDefault.arrows = [];
   const pianoMigrated = migratePianoSquadraKeys();
@@ -442,6 +456,14 @@ async function saveSideNavOrder(){
   }
   catch(e){ console.error('storage error (sidebar order)', e); reportSaveError(); }
 }
+async function saveOnboardingDismissed(){
+  try{
+    const r = await storageSet('onboarding-dismissed', JSON.stringify(state.onboarding.dismissed));
+    if(!r || !r.ok) throw new Error('empty result');
+    reportSaveOk();
+  }
+  catch(e){ console.error('storage error (onboarding)', e); reportSaveError(); }
+}
 function reportSaveError(){
   const banner = document.getElementById('save-error-banner');
   if(banner) banner.style.display = 'flex';
@@ -493,6 +515,7 @@ function renderView(){
   }
   renderSideNav();
   renderNextMatchBar();
+  maybeInjectOnboardingTip();
 }
 const SIDE_NAV_ICONS = {
   calendario: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>',
@@ -503,6 +526,8 @@ const SIDE_NAV_ICONS = {
   schema: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>'
 };
 const SIDE_NAV_LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+const BELL_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
+const HELP_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
 const SIDE_NAV_LABELS = { calendario:'Calendario', pianoSquadra:'Piano Squadra', formazione:'Formazione', rosa:'Rosa', statistiche:'Statistiche', schema:'Allenamenti' };
 const DEFAULT_SIDE_NAV_ORDER = ['calendario','formazione','pianoSquadra','rosa','statistiche','schema'];
 function currentSideNavOrder(){
@@ -519,6 +544,10 @@ function getAppUser(){
   try{ permissions = JSON.parse(el.getAttribute('data-permissions')||'[]'); }catch{ permissions = []; }
   return {
     email: el.getAttribute('data-email')||'',
+    nome: el.getAttribute('data-nome')||'',
+    cognome: el.getAttribute('data-cognome')||'',
+    ruolo: el.getAttribute('data-ruolo')||'',
+    accentColor: el.getAttribute('data-accent-color')||'',
     isOwner: el.getAttribute('data-is-owner')==='1',
     permissions,
     actorId: el.getAttribute('data-actor-id')||'',
@@ -718,7 +747,7 @@ function renderRosaRow(r, mode, idx){
     // Stesso ordine delle colonne di "Info generali" (nome, ruolo, 2° ruolo, età←anno
     // nascita, piede, altezza, valutazione, aggregato, note), cosi ogni campo modificabile
     // resta sotto l'intestazione giusta invece di richiedere celle vuote di riempimento.
-    return '<tr style="background:rgba(255,138,0,0.07);">' +
+    return '<tr style="background:rgba(var(--accent-rgb),0.07);">' +
       numCell +
       '<td><input type="text" style="width:150px;" value="'+esc(r.nome)+'" onchange="updatePlayerField(\''+r.id+'\',\'nome\',this.value)"></td>' +
       '<td><select onchange="updatePlayerField(\''+r.id+'\',\'ruolo\',this.value)">'+roleOpts+'</select></td>' +
@@ -1422,7 +1451,7 @@ function pitchMarkingsSVG(light){
 }
 function arrowSVG(a, side){
   const marker = side==='nostra' ? 'arrowhead-nostra' : (side==='default' ? 'arrowhead-default' : 'arrowhead-avversaria');
-  const color = side==='avversaria' ? '#E0A458' : '#FF8A00';
+  const color = side==='avversaria' ? '#E0A458' : 'var(--accent)';
   return '<line x1="' + a.x1 + '" y1="' + a.y1 + '" x2="' + a.x2 + '" y2="' + a.y2 + '" stroke="' + color + '" stroke-width="0.5" marker-end="url(#' + marker + ')"/>';
 }
 function slotToXY(slot, side){
@@ -1435,21 +1464,21 @@ function renderNostraPitchSVG(match){
   const chips = match.formazioneNostra.chips || [];
   const filled = new Set(chips.map(c=>c.numero));
   const emptySvg = slots.filter(s=>!filled.has(s.numero)).map(s=>
-    '<g><circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="#FF8A00" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.55"/>' +
-    '<text x="'+s.x+'" y="'+(s.y+0.9)+'" text-anchor="middle" font-size="2.4" fill="#FF8A00" opacity="0.75" font-family="Oswald, sans-serif">'+s.numero+'</text></g>'
+    '<g><circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="var(--accent)" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.55"/>' +
+    '<text x="'+s.x+'" y="'+(s.y+0.9)+'" text-anchor="middle" font-size="2.4" fill="var(--accent)" opacity="0.75" font-family="Oswald, sans-serif">'+s.numero+'</text></g>'
   ).join('');
   const chipsSvg = chips.map(c=>{
     const p = state.players.find(pl=>pl.id===c.playerId);
     const cognome = p ? surnameOf(p.nome) : '';
     return '<g class="chip" data-side="nostra" data-id="'+c.playerId+'" transform="translate('+c.x+','+c.y+')">' +
-      '<circle r="2.6" fill="#0E2233" stroke="#FF8A00" stroke-width="0.35"/>' +
+      '<circle r="2.6" fill="#0E2233" stroke="var(--accent)" stroke-width="0.35"/>' +
       '<text text-anchor="middle" dy="0.9" font-size="2.6" fill="#F4F1EA" font-family="Oswald, sans-serif">'+esc(c.numero)+'</text>' +
       '<text text-anchor="middle" dy="4.3" font-size="1.7" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="0.35">'+esc(cognome)+'</text>' +
     '</g>';
   }).join('');
   const arrowsSvg = (match.formazioneNostra.arrows||[]).map(a=>arrowSVG(a,'nostra')).join('');
   return '<svg id="pitch-nostra-'+match.id+'" viewBox="0 0 68 105" class="pitch-svg">' +
-    '<defs><marker id="arrowhead-nostra" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="#FF8A00"/></marker></defs>' +
+    '<defs><marker id="arrowhead-nostra" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="var(--accent)"/></marker></defs>' +
     pitchMarkingsSVG() +
     '<g class="arrows-layer">'+arrowsSvg+'</g>' +
     '<g class="slots-layer">'+emptySvg+'</g>' +
@@ -1711,7 +1740,7 @@ function attachNostraPitchInteractions(matchId){
       const tempLine = document.createElementNS('http://www.w3.org/2000/svg','line');
       tempLine.setAttribute('x1', start.x); tempLine.setAttribute('y1', start.y);
       tempLine.setAttribute('x2', start.x); tempLine.setAttribute('y2', start.y);
-      tempLine.setAttribute('stroke', '#FF8A00'); tempLine.setAttribute('stroke-width', '0.5');
+      tempLine.setAttribute('stroke', 'var(--accent)'); tempLine.setAttribute('stroke-width', '0.5');
       svg.querySelector('.arrows-layer').appendChild(tempLine);
       function onMove(e2){ const p=toPoint(e2); tempLine.setAttribute('x2',p.x); tempLine.setAttribute('y2',p.y); }
       function onUp(e2){
@@ -1801,21 +1830,21 @@ function renderDefaultPitchSVG(){
   const chips = state.formazioneDefault.chips || [];
   const filled = new Set(chips.map(c=>c.numero));
   const emptySvg = slots.filter(s=>!filled.has(s.numero)).map(s=>
-    '<g><circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="#FF8A00" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.55"/>' +
-    '<text x="'+s.x+'" y="'+(s.y+0.9)+'" text-anchor="middle" font-size="2.4" fill="#FF8A00" opacity="0.75" font-family="Oswald, sans-serif">'+s.numero+'</text></g>'
+    '<g><circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="var(--accent)" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.55"/>' +
+    '<text x="'+s.x+'" y="'+(s.y+0.9)+'" text-anchor="middle" font-size="2.4" fill="var(--accent)" opacity="0.75" font-family="Oswald, sans-serif">'+s.numero+'</text></g>'
   ).join('');
   const chipsSvg = chips.map(c=>{
     const p = state.players.find(pl=>pl.id===c.playerId);
     const cognome = p ? surnameOf(p.nome) : '';
     return '<g class="chip" data-id="'+c.playerId+'" transform="translate('+c.x+','+c.y+')">' +
-      '<circle r="2.6" fill="#0E2233" stroke="#FF8A00" stroke-width="0.35"/>' +
+      '<circle r="2.6" fill="#0E2233" stroke="var(--accent)" stroke-width="0.35"/>' +
       '<text text-anchor="middle" dy="0.9" font-size="2.6" fill="#F4F1EA" font-family="Oswald, sans-serif">'+esc(c.numero)+'</text>' +
       '<text text-anchor="middle" dy="4.3" font-size="1.7" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="0.35">'+esc(cognome)+'</text>' +
     '</g>';
   }).join('');
   const arrowsSvg = (state.formazioneDefault.arrows||[]).map(a=>arrowSVG(a,'default')).join('');
   return '<svg id="pitch-default" viewBox="0 0 68 105" class="pitch-svg">' +
-    '<defs><marker id="arrowhead-default" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="#FF8A00"/></marker></defs>' +
+    '<defs><marker id="arrowhead-default" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="var(--accent)"/></marker></defs>' +
     pitchMarkingsSVG() +
     '<g class="arrows-layer">'+arrowsSvg+'</g>' +
     '<g class="slots-layer">'+emptySvg+'</g>' +
@@ -2104,7 +2133,7 @@ function attachDefaultPitchInteractions(){
       const tempLine = document.createElementNS('http://www.w3.org/2000/svg','line');
       tempLine.setAttribute('x1', start.x); tempLine.setAttribute('y1', start.y);
       tempLine.setAttribute('x2', start.x); tempLine.setAttribute('y2', start.y);
-      tempLine.setAttribute('stroke', '#FF8A00'); tempLine.setAttribute('stroke-width', '0.5');
+      tempLine.setAttribute('stroke', 'var(--accent)'); tempLine.setAttribute('stroke-width', '0.5');
       svg.querySelector('.arrows-layer').appendChild(tempLine);
       function onMove(e2){ const p=toPoint(e2); tempLine.setAttribute('x2',p.x); tempLine.setAttribute('y2',p.y); }
       function onUp(e2){
@@ -2174,9 +2203,12 @@ function renderNotificheBell(){
     '</div>';
   }
   return '<div class="notif-bell-wrap">' +
-    '<button class="btn btn-small notif-bell-btn" onclick="toggleNotificheBell()" title="Promemoria">🔔' + (count>0?'<span class="notif-badge">'+count+'</span>':'') + '</button>' +
+    '<button class="header-icon-btn" onclick="toggleNotificheBell()" title="Promemoria" aria-label="Promemoria">' + BELL_ICON_SVG + (count>0?'<span class="notif-badge">'+count+'</span>':'') + '</button>' +
     panel +
   '</div>';
+}
+function renderHelpButtonHTML(){
+  return '<button class="header-icon-btn" onclick="reopenSectionTip()" title="Aiuto per questa sezione" aria-label="Aiuto">' + HELP_ICON_SVG + '</button>';
 }
 async function refreshSchemaNotifiche(){
   if(!getAppUser().schemaUnlocked) return;
@@ -2187,9 +2219,9 @@ function renderNextMatchBar(){
   const bar = document.getElementById('next-match-bar');
   if(!bar) return;
   const nm = findNextMatch();
-  const bell = renderNotificheBell();
+  const icons = '<div class="header-icons">' + renderNotificheBell() + renderHelpButtonHTML() + '</div>';
   if(!nm){
-    bar.innerHTML = '<span class="next-match-empty">Nessuna partita in programma</span>' + bell;
+    bar.innerHTML = '<span class="next-match-empty">Nessuna partita in programma</span>' + icons;
     return;
   }
   bar.innerHTML =
@@ -2197,7 +2229,7 @@ function renderNextMatchBar(){
     '<span class="pill ' + (nm.sede==='Trasferta'?'pill-muted':'') + '">' + esc(nm.sede||'Casa') + '</span>' +
     '<button type="button" class="next-match-opponent" onclick="openMatch(\''+nm.id+'\')" title="Apri la formazione">vs ' + esc(nm.avversario||'—') + '</button>' +
     '<span class="next-match-when">' + formatDate(nm.data) + (nm.ora?(' • '+esc(nm.ora)):'') + '</span>' +
-    bell;
+    icons;
 }
 function exportDefaultFormationXLSX(){
   ensureXLSX(function(){
@@ -3398,13 +3430,13 @@ function buildLavagnaPrintSVG(match){
   const chips = match.formazioneNostra.chips || [];
   const filled = new Set(chips.map(c=>c.numero));
   const emptySvg = slots.filter(s=>!filled.has(s.numero)).map(s=>
-    '<circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="#FF8A00" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.5"/>'
+    '<circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="var(--accent)" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.5"/>'
   ).join('');
   const chipsSvg = chips.map(c=>{
     const p = state.players.find(pl=>pl.id===c.playerId);
     const cognome = p ? surnameOf(p.nome) : '';
     return '<g transform="translate('+c.x+','+c.y+')">' +
-      '<circle r="2.6" fill="#0E2233" stroke="#FF8A00" stroke-width="0.35"/>' +
+      '<circle r="2.6" fill="#0E2233" stroke="var(--accent)" stroke-width="0.35"/>' +
       '<text text-anchor="middle" dy="0.9" font-size="2.6" fill="#F4F1EA" font-family="Arial, sans-serif" font-weight="bold">'+esc(c.numero)+'</text>' +
       '<text text-anchor="middle" dy="4.3" font-size="1.7" fill="#000">'+esc(cognome)+'</text>' +
     '</g>';
@@ -5722,6 +5754,29 @@ function toggleNewStagioneForm(){
   state.stagioni.showNewForm = !state.stagioni.showNewForm;
   renderView();
 }
+function toggleStagioneIdentityForm(){
+  state.stagioni.showIdentityForm = !state.stagioni.showIdentityForm;
+  renderView();
+}
+async function submitStagioneIdentity(attivaId){
+  const societa = document.getElementById('stagione-id-societa').value.trim();
+  const etichetta = document.getElementById('stagione-id-etichetta').value.trim();
+  let tipoSquadra = document.getElementById('stagione-id-tipo').value;
+  if(tipoSquadra==='Altro'){
+    const alt = document.getElementById('stagione-id-tipo-altro');
+    if(alt && alt.value.trim()) tipoSquadra = alt.value.trim();
+  }
+  let livello = document.getElementById('stagione-id-livello').value;
+  if(livello==='Altro'){
+    const alt = document.getElementById('stagione-id-livello-altro');
+    if(alt && alt.value.trim()) livello = alt.value.trim();
+  }
+  if(!societa || !etichetta){ alert('Società ed etichetta stagione sono obbligatorie.'); return; }
+  const res = await apiPatch('/api/stagioni/'+attivaId, { etichetta, societa, tipoSquadra, livello });
+  if(res.stagione){
+    location.reload();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
 function onStagioneTipoChange(value){
   state.stagioni.newTipo = value;
   state.stagioni.newLivello = (STAGIONE_LIVELLI[value]||['Altro'])[0];
@@ -5769,6 +5824,24 @@ function renderNewStagioneForm(){
     (s.newTipo==='Altro' ? '<div class="field"><label>Specifica tipo squadra</label><input id="stagione-new-tipo-altro" type="text"></div>' : '') +
     (s.newLivello==='Altro' ? '<div class="field"><label>Specifica livello</label><input id="stagione-new-livello-altro" type="text"></div>' : '') +
     '<button class="btn btn-primary btn-small" onclick="submitNewStagione()">Conferma nuova stagione</button>' +
+  '</div>';
+}
+function renderStagioneIdentityForm(attiva){
+  const s = state.stagioni;
+  const tipoOptions = STAGIONE_TIPI.map(t=>'<option value="'+t+'" '+(s.newTipo===t?'selected':'')+'>'+esc(t)+'</option>').join('');
+  const livelli = STAGIONE_LIVELLI[s.newTipo] || ['Altro'];
+  const livelloOptions = livelli.map(l=>'<option value="'+l+'" '+(s.newLivello===l?'selected':'')+'>'+esc(l)+'</option>').join('');
+  return '<div style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px;">' +
+    '<p class="hint">Questa stagione è ancora vuota: darle un nome non la archivia, la configura semplicemente.</p>' +
+    '<div class="form-row">' +
+      '<div class="field"><label>Società</label><input id="stagione-id-societa" type="text" placeholder="es. Mirandolese" value="'+esc(attiva.societa||'')+'"></div>' +
+      '<div class="field"><label>Tipo squadra</label><select id="stagione-id-tipo" onchange="onStagioneTipoChange(this.value)">'+tipoOptions+'</select></div>' +
+      '<div class="field"><label>Livello</label><select id="stagione-id-livello" onchange="state.stagioni.newLivello=this.value; renderView();">'+livelloOptions+'</select></div>' +
+      '<div class="field"><label>Etichetta stagione</label><input id="stagione-id-etichetta" type="text" placeholder="es. 2026/27" value="'+esc(attiva.etichetta||'')+'"></div>' +
+    '</div>' +
+    (s.newTipo==='Altro' ? '<div class="field"><label>Specifica tipo squadra</label><input id="stagione-id-tipo-altro" type="text"></div>' : '') +
+    (s.newLivello==='Altro' ? '<div class="field"><label>Specifica livello</label><input id="stagione-id-livello-altro" type="text"></div>' : '') +
+    '<button class="btn btn-primary btn-small" onclick="submitStagioneIdentity(\''+attiva.id+'\')">Salva</button>' +
   '</div>';
 }
 function stagioneArchivioStatsSummary(matches){
@@ -5855,11 +5928,19 @@ function renderStagioniView(){
   const isAdmin = can('manage_stagioni');
   const attiva = s.list.find(x=>x.attiva);
   const chiuse = s.list.filter(x=>!x.attiva);
+  // Una stagione "vergine" (mai usata: zero giocatori e zero partite, tipicamente quella
+  // creata automaticamente al primo accesso di un account nuovo) non ha nulla da "chiudere"
+  // — offrire lì il flusso chiudi-e-nuova creerebbe una voce fantasma vuota nell'archivio
+  // a ogni nuovo account. Le si dà invece un modo per impostare la propria identità sul
+  // posto, senza archiviarla.
+  const attivaVergine = attiva && state.players.length===0 && state.matches.length===0;
   return '<div class="card">' +
     '<div class="card-header-row"><h2>Stagioni</h2><button class="btn btn-small" onclick="backToCalendarioFromStagioni()">← Torna al gestionale</button></div>' +
-    (attiva ? '<p class="hint">Stagione attiva: <strong>'+esc(attiva.societa)+' — '+esc(attiva.tipoSquadra)+' '+esc(attiva.livello)+'</strong> ('+esc(attiva.etichetta)+')</p>' : '<p class="hint">Nessuna stagione attiva trovata.</p>') +
-    (isAdmin ? '<button class="btn btn-primary btn-small" onclick="toggleNewStagioneForm()">'+(s.showNewForm?'Annulla':'+ Chiudi stagione e iniziane una nuova')+'</button>' : '') +
-    (isAdmin && s.showNewForm ? renderNewStagioneForm() : '') +
+    (attiva ? '<p class="hint">Stagione attiva: <strong>'+esc(attiva.societa||'da configurare')+' — '+esc(attiva.tipoSquadra)+' '+esc(attiva.livello)+'</strong> ('+esc(attiva.etichetta)+')</p>' : '<p class="hint">Nessuna stagione attiva trovata.</p>') +
+    (isAdmin && attivaVergine ? '<button class="btn btn-primary btn-small" onclick="toggleStagioneIdentityForm()">'+(s.showIdentityForm?'Annulla':'Configura la tua squadra')+'</button>' : '') +
+    (isAdmin && attivaVergine && s.showIdentityForm ? renderStagioneIdentityForm(attiva) : '') +
+    (isAdmin && !attivaVergine ? '<button class="btn btn-primary btn-small" onclick="toggleNewStagioneForm()">'+(s.showNewForm?'Annulla':'+ Chiudi stagione e iniziane una nuova')+'</button>' : '') +
+    (isAdmin && !attivaVergine && s.showNewForm ? renderNewStagioneForm() : '') +
   '</div>' +
   '<div class="card"><h3>Archivio stagioni chiuse</h3>' +
     (chiuse.length===0 ? '<p class="hint">Nessuna stagione chiusa ancora.</p>' :
@@ -5874,6 +5955,200 @@ function renderStagioniView(){
   '</div>' +
   renderTeamSectionHTML() +
   (state.stagioni.detailId ? renderStagioneArchivioDetail() : '');
+}
+
+/* ---------- aiuto contestuale (versione leggera) ---------- */
+// Più suggerimenti brevi per sezione (non solo uno): la prima volta che si entra in una
+// sezione si parte dal primo, con una freccetta per scorrere agli approfondimenti
+// successivi. "Ho capito" chiude tutta la sequenza per quella sezione (persistito come
+// lista di chiavi "viste" in KvEntry, non per-browser); niente tour bloccante all'inizio,
+// l'allenatore scopre le sezioni nell'ordine che sceglie lui.
+const SECTION_TIPS = {
+  rosa: [
+    { title: 'Comincia da qui', text: 'Aggiungi i giocatori uno per uno con il modulo qui sotto, oppure importa una rosa già pronta da una stagione precedente nell\'archivio stagioni.' },
+    { title: 'Modifica e ordina', text: 'Clicca un\'intestazione di colonna per ordinare la tabella, clicca una riga per modificare i dati di quel giocatore. Con "Info generali" e "Statistiche" cambi cosa vedi in tabella.' },
+    { title: 'Personalizza il menu', text: 'Puoi trascinare le voci del menu qui a sinistra per metterle nell\'ordine che preferisci: l\'app si adatta al tuo modo di lavorare.' },
+  ],
+  pianoSquadra: [
+    { title: 'Colpo d\'occhio sulla squadra', text: 'I giocatori della rosa sono organizzati qui per ruolo. Clicca su una card per scegliere titolare, prima e seconda riserva per quella posizione.' },
+    { title: 'Si aggiorna da solo', text: 'Cambi qualcosa in Rosa? Il Piano Squadra si aggiorna in automatico: non serve rifare nulla qui.' },
+  ],
+  formazione: [
+    { title: 'Imposta il modulo', text: 'Scegli il modulo (4-3-3, 4-4-2...) e trascina i giocatori dalla rosa sul campo per posizionarli negli slot.' },
+    { title: 'Click destro per assegnare rapido', text: 'Clicca col tasto destro su una maglia vuota sul campo per scegliere subito chi metterci, senza dover trascinare.' },
+    { title: 'Si ripropone da sola', text: 'La formazione tipo impostata qui viene riproposta automaticamente per ogni nuova partita in Calendario: da lì puoi comunque modificarla solo per quella singola gara.' },
+  ],
+  calendario: [
+    { title: 'Aggiungi eventi', text: 'Clicca col tasto destro su un giorno libero per aggiungere una partita o un allenamento.' },
+    { title: 'Segna le presenze', text: 'Clicca su un allenamento già segnato in calendario per registrare chi era presente e chi assente.' },
+    { title: 'Importa o esporta', text: 'Hai già un calendario partite in un file Excel? Puoi importarlo da qui sotto, oppure esportare tutto in PDF o XLSX per condividerlo con la società.' },
+    { title: 'Si collega alla Formazione', text: 'Ogni partita di campionato riprende in automatico la formazione tipo: aprendola puoi modificarla solo per quella gara, senza toccare quella predefinita.' },
+  ],
+  schema: [
+    { title: 'La libreria esercizi', text: 'Qui crei gli esercizi con il disegnatore tattico: campo, giocatori, frecce e palloni.' },
+    { title: 'Costruisci le sedute', text: 'Metti insieme più esercizi in una seduta di allenamento e collegala a una data del Calendario.' },
+    { title: 'Promemoria automatici', text: 'La campanella in alto ti avvisa se una seduta collegata a un allenamento già passato non è stata ancora compilata.' },
+  ],
+};
+const ONBOARDING_NEXT_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+function onboardingTipHTML(key, step){
+  const steps = SECTION_TIPS[key];
+  if(!steps || !steps.length) return '';
+  const i = Math.max(0, Math.min(step||0, steps.length-1));
+  const tip = steps[i];
+  const hasNext = i < steps.length-1;
+  return '<div class="onboarding-tip">' +
+    '<div class="onboarding-tip-text">' +
+      '<strong>'+esc(tip.title)+'</strong>' +
+      (steps.length>1 ? '<span class="onboarding-tip-count">'+(i+1)+'/'+steps.length+'</span>' : '') +
+      '<p>'+esc(tip.text)+'</p>' +
+    '</div>' +
+    (hasNext ? '<button type="button" class="onboarding-tip-next" onclick="nextOnboardingTip(\''+key+'\')" title="Suggerimento successivo" aria-label="Suggerimento successivo">'+ONBOARDING_NEXT_ICON_SVG+'</button>' : '') +
+    '<div class="onboarding-tip-actions">' +
+      '<button type="button" class="btn btn-small btn-primary" onclick="dismissOnboardingTip(\''+key+'\')">Ho capito</button>' +
+      '<button type="button" class="onboarding-tip-dismiss-all" onclick="dismissAllOnboardingTips()">Non mostrare più suggerimenti</button>' +
+    '</div>' +
+  '</div>';
+}
+function maybeInjectOnboardingTip(){
+  const key = state.currentView;
+  if(!SECTION_TIPS[key] || !state.onboarding.loaded) return;
+  if(state.onboarding.dismissed.includes('*') || state.onboarding.dismissed.includes(key)) return;
+  const container = document.getElementById('view-content');
+  if(!container) return;
+  state.onboarding.step = 0;
+  container.insertAdjacentHTML('afterbegin', onboardingTipHTML(key, 0));
+}
+function nextOnboardingTip(key){
+  const steps = SECTION_TIPS[key];
+  if(!steps) return;
+  state.onboarding.step = Math.min((state.onboarding.step||0) + 1, steps.length - 1);
+  const el = document.querySelector('#view-content .onboarding-tip');
+  if(el) el.outerHTML = onboardingTipHTML(key, state.onboarding.step);
+}
+function dismissOnboardingTip(key){
+  if(!state.onboarding.dismissed.includes(key)) state.onboarding.dismissed.push(key);
+  saveOnboardingDismissed();
+  const el = document.querySelector('#view-content .onboarding-tip');
+  if(el) el.remove();
+}
+function dismissAllOnboardingTips(){
+  state.onboarding.dismissed = ['*'];
+  saveOnboardingDismissed();
+  const el = document.querySelector('#view-content .onboarding-tip');
+  if(el) el.remove();
+}
+// Riapre il suggerimento della sezione corrente su richiesta (bottone "?"), indipendentemente
+// da "Non mostrare più": è un aiuto on-demand, non deve essere bloccato dal dismiss globale.
+function reopenSectionTip(){
+  const key = state.currentView;
+  if(!SECTION_TIPS[key]){ alert('Nessun suggerimento per questa sezione.'); return; }
+  const container = document.getElementById('view-content');
+  if(!container) return;
+  const existing = container.querySelector('.onboarding-tip');
+  if(existing) existing.remove();
+  state.onboarding.step = 0;
+  container.insertAdjacentHTML('afterbegin', onboardingTipHTML(key, 0));
+}
+
+/* ---------- profilo personale + colore squadra ---------- */
+// Palette curata di colori adatti a rappresentare i colori sociali di una squadra —
+// pannello interno all'app, mai il color picker nativo del sistema operativo (stessa
+// regola già seguita per la paletta estesa del disegnatore).
+const TEAM_ACCENT_COLORS = [
+  '#FF8A00', '#E4572E', '#C1272D', '#8B1E3F',
+  '#2563EB', '#1D4ED8', '#0EA5E9', '#0D9488',
+  '#16A34A', '#166534', '#CA8A04', '#EAB308',
+  '#7C3AED', '#DB2777', '#6D28D9', '#78350F',
+];
+function hexToRgbTripletClient(hex){
+  const h = (hex||'').replace('#','');
+  const full = h.length===3 ? h.split('').map(c=>c+c).join('') : h;
+  const n = parseInt(full,16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+function rgbToHexClient([r,g,b]){
+  return '#'+[r,g,b].map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
+}
+function mixRgbClient([r,g,b],[tr,tg,tb],amount){
+  return [r+(tr-r)*amount, g+(tg-g)*amount, b+(tb-b)*amount];
+}
+function applyAccentPreview(hex){
+  const rgb = hexToRgbTripletClient(hex);
+  const hover = rgbToHexClient(mixRgbClient(rgb,[255,255,255],0.2));
+  const dim = rgbToHexClient(mixRgbClient(rgb,[0,0,0],0.55));
+  const wash = 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0.14)';
+  const root = document.documentElement.style;
+  root.setProperty('--accent', hex);
+  root.setProperty('--accent-hover', hover);
+  root.setProperty('--accent-dim', dim);
+  root.setProperty('--accent-wash', wash);
+}
+async function openProfileModal(){
+  const box = document.getElementById('event-modal-box');
+  box.innerHTML = '<p class="hint">Caricamento…</p>';
+  document.getElementById('event-modal-overlay').style.display = 'flex';
+  const res = await apiGet('/api/profile');
+  state.profile.tempAccentColor = res.accentColor || getAppUser().accentColor || null;
+  box.innerHTML = renderProfileFormHTML(res);
+}
+function renderProfileFormHTML(p){
+  const isOwner = p.isOwner;
+  const current = state.profile.tempAccentColor;
+  const swatches = TEAM_ACCENT_COLORS.map(c=>
+    '<button type="button" class="schema-color-swatch'+(current===c?' schema-color-swatch-active':'')+'" style="background:'+c+';" onclick="selectProfileColor(\''+c+'\')" title="'+c+'"></button>'
+  ).join('');
+  return '<h3>Il mio profilo</h3>' +
+    '<div class="form-row">' +
+      '<div class="field"><label>Nome</label><input id="profile-nome" type="text" value="'+esc(p.nome||'')+'"></div>' +
+      '<div class="field"><label>Cognome</label><input id="profile-cognome" type="text" value="'+esc(p.cognome||'')+'"></div>' +
+    '</div>' +
+    '<div class="field"><label>Ruolo</label><input id="profile-ruolo" type="text" placeholder="es. Allenatore, Team Manager, Preparatore atletico" value="'+esc(p.ruolo||'')+'"></div>' +
+    (isOwner ?
+      '<div class="field" style="margin-top:14px;">' +
+        '<label>Colore squadra</label>' +
+        '<p class="hint" style="margin-top:0;">Sostituisce solo il colore in evidenza dell\'app: sfondo, pannelli e testo restano invariati.</p>' +
+        '<div class="schema-color-picker-grid" style="grid-template-columns:repeat(8, 24px); margin-top:6px;">'+swatches+'</div>' +
+        '<div class="form-row" style="align-items:center; margin-top:8px;">' +
+          '<input id="profile-color-hex" type="text" placeholder="#FF8A00" value="'+esc(current||'')+'" style="width:110px;" oninput="onProfileColorHexInput(this.value)">' +
+          '<span class="hint">oppure inserisci un codice esadecimale</span>' +
+        '</div>' +
+      '</div>'
+      : '') +
+    '<div class="modal-actions">' +
+      '<button type="button" class="btn" onclick="closeEventModal()">Annulla</button>' +
+      '<button type="button" class="btn btn-primary" onclick="submitProfile()">Salva</button>' +
+    '</div>';
+}
+function selectProfileColor(hex){
+  state.profile.tempAccentColor = hex;
+  applyAccentPreview(hex);
+  document.querySelectorAll('#event-modal-box .schema-color-swatch').forEach(function(btn){
+    btn.classList.toggle('schema-color-swatch-active', btn.title===hex);
+  });
+  const hexInput = document.getElementById('profile-color-hex');
+  if(hexInput) hexInput.value = hex;
+}
+function onProfileColorHexInput(value){
+  if(!/^#[0-9a-fA-F]{6}$/.test(value)) return;
+  state.profile.tempAccentColor = value;
+  applyAccentPreview(value);
+}
+async function submitProfile(){
+  const nome = document.getElementById('profile-nome').value.trim();
+  const cognome = document.getElementById('profile-cognome').value.trim();
+  const ruolo = document.getElementById('profile-ruolo').value.trim();
+  const body = { nome, cognome, ruolo };
+  const colorInput = document.getElementById('profile-color-hex');
+  if(colorInput){
+    const value = colorInput.value.trim();
+    if(value && !/^#[0-9a-fA-F]{6}$/.test(value)){ alert('Colore non valido: usa un codice esadecimale tipo #FF8A00.'); return; }
+    body.accentColor = value || null;
+  }
+  const res = await apiPatch('/api/profile', body);
+  if(res.ok){
+    location.reload();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
 }
 
 /* ---------- init ---------- */

@@ -10,6 +10,7 @@
     --accent-hover: #FFA333;
     --accent-dim: #7A4A17;
     --accent-wash: rgba(255,138,0,0.14);
+    --accent-rgb: 255,138,0;
     --avv: #E0A458;
     --danger: #C1443C;
     --success: #3E8E63;
@@ -58,6 +59,16 @@
   .sidebar-brand .brand-subtitle{ display:block; font-size:0.76rem; color: var(--text-dim); margin-top:2px; }
   .sidebar-brand .season-badge{ font-family:'Inter',sans-serif; font-size:0.72rem; color: var(--bg); background: var(--accent); padding: 3px 9px; border-radius: 999px; font-weight:600; margin-top:8px; display:inline-block; }
   .sidebar-brand .sidebar-user-email{ display:block; font-size:0.68rem; color: var(--text-dim); margin-top:8px; word-break:break-all; }
+  .sidebar-brand .sidebar-user-btn{ background:none; border:none; padding:0; text-align:left; cursor:pointer; width:100%; }
+  .sidebar-brand .sidebar-user-btn:hover{ color: var(--accent); }
+  .header-icons{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+  .header-icon-btn{
+    position:relative; width:32px; height:32px; border-radius:50%; flex-shrink:0;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text-dim);
+    cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .header-icon-btn svg{ width:17px; height:17px; }
+  .header-icon-btn:hover{ color: var(--accent); border-color: var(--accent-dim); }
   .side-nav{ display:flex; flex-direction:column; gap:2px; padding: 6px 10px; flex:1; }
   .side-nav-btn{
     position:relative; display:flex; align-items:center; gap:11px; background:transparent; border:none; color:var(--text-dim);
@@ -145,6 +156,24 @@
   .view-content{ display:flex; flex-direction:column; gap: 18px; }
   .card{ background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow-card); transition: background .18s ease-in-out; }
   .hint{ color: var(--text-dim); font-size: 0.9rem; }
+  .onboarding-tip{
+    display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    background: var(--accent-wash); border:1px solid var(--accent-dim); border-radius: var(--radius);
+    padding: 12px 16px; margin-bottom: 16px;
+  }
+  .onboarding-tip-text strong{ color: var(--accent); }
+  .onboarding-tip-count{ margin-left:8px; font-size:0.72rem; color: var(--text-dim); }
+  .onboarding-tip-text p{ margin:4px 0 0; color: var(--text-dim); font-size:0.88rem; max-width:640px; }
+  .onboarding-tip-next{
+    width:28px; height:28px; border-radius:50%; flex-shrink:0; padding:0;
+    background: var(--panel); border:1px solid var(--accent-dim); color: var(--accent);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  .onboarding-tip-next svg{ width:16px; height:16px; }
+  .onboarding-tip-next:hover{ background: var(--accent); color:#FFFFFF; }
+  .onboarding-tip-actions{ display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  .onboarding-tip-dismiss-all{ background:none; border:none; color: var(--text-dim); font-size:0.78rem; text-decoration:underline; cursor:pointer; padding:0; }
+  .onboarding-tip-dismiss-all:hover{ color: var(--text); }
   .hint code{ background: var(--panel-2); border:1px solid var(--border); padding:1px 5px; border-radius:4px; font-family:monospace; font-size:0.8em; color:var(--text); }
 
   #save-error-banner{ position:sticky; top:0; z-index:1500; background:var(--danger); color:var(--chalk); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:0.85rem; font-weight:600; }
@@ -344,7 +373,7 @@
     transition: background .1s ease-in-out, color .1s ease-in-out;
   }
   .schema-tool-btn svg{ width:20px; height:20px; }
-  .schema-tool-btn:hover{ background:rgba(255,138,0,0.15); color:var(--chalk); }
+  .schema-tool-btn:hover{ background:rgba(var(--accent-rgb),0.15); color:var(--chalk); }
   .schema-tool-btn-active{ background:var(--accent); color:#FFFFFF; }
   .schema-tool-btn-active:hover{ background:var(--accent-hover); color:#FFFFFF; }
   .schema-toolbar-row-colors{ align-items:center; }
@@ -382,8 +411,7 @@
   .schema-tag-chip-removable button{ background:none; border:none; color:inherit; cursor:pointer; font-size:0.9rem; line-height:1; padding:0; }
 
   /* campanella promemoria */
-  .notif-bell-wrap{ position:relative; margin-left:auto; }
-  .notif-bell-btn{ position:relative; }
+  .notif-bell-wrap{ position:relative; }
   .notif-badge{ position:absolute; top:-6px; right:-6px; background:var(--danger); color:var(--chalk); font-size:0.62rem; font-weight:700; border-radius:999px; min-width:16px; height:16px; display:flex; align-items:center; justify-content:center; padding:0 3px; }
   .notif-panel{ position:absolute; right:0; top:calc(100% + 6px); z-index:950; width:300px; max-height:360px; overflow-y:auto; background:var(--panel); border:1px solid var(--border); border-radius:8px; box-shadow:0 10px 28px rgba(0,0,0,0.55); }
   .notif-item{ padding:10px 12px; font-size:0.82rem; color:var(--text); cursor:pointer; border-bottom:1px solid var(--border); }
@@ -517,7 +545,7 @@
   /* convocazione */
   .convocazione-list{ display:flex; flex-direction:column; gap:2px; margin-top:8px; }
   .convoca-row{ display:flex; align-items:center; gap:10px; padding:9px 6px; border-bottom:1px solid var(--border); border-radius:7px; }
-  .convoca-row.convoca-on{ background: rgba(255,138,0,0.08); }
+  .convoca-row.convoca-on{ background: rgba(var(--accent-rgb),0.08); }
   .convoca-toggle{ flex:1; display:flex; align-items:center; gap:10px; background:none; border:none; text-align:left; cursor:pointer; color:var(--text); font-family:'Inter',sans-serif; padding:6px 0; }
   .convoca-toggle:hover .roster-name{ color:var(--accent); }
   .convoca-state{ font-size: 0.78rem; color: var(--text-dim); }
@@ -528,7 +556,7 @@
   .roster-side-list{ display:flex; flex-direction:column; gap:1px; max-height:660px; overflow-y:auto; margin-top:8px; border:1px solid var(--border); border-radius:8px; padding:4px; }
   .roster-side-row{ display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:6px; cursor:pointer; font-size:0.82rem; user-select:none; }
   .roster-side-row:hover{ background:var(--panel-2); }
-  .roster-side-on{ background:rgba(255,138,0,0.12); }
+  .roster-side-on{ background:rgba(var(--accent-rgb),0.12); }
   .roster-side-num{ width:20px; font-family:'Inter',sans-serif; font-weight:600; color:var(--accent); text-align:center; flex-shrink:0; }
   .roster-side-slotrole{ width:26px; font-family:'Inter',sans-serif; font-weight:600; font-size:0.68rem; color:var(--accent); text-align:center; flex-shrink:0; }
   .roster-side-name{ flex:1; }
@@ -594,7 +622,7 @@
   .cal-daynum{ font-family:'Inter',sans-serif; font-weight:600; font-size:0.8rem; color:var(--text-dim); }
   .cal-event{ font-size:0.68rem; padding:3px 6px; border-radius:5px; cursor:pointer; line-height:1.3; }
   .cal-event:hover{ filter:brightness(1.2); }
-  .cal-event-match-campionato{ background:rgba(255,138,0,0.25); color:var(--accent); border:1px solid var(--accent-dim); font-weight:600; }
+  .cal-event-match-campionato{ background:rgba(var(--accent-rgb),0.25); color:var(--accent); border:1px solid var(--accent-dim); font-weight:600; }
   .cal-event-match-amichevole{ background:rgba(62,142,99,0.25); color:var(--success); border:1px solid var(--success); font-weight:600; }
   .cal-event-training{ background:rgba(140,160,175,0.15); color:var(--text-dim); border:1px solid var(--border); }
   .cal-event-sub{ display:block; font-size:0.6rem; opacity:0.85; font-weight:400; }

@@ -3,9 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import Script from "next/script";
 import { logoutAction } from "@/app/actions/auth";
+import { deriveAccentPalette } from "@/lib/color";
 
-export default function AppShell({ email, isOwner, permissions, actorId, schemaUnlocked, stagione }) {
+export default function AppShell({ email, nome, cognome, ruolo, accentColor, isOwner, permissions, actorId, schemaUnlocked, stagione }) {
   const squadraLabel = [stagione?.tipoSquadra, stagione?.livello].filter(Boolean).join(" ");
+  const displayName = [nome, cognome].filter(Boolean).join(" ");
+  // Solo --accent* cambia (mai bg/pannelli/testo): calcolato lato server per evitare un
+  // lampo del colore di default prima che il client applichi la scelta dell'utente.
+  const palette = accentColor ? deriveAccentPalette(accentColor) : null;
   // Su telefono la barra di navigazione in alto non ha spazio per "Esporta/Importa
   // backup" ed "Esci" insieme alle 6 voci di navigazione (misurato: ~1100px di
   // contenuto su un viewport da 375px). Questi tre pulsanti, usati raramente, si
@@ -23,12 +28,19 @@ export default function AppShell({ email, isOwner, permissions, actorId, schemaU
   }, [moreOpen]);
   return (
     <>
+      {palette && (
+        <style>{":root{--accent:" + palette.accent + ";--accent-hover:" + palette.accentHover + ";--accent-dim:" + palette.accentDim + ";--accent-wash:" + palette.accentWash + ";--accent-rgb:" + palette.accentRgb + ";}"}</style>
+      )}
       {/* Data attributes instead of an inline <script>: React's hydration reliably
           preserves attributes but does not re-execute dangerouslySetInnerHTML script
           content, so app.js reads this element instead of a window global. */}
       <div
         id="app-user-data"
         data-email={email}
+        data-nome={nome || ""}
+        data-cognome={cognome || ""}
+        data-ruolo={ruolo || ""}
+        data-accent-color={accentColor || ""}
         data-is-owner={isOwner === false ? "0" : "1"}
         data-permissions={JSON.stringify(permissions || [])}
         data-actor-id={actorId || ""}
@@ -62,7 +74,11 @@ export default function AppShell({ email, isOwner, permissions, actorId, schemaU
             </button>
             {squadraLabel ? <span className="brand-subtitle">{squadraLabel}</span> : null}
             <span className="season-badge">{stagione?.etichetta || "—"}</span>
-            {email ? <span className="sidebar-user-email">{email}</span> : null}
+            {email ? (
+              <button className="sidebar-user-email sidebar-user-btn" onClick={() => window.openProfileModal && window.openProfileModal()} title="Il mio profilo">
+                {displayName || email}
+              </button>
+            ) : null}
           </div>
           <nav id="side-nav" className="side-nav"></nav>
           <div className="sidebar-more" ref={moreRef}>
