@@ -19,7 +19,14 @@ jobs:
           ref: backups
 
       - name: Install postgresql-client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-17
+        # Ubuntu non ha i pacchetti postgresql-client-17 nei repository di default:
+        # serve aggiungere il repository ufficiale PostgreSQL (PGDG) con lo script
+        # dedicato incluso in postgresql-common, come raccomandato per i runner GitHub.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
 
       - name: Dump database
         env:
