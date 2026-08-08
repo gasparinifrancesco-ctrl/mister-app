@@ -2913,7 +2913,11 @@ function renderCalendarioView(){
     const dateStr = year + '-' + pad2(month+1) + '-' + pad2(d);
     const evs = eventsByDate[dateStr] || [];
     const isToday = dateStr===todayStr;
-    cells += '<div class="cal-cell' + (isToday?' cal-cell-today':'') + '" '+(canEditCal?'oncontextmenu="event.preventDefault(); showAddEventModal(\''+dateStr+'\')"':'')+'><div class="cal-daynum">' + d + '</div>' +
+    // Il click destro (oncontextmenu) resta per chi usa il mouse, ma su schermo touch non
+    // c'è un equivalente affidabile: un tap normale sulla cella deve bastare da solo per
+    // aggiungere un evento, sia che il giorno sia vuoto sia che ne abbia già uno (gli eventi
+    // hanno il proprio onclick con stopPropagation, quindi toccarli non apre anche questo).
+    cells += '<div class="cal-cell' + (isToday?' cal-cell-today':'') + (canEditCal?' cal-cell-editable':'') + '" '+(canEditCal?'onclick="showAddEventModal(\''+dateStr+'\')" oncontextmenu="event.preventDefault(); showAddEventModal(\''+dateStr+'\')"':'')+'><div class="cal-daynum">' + d + '</div>' +
       evs.map(e=>{
         const cls = e.type==='match' ? ('cal-event ' + (e.tipo==='Amichevole' ? 'cal-event-match-amichevole' : 'cal-event-match-campionato')) : 'cal-event cal-event-training';
         const action = e.type==='match' ? "openMatch('"+e.id+"')" : "openAllenamento('"+e.id+"')";
@@ -5979,7 +5983,7 @@ const SECTION_TIPS = {
     { title: 'Si ripropone da sola', text: 'La formazione tipo impostata qui viene riproposta automaticamente per ogni nuova partita in Calendario: da lì puoi comunque modificarla solo per quella singola gara.' },
   ],
   calendario: [
-    { title: 'Aggiungi eventi', text: 'Clicca col tasto destro su un giorno libero per aggiungere una partita o un allenamento.' },
+    { title: 'Aggiungi eventi', text: 'Clicca su un giorno (anche da telefono) per aggiungere una partita o un allenamento.' },
     { title: 'Segna le presenze', text: 'Clicca su un allenamento già segnato in calendario per registrare chi era presente e chi assente.' },
     { title: 'Importa o esporta', text: 'Hai già un calendario partite in un file Excel? Puoi importarlo da qui sotto, oppure esportare tutto in PDF o XLSX per condividerlo con la società.' },
     { title: 'Si collega alla Formazione', text: 'Ogni partita di campionato riprende in automatico la formazione tipo: aprendola puoi modificarla solo per quella gara, senza toccare quella predefinita.' },

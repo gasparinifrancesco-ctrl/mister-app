@@ -109,7 +109,12 @@
   .next-match-when{ font-size:0.82rem; color:var(--text-dim); }
   .next-match-empty{ font-size:0.82rem; color:var(--text-dim); }
 
-  @media (max-width: 760px){
+  /* Il layout mobile scatta anche in orizzontale su telefono (altezza bassa), non solo
+     sotto i 760px di larghezza: senza questa seconda condizione, un telefono ruotato
+     spesso supera i 760px di larghezza e torna al layout desktop (sidebar fissa a
+     sinistra) tarato per mouse e schermi grandi, illeggibile su schermo piccolo. I
+     tablet in orizzontale hanno un'altezza ben sopra i 500px e restano quindi esclusi. */
+  @media (max-width: 760px), (max-height: 500px) and (orientation: landscape){
     .app-frame{ flex-direction:column; }
     .sidebar{ width:100%; height:auto; position:static; flex-direction:row; overflow-x:auto; overflow-y:visible; }
     .sidebar-brand{ border-bottom:none; border-right:1px solid var(--border); padding:14px; margin-bottom:0; flex-shrink:0; }
@@ -258,7 +263,7 @@
   .btn-danger:hover{ background:#d65850; }
 
   /* rosa: tabella ordinabile */
-  .rosa-table-wrap{ overflow-x:auto; margin-top:8px; }
+  .rosa-table-wrap{ overflow-x:auto; margin-top:8px; -webkit-overflow-scrolling:touch; }
   .rosa-table{ width:100%; border-collapse:collapse; table-layout:auto; }
   .rosa-table th, .rosa-table td{ padding:10px 8px; border-bottom:1px solid var(--border); text-align:left; font-size:0.78rem; white-space:normal; word-break:break-word; }
   .rosa-table th{ color:var(--text-dim); font-weight:600; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.04em; cursor:pointer; user-select:none; line-height:1.25; }
@@ -272,6 +277,16 @@
   .roster-role{ color: var(--text-dim); font-size: 0.82rem; }
   .roster-num-cell{ width:1%; white-space:nowrap; text-align:center; color:var(--text-dim); font-variant-numeric:tabular-nums; }
   .roster-note-cell{ max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-dim); }
+  /* Su schermi stretti la tabella scorre in orizzontale (vedi .rosa-table-wrap sopra): senza
+     colonne "congelate" perdi di vista sia il numero di riga sia il nome mentre scorri per
+     vedere ruolo/età/statistiche più a destra. "#" e "Nome" sono sempre le prime due colonne
+     (vedi rosaColsForMode in app.js), quindi si possono fissare per posizione senza dover
+     marcare ogni cella con una classe dedicata. */
+  @media (max-width: 760px), (max-height: 500px) and (orientation: landscape){
+    .roster-num-cell{ width:30px; }
+    .rosa-table th:first-child, .rosa-table td:first-child{ position:sticky; left:0; z-index:2; background:var(--panel); }
+    .rosa-table th:nth-child(2), .rosa-table td:nth-child(2){ position:sticky; left:30px; z-index:2; background:var(--panel); box-shadow: 2px 0 4px rgba(0,0,0,0.25); }
+  }
 
   /* piano squadra */
   .piano-pitch-wrap{ position:relative; width:100%; max-width:920px; aspect-ratio:105/68; margin-top:10px; border-radius:8px; overflow:visible; border:1px solid var(--border); background:#234A38; }
@@ -626,7 +641,10 @@
   .cal-event-match-amichevole{ background:rgba(62,142,99,0.25); color:var(--success); border:1px solid var(--success); font-weight:600; }
   .cal-event-training{ background:rgba(140,160,175,0.15); color:var(--text-dim); border:1px solid var(--border); }
   .cal-event-sub{ display:block; font-size:0.6rem; opacity:0.85; font-weight:400; }
-  @media (max-width:700px){ .cal-cell{ min-height:56px; padding:4px; } .cal-headcell{ font-size:0.55rem; } .cal-event{ font-size:0.6rem; padding:2px 4px; } }
+  @media (max-width:700px), (max-height: 500px) and (orientation: landscape){ .cal-cell{ min-height:56px; padding:4px; } .cal-headcell{ font-size:0.55rem; } .cal-event{ font-size:0.6rem; padding:2px 4px; } }
+  .cal-cell-editable{ cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .cal-cell-editable:hover{ border-color:var(--accent-dim); }
+  .cal-cell-editable:active{ background:var(--accent-wash); }
 
   /* export "Calendario Preparazione": stessi stili sia per la cattura immagine (fuori
      schermo, mai in stampa) sia per il PDF dentro #print-area — colori sempre presenti
@@ -660,7 +678,7 @@
   .player-stats-note{ margin-top:14px; font-size:12px; color:var(--text-dim); font-style:italic; }
 
   @media (prefers-reduced-motion: reduce){ *{ transition: none !important; } }
-  @media (max-width: 560px){
+  @media (max-width: 560px), (max-height: 500px) and (orientation: landscape){
     .rosa-table th, .rosa-table td{ font-size:0.66rem; padding:5px 3px; }
   }
 
