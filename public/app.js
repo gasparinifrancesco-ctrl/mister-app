@@ -2168,9 +2168,13 @@ function benchDefaultHTML(){
 // cambiare posto a mano serve il triangolino (apre la tendina con tutti i posti). Il tasto
 // destro è invece un'azione rapida diretta (vedi quickToggleDefaultPlayer): seleziona al
 // primo posto libero chi non è ancora selezionato, deseleziona chi lo è già — niente tendina.
-// Il trascinamento parte non appena ci si sposta oltre DRAG_JITTER_PX (immediato, senza
-// attesa): un'etichetta di solo testo (nome e cognome, senza sfondo) segue il dito/puntatore.
+// Da mouse/pen il trascinamento parte non appena ci si sposta oltre DRAG_JITTER_PX
+// (immediato). Da touch (smartphone/tablet) invece bisogna tenere fermo il dito per
+// TOUCH_DRAG_HOLD_MS prima che parta: un tocco che scivola per un attimo (per sbaglio, o
+// perché si sta solo scorrendo l'elenco) non deve mai spostare un giocatore — e finché non
+// scatta il trascinamento non blocchiamo lo scroll nativo della pagina/elenco col dito.
 const DRAG_JITTER_PX = 6;
+const TOUCH_DRAG_HOLD_MS = 550;
 function wireDefaultSelectOrDrag(el, svg, playerId){
   el.addEventListener('contextmenu', function(e){
     e.preventDefault();
@@ -2179,33 +2183,67 @@ function wireDefaultSelectOrDrag(el, svg, playerId){
   el.addEventListener('pointerdown', function(e){
     if(e.target.closest('.roster-side-triangle, .pitch-card-triangle')) return;
     if(e.button !== 0) return;
-    e.preventDefault();
+    const isTouch = e.pointerType === 'touch';
     const startX = e.clientX, startY = e.clientY;
     let dragActive = false;
+    let cancelled = false;
     let ghost = null;
-    try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    let holdTimer = null;
+    if(!isTouch){
+      e.preventDefault();
+      try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    }
+    function activateDrag(){
+      dragActive = true;
+      el.classList.add('is-dragging-source');
+      ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      const p0 = state.players.find(pl=>pl.id===playerId);
+      ghost.textContent = p0 ? displayName(p0.nome) : '';
+      document.body.appendChild(ghost);
+      ghost.style.left = startX + 'px';
+      ghost.style.top = startY + 'px';
+    }
+    if(isTouch){
+      holdTimer = setTimeout(function(){
+        if(cancelled) return;
+        try{ el.setPointerCapture(e.pointerId); }catch(err){}
+        activateDrag();
+      }, TOUCH_DRAG_HOLD_MS);
+    }
+    function cleanup(){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onCancel);
+      if(holdTimer) clearTimeout(holdTimer);
+      try{ el.releasePointerCapture(e.pointerId); }catch(err){}
+      el.classList.remove('is-dragging-source');
+      if(ghost){ ghost.remove(); ghost = null; }
+    }
+    function onCancel(){
+      cancelled = true;
+      cleanup();
+    }
     function onMove(e2){
       if(!dragActive){
         if(Math.abs(e2.clientX-startX) > DRAG_JITTER_PX || Math.abs(e2.clientY-startY) > DRAG_JITTER_PX){
-          dragActive = true;
-          el.classList.add('is-dragging-source');
-          ghost = document.createElement('div');
-          ghost.className = 'drag-ghost';
-          const p0 = state.players.find(pl=>pl.id===playerId);
-          ghost.textContent = p0 ? displayName(p0.nome) : '';
-          document.body.appendChild(ghost);
+          if(isTouch){
+            // Spostamento prima che scatti il tenuto-premuto: non è un trascinamento, è
+            // probabilmente uno scroll — lo lasciamo fare al browser, non lo intercettiamo.
+            cancelled = true;
+            if(holdTimer) clearTimeout(holdTimer);
+            return;
+          }
+          activateDrag();
         } else {
           return;
         }
       }
+      if(e2.cancelable) e2.preventDefault();
       if(ghost){ ghost.style.left = e2.clientX + 'px'; ghost.style.top = e2.clientY + 'px'; }
     }
     function onUp(e2){
-      try{ el.releasePointerCapture(e.pointerId); }catch(err){}
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-      el.classList.remove('is-dragging-source');
-      if(ghost) ghost.remove();
+      cleanup();
       if(!dragActive) return;
       if(svg){
         const rect = svg.getBoundingClientRect();
@@ -2233,6 +2271,7 @@ function wireDefaultSelectOrDrag(el, svg, playerId){
     }
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onCancel);
   });
 }
 function attachDefaultRosterInteractions(){
@@ -2266,15 +2305,27 @@ function attachDefaultPitchInteractions(){
         const id = cardEl.getAttribute('data-id');
         const chipData = state.formazioneDefault.chips.find(c=>c.playerId===id);
         if(!chipData) return;
+        const isTouch = e.pointerType === 'touch';
         try{ cardEl.setPointerCapture(e.pointerId); }catch(err){}
         const startPt = toPoint(e);
         let dragActive = false;
+        let holdTimer = null;
+        function activateDrag(){
+          dragActive = true;
+          cardEl.classList.add('is-dragging-source');
+        }
+        // Da touch il trascinamento sul campo parte solo dopo aver tenuto fermo il dito
+        // per TOUCH_DRAG_HOLD_MS: un tocco impreciso non deve spostare il giocatore per
+        // sbaglio. Da mouse/pen resta immediato, come prima.
+        if(isTouch){
+          holdTimer = setTimeout(activateDrag, TOUCH_DRAG_HOLD_MS);
+        }
         function onMove(e2){
           const p = toPoint(e2);
           if(!dragActive){
+            if(isTouch) return; // in attesa dell'hold timer, ignora il movimento
             if(Math.abs(p.x-startPt.x) > 0.6 || Math.abs(p.y-startPt.y) > 0.6){
-              dragActive = true;
-              cardEl.classList.add('is-dragging-source');
+              activateDrag();
             } else {
               return;
             }
@@ -2287,6 +2338,8 @@ function attachDefaultPitchInteractions(){
         function onUp(e2){
           cardEl.removeEventListener('pointermove', onMove);
           cardEl.removeEventListener('pointerup', onUp);
+          cardEl.removeEventListener('pointercancel', onUp);
+          if(holdTimer) clearTimeout(holdTimer);
           try{ cardEl.releasePointerCapture(e.pointerId); }catch(err){}
           cardEl.classList.remove('is-dragging-source');
           // Tocco secco (nessuno spostamento): non fa niente, per cambiare posto o togliere
@@ -2297,6 +2350,7 @@ function attachDefaultPitchInteractions(){
         // gli eventi vanno ascoltati sulla card stessa, altrimenti pointermove/up non arrivano mai.
         cardEl.addEventListener('pointermove', onMove);
         cardEl.addEventListener('pointerup', onUp);
+        cardEl.addEventListener('pointercancel', onUp);
       });
     });
   }

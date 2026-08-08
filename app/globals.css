@@ -609,6 +609,20 @@
     padding:0; cursor:pointer; line-height:1;
   }
   .pitch-card-triangle:hover{ color:var(--accent); }
+  /* Su un campo stretto (telefono) le card a dimensione "desktop" si accavallano tra loro,
+     sia in orizzontale (giocatori affiancati, es. i 4 difensori) sia in verticale (i posti
+     sono più vicini quando il campo è più basso, es. portiere e difesa): le rimpiccioliamo
+     e, sotto i 400px, nascondiamo il nome sulla card (resta leggibile col triangolino, che
+     apre comunque la tendina con il nome di tutti). */
+  @media (max-width:480px){
+    .pitch-card{ gap:2px; }
+    .pitch-card-num{ width:30px; height:30px; font-size:0.8rem; border-width:1.5px; }
+    .pitch-card-name{ font-size:0.6rem; max-width:46px; }
+    .pitch-card-triangle{ font-size:0.7rem; }
+  }
+  @media (max-width:400px){
+    .pitch-card-name{ display:none; }
+  }
   .forma-bars{ display:inline-flex; gap:2px; align-items:center; vertical-align:middle; }
   .forma-bar{ width:5px; height:14px; border-radius:2px; display:inline-block; }
   .forma-empty{ color:var(--text-dim); }
@@ -630,7 +644,7 @@
      sfondo/bordo "pillola" di .bench-chip (qui è solo un contenitore di layout).
      La larghezza della colonna riserve non è fissa: si adatta a quanto è largo il nome più
      lungo, così cresce da sola senza bisogno di scrollbar. */
-  .pitch-bench-row{ display:flex; flex-wrap:wrap; align-items:stretch; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-top:10px; background:#26503C; }
+  .pitch-bench-row{ display:flex; flex-wrap:wrap; align-items:stretch; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-top:10px; background:#26503C; min-width:0; }
   .pitch-bench-row .pitch-wrap{ flex:1 1 auto; min-width:0; margin-top:0; border:none; border-radius:0; background:none; }
   .default-bench-panel{
     flex:0 0 auto; width:auto; min-width:104px; background:#26503C; padding:10px 8px;
@@ -682,6 +696,10 @@
   /* lavagna + rosa affiancate (stile FM) — campo più largo, elenco rosa più stretto */
   .tactic-layout{ display:grid; grid-template-columns: minmax(320px,640px) minmax(220px,1fr); gap:16px; margin-top:14px; align-items:start; }
   @media (max-width:860px){ .tactic-layout{ grid-template-columns:1fr; } }
+  /* Le colonne di una grid, di default, non si restringono sotto la larghezza "naturale" del
+     loro contenuto (min-width:auto implicito) — su schermi stretti questo faceva sfondare il
+     box campo+panchina oltre il bordo della card. min-width:0 lascia che si restringano davvero. */
+  .tactic-layout > div{ min-width:0; }
   .roster-side-list{ display:flex; flex-direction:column; gap:1px; max-height:660px; overflow-y:auto; margin-top:8px; border:1px solid var(--border); border-radius:8px; padding:4px; }
   .roster-side-row{ display:flex; align-items:center; gap:6px; padding:7px 6px; border-radius:6px; cursor:pointer; font-size:0.82rem; user-select:none; }
   .roster-side-row:hover{ background:var(--panel-2); }
