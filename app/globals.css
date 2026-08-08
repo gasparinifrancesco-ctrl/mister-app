@@ -116,12 +116,34 @@
      tablet in orizzontale hanno un'altezza ben sopra i 500px e restano quindi esclusi. */
   @media (max-width: 760px), (max-height: 500px) and (orientation: landscape){
     .app-frame{ flex-direction:column; }
-    .sidebar{ width:100%; height:auto; position:static; flex-direction:row; overflow-x:auto; overflow-y:visible; }
-    .sidebar-brand{ border-bottom:none; border-right:1px solid var(--border); padding:14px; margin-bottom:0; flex-shrink:0; }
-    .sidebar-brand .brand-title{ font-size:0.92rem; }
-    .side-nav{ flex-direction:row; padding:6px 8px; }
-    .side-nav-btn{ width:auto; white-space:nowrap; }
-    .app-content{ padding: 16px 16px 60px; }
+    /* Barra di navigazione ancorata in basso, come in un'app nativa: raggiungibile col
+       pollice senza spostare la mano, invece che in cima allo schermo. È lo stesso
+       elemento .sidebar di sempre (stesso #side-nav, stesso ordine personalizzabile via
+       drag, stessi permessi) — qui viene solo riposizionato e restilizzato, non duplicato. */
+    .sidebar{
+      width:100%; height:auto; position:fixed; left:0; right:0; bottom:0; top:auto; z-index:900;
+      flex-direction:row; overflow-x:visible; overflow-y:visible;
+      background:var(--panel); border-top:1px solid var(--border); border-right:none;
+      box-shadow:0 -4px 16px rgba(0,0,0,0.35);
+    }
+    /* Il marchio/stagione non ha posto in una barra di tab: esce dal flusso della barra
+       stessa (stessa tecnica già usata sotto per "Altre azioni") e diventa un pulsante
+       fisso in alto a sinistra, speculare al pulsante "⋯" in alto a destra. */
+    .sidebar-brand{
+      position:fixed; top:10px; left:10px; z-index:900; width:auto;
+      border:none; padding:0; margin-bottom:0; flex-shrink:0;
+      background:var(--panel); border-radius:999px; box-shadow:0 1px 4px rgba(0,0,0,0.3);
+    }
+    .sidebar-brand .app-brand-logo{ display:none; }
+    .sidebar-brand .brand-title{ font-size:0.72rem; padding:8px 14px; }
+    .sidebar-brand .brand-subtitle, .sidebar-brand .season-badge, .sidebar-brand .sidebar-user-email{ display:none; }
+    .side-nav{ flex-direction:row; padding:4px 2px; justify-content:space-around; gap:0; }
+    .side-nav-btn{ flex:1; flex-direction:column; gap:2px; align-items:center; text-align:center; width:auto; white-space:normal; line-height:1.15; border-radius:6px; padding:6px 2px; }
+    .side-nav-btn span{ font-size:0.66rem; }
+    .side-nav-btn svg{ width:18px; height:18px; }
+    .side-nav-btn-active::before{ display:none; }
+    .side-nav-btn-active{ background:var(--accent-wash); color:var(--accent); }
+    .app-content{ padding: 16px 16px 76px; }
     .next-match-bar{ padding:8px 16px; }
     /* "Esporta/Importa backup" ed "Esci" si usano di rado: su telefono non hanno senso
        incollati alla barra di navigazione che scorre (competerebbero per lo stesso spazio
@@ -144,22 +166,27 @@
     .sidebar-backup-open{ display:flex; }
     .sidebar-backup .btn{ width:100%; white-space:normal; }
   }
-  /* Su schermi da telefono la barra orizzontale sopra (marchio + le 6 voci di
-     navigazione) non ci sta tutta: il blocco marchio da solo occupava più metà di uno
-     schermo da 375px, lasciando alle voci di navigazione uno spazio minimo e costringendo
-     a scorrere per raggiungerne quasi tutte. Qui si comprime il marchio (solo nome club,
-     niente sottotitolo/badge stagione/email) e si stringono i pulsanti di navigazione, così
-     restano leggibili senza scorrimento nella maggior parte dei casi — lo scorrimento
-     orizzontale resta comunque disponibile come rete di sicurezza. */
+  /* Con 6 voci a larghezza uguale nella barra in basso, sotto i 480px ogni tab ha pochi
+     pixel: si stringono icona ed etichetta perché restino leggibili senza dover ricorrere
+     allo scorrimento orizzontale (comunque disponibile come rete di sicurezza). */
   @media (max-width: 480px){
-    .sidebar-brand{ padding:10px 12px; display:flex; flex-direction:column; justify-content:center; }
-    .sidebar-brand .brand-subtitle, .sidebar-brand .season-badge, .sidebar-brand .sidebar-user-email{ display:none; }
-    .side-nav-btn{ padding:6px 8px; font-size:0.72rem; gap:4px; }
-    .side-nav-btn svg{ width:18px; height:18px; }
+    .side-nav-btn{ padding:6px 1px; font-size:0.6rem; gap:1px; }
+    .side-nav-btn svg{ width:17px; height:17px; }
   }
 
   .view-content{ display:flex; flex-direction:column; gap: 18px; }
   .card{ background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; box-shadow: var(--shadow-card); transition: background .18s ease-in-out; }
+  /* Niente riquadri su telefono: ogni "card" perde bordo/sfondo/ombra e diventa una sezione
+     a piena larghezza, separata dalla successiva da una sola linea sottile invece che da un
+     intero riquadro — più spazio reale al contenuto, meno "sito compresso su uno schermo
+     piccolo". Va DOPO la regola base qui sopra: una media query non aumenta la specificità,
+     quindi per vincere in cascata deve seguirla nel file, non solo trovarsi in un blocco con
+     una condizione di larghezza già vera. */
+  @media (max-width: 760px), (max-height: 500px) and (orientation: landscape){
+    .view-content{ gap:0; }
+    .card{ background:none; border:none; border-radius:0; padding:16px 0; box-shadow:none; }
+    .card + .card{ border-top:1px solid var(--border); }
+  }
   .hint{ color: var(--text-dim); font-size: 0.9rem; }
   .onboarding-tip{
     display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
