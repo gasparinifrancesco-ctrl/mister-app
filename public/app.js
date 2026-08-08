@@ -232,6 +232,11 @@ function sortByNumGara(match, players){
   });
 }
 function maxConvocati(match){ return match.tipo==='Amichevole' ? 24 : 20; }
+function matchTipoLabel(tipo){
+  if(tipo==='Amichevole') return 'amichevole';
+  if(tipo==='Coppa') return 'coppa';
+  return 'campionato';
+}
 function showConfirmModal(message, onConfirm, confirmLabel){
   document.getElementById('modal-message').textContent = message;
   document.getElementById('modal-confirm-btn').textContent = confirmLabel || 'Elimina';
@@ -890,6 +895,7 @@ function renderRosaView(){
     '<div class="pitch-actions" style="margin-bottom:6px;">' +
       ROSA_VIEW_MODES.map(([key,label])=>'<button class="btn btn-small ' + (mode===key?'btn-active':'') + '" onclick="setRosaViewMode(\''+key+'\')">'+label+'</button>').join('') +
     '</div>' +
+    (mode==='statistiche' ? (renderStatsFilterHTML() + '<p class="hint" style="margin:6px 0 10px;">' + esc(statsFilterLabel()) + '</p>') : '') +
     (rows.length===0 ? '<p class="hint">Nessun giocatore in rosa. Aggiungilo o importalo qui sotto.</p>' :
       '<div class="rosa-table-wrap"><table class="rosa-table"><thead><tr>' +
         '<th class="roster-num-cell">#</th>' +
@@ -1252,8 +1258,9 @@ function renderMatchView(){
           '<option value="Trasferta" ' + (match.sede==='Trasferta'?'selected':'') + '>Trasferta</option>' +
         '</select>' +
         '<select '+(canEdit?'':'disabled')+' onchange="updateMatchField(\'' + match.id + '\',\'tipo\',this.value)">' +
-          '<option value="Campionato" ' + (match.tipo!=='Amichevole'?'selected':'') + '>Campionato</option>' +
+          '<option value="Campionato" ' + (match.tipo!=='Amichevole' && match.tipo!=='Coppa'?'selected':'') + '>Campionato</option>' +
           '<option value="Amichevole" ' + (match.tipo==='Amichevole'?'selected':'') + '>Amichevole</option>' +
+          '<option value="Coppa" ' + (match.tipo==='Coppa'?'selected':'') + '>Coppa</option>' +
         '</select>' +
         '<span class="pill pill-muted">' + stato + '</span>' +
         '<span class="score-badge">' + gf + ' - ' + gs + '</span>' +
@@ -1362,7 +1369,7 @@ function renderConvocazioneTab(match){
   const formationOptions = '<option value="">Scegli modulo…</option>' + FORMATION_KEYS.map(k=>'<option value="'+k+'" '+(match.formazioneNostra.modulo===k?'selected':'')+'>'+k+'</option>').join('');
   return '' +
   '<div class="card">' +
-    '<div class="card-header-row"><h2>Formazione</h2><span class="hint">' + match.convocati.length + ' / ' + max + ' (' + (match.tipo==='Amichevole'?'amichevole':'campionato') + ') — fissata, storico di questa partita</span></div>' +
+    '<div class="card-header-row"><h2>Formazione</h2><span class="hint">' + match.convocati.length + ' / ' + max + ' (' + matchTipoLabel(match.tipo) + ') — fissata, storico di questa partita</span></div>' +
     renderFormazioneActionsHTML(match) +
     renderCapitanoViceHTML(match) +
     '<div class="form-row">' +
@@ -3066,7 +3073,7 @@ function showAddEventForm(type){
         '<div class="field field-grow"><label>Avversario</label><input type="text" id="event-avversario" placeholder="Nome squadra avversaria"></div>' +
         '<div class="field"><label>Orario</label><input type="time" id="event-ora"></div>' +
         '<div class="field"><label>Sede</label><select id="event-sede"><option value="Casa">Casa</option><option value="Trasferta">Trasferta</option></select></div>' +
-        '<div class="field"><label>Tipo</label><select id="event-tipo"><option value="Campionato">Campionato</option><option value="Amichevole">Amichevole</option></select></div>' +
+        '<div class="field"><label>Tipo</label><select id="event-tipo"><option value="Campionato">Campionato</option><option value="Amichevole">Amichevole</option><option value="Coppa">Coppa</option></select></div>' +
         '<button class="btn btn-primary" onclick="confirmAddMatchFromCalendar()">Crea partita</button>' +
       '</div>';
   }
@@ -3125,7 +3132,7 @@ function renderCalendarioView(){
   state.matches.forEach(m=>{
     if(!m.data) return;
     if(!eventsByDate[m.data]) eventsByDate[m.data] = [];
-    eventsByDate[m.data].push({ type:'match', tipo: m.tipo, id:m.id, label:(m.ora?m.ora+' ':'')+'vs ' + m.avversario, sub: (m.tipo==='Amichevole'?'Amichevole':'Campionato') + ' — ' + (m.sede||'Casa') });
+    eventsByDate[m.data].push({ type:'match', tipo: m.tipo, id:m.id, label:(m.ora?m.ora+' ':'')+'vs ' + m.avversario, sub: (m.tipo||'Campionato') + ' — ' + (m.sede||'Casa') });
   });
   state.allenamenti.forEach(a=>{
     if(!a.data) return;
@@ -3145,7 +3152,7 @@ function renderCalendarioView(){
     // hanno il proprio onclick con stopPropagation, quindi toccarli non apre anche questo).
     cells += '<div class="cal-cell' + (isToday?' cal-cell-today':'') + (canEditCal?' cal-cell-editable':'') + '" '+(canEditCal?'onclick="showAddEventModal(\''+dateStr+'\')" oncontextmenu="event.preventDefault(); showAddEventModal(\''+dateStr+'\')"':'')+'><div class="cal-daynum">' + d + '</div>' +
       evs.map(e=>{
-        const cls = e.type==='match' ? ('cal-event ' + (e.tipo==='Amichevole' ? 'cal-event-match-amichevole' : 'cal-event-match-campionato')) : 'cal-event cal-event-training';
+        const cls = e.type==='match' ? ('cal-event cal-event-match-' + matchTipoLabel(e.tipo)) : 'cal-event cal-event-training';
         const action = e.type==='match' ? "openMatch('"+e.id+"')" : "openAllenamento('"+e.id+"')";
         return '<div class="'+cls+'" onclick="event.stopPropagation(); '+action+'">'+esc(e.label)+(e.sub?'<span class="cal-event-sub">'+esc(e.sub)+'</span>':'')+'</div>';
       }).join('') +
@@ -3177,7 +3184,7 @@ function renderCalendarioView(){
       '<button class="btn btn-small" onclick="exportCalendarioXLSX()">Esporta XLSX</button>' +
       '<button class="btn btn-small" onclick="triggerImportCalendarioXLSX()">Importa XLSX</button>' +
     '</div>' +
-    '<p class="hint">PDF e immagine richiedono sia "Da" sia "A": elencano ogni giorno del periodo (anche i riposi), colorato per tipo evento. L\'XLSX resta il formato dati grezzo (solo i giorni con eventi) usato anche per la reimportazione: "Da"/"A" restano facoltativi e le colonne richieste sono Data (AAAA-MM-GG), Ora, Tipo Evento (Partita o Allenamento), Avversario, Sede (Casa/Trasferta), Tipo Partita (Campionato/Amichevole).</p>' +
+    '<p class="hint">PDF e immagine richiedono sia "Da" sia "A": elencano ogni giorno del periodo (anche i riposi), colorato per tipo evento. L\'XLSX resta il formato dati grezzo (solo i giorni con eventi) usato anche per la reimportazione: "Da"/"A" restano facoltativi e le colonne richieste sono Data (AAAA-MM-GG), Ora, Tipo Evento (Partita o Allenamento), Avversario, Sede (Casa/Trasferta), Tipo Partita (Campionato/Amichevole/Coppa).</p>' +
   '</div>';
 }
 function inCalendarRange(dateStr, fromStr, toStr){
@@ -3227,10 +3234,10 @@ function buildCalendarioDayRows(fromStr, toStr){
     const training = dayEvents.find(e=>e.tipoEvento==='Allenamento');
     const giorno = DAY_NAMES[(new Date(d+'T00:00:00').getDay()+6)%7];
     if(match){
-      const amichevole = match.tipoPartita==='Amichevole';
+      const tipo = match.tipoPartita || 'Campionato';
       return {
-        data:d, giorno, tipo: amichevole?'Amichevole':'Campionato',
-        cls: amichevole?'cal-print-row-amichevole':'cal-print-row-campionato',
+        data:d, giorno, tipo,
+        cls: 'cal-print-row-' + matchTipoLabel(tipo),
         dettaglio: (match.sede==='Trasferta'?'@ ':'vs ') + (match.avversario||'') + (training?' (+ allenamento)':''),
         ora: match.ora, risultato: match.risultato
       };
@@ -3249,6 +3256,7 @@ function calendarioPrintTableHTML(fromStr, toStr){
       '<span><i style="background:#d9d9d9"></i>Allenamento</span>' +
       '<span><i style="background:#bfe8c8"></i>Amichevole</span>' +
       '<span><i style="background:#f3bfd0"></i>Campionato</span>' +
+      '<span><i style="background:#f5e6a8"></i>Coppa</span>' +
       '<span><i style="background:#ffffff"></i>Riposo</span>' +
     '</div>';
 }
@@ -3370,7 +3378,8 @@ function handleCalendarioImportFile(evt){
           const avversario = String(row['Avversario']||'').trim();
           if(!avversario){ result.errors.push('Riga ' + (idx+2) + ': partita senza avversario, saltata.'); return; }
           const sede = String(row['Sede']||'').trim()==='Trasferta' ? 'Trasferta' : 'Casa';
-          const tipo = String(row['Tipo Partita']||'').trim()==='Amichevole' ? 'Amichevole' : 'Campionato';
+          const tipoRaw = String(row['Tipo Partita']||'').trim();
+          const tipo = (tipoRaw==='Amichevole' || tipoRaw==='Coppa') ? tipoRaw : 'Campionato';
           state.matches.push({
             id: uid(), avversario, data, ora, sede, tipo,
             convocati: [], numeriGara: {},
@@ -3416,7 +3425,64 @@ function keeperAtMinute(match, minuto){
   });
   return starter ? starter.id : keepers[0].id;
 }
-function computeSeasonStats(){
+const STATS_FILTER_TIPI = ['Campionato','Amichevole','Coppa'];
+// Filtro periodo/tipo per le statistiche: preferenza di visualizzazione, non un dato di
+// squadra, quindi resta solo lato client (come state.hideAggregatiFormazione) e non passa
+// dal salvataggio su server. Da/A vuoti = nessun limite su quel lato del periodo.
+function getStatsFilter(){
+  return state.statsFilter || { da:'', a:'', tipi: STATS_FILTER_TIPI.slice() };
+}
+function setStatsFilterField(field, value){
+  const f = Object.assign({}, getStatsFilter());
+  f[field] = value;
+  state.statsFilter = f;
+  renderView();
+}
+function toggleStatsFilterTipo(tipo){
+  const f = Object.assign({}, getStatsFilter());
+  f.tipi = f.tipi.slice();
+  const i = f.tipi.indexOf(tipo);
+  if(i>=0) f.tipi.splice(i,1); else f.tipi.push(tipo);
+  // Non permettere di deselezionare l'ultimo tipo rimasto: senza nessun tipo attivo le
+  // statistiche sparirebbero silenziosamente, senza che sia chiaro perché.
+  if(f.tipi.length===0) return;
+  state.statsFilter = f;
+  renderView();
+}
+function statsFilterIsDefault(f){
+  f = f || getStatsFilter();
+  return !f.da && !f.a && f.tipi.length===STATS_FILTER_TIPI.length;
+}
+function statsFilterLabel(f){
+  f = f || getStatsFilter();
+  if(statsFilterIsDefault(f)) return 'Tutta la stagione';
+  const tipiPart = f.tipi.length===STATS_FILTER_TIPI.length ? 'tutti i tipi' : f.tipi.join(', ');
+  let periodoPart = 'tutta la stagione';
+  if(f.da && f.a) periodoPart = 'dal ' + formatDate(f.da) + ' al ' + formatDate(f.a);
+  else if(f.da) periodoPart = 'dal ' + formatDate(f.da);
+  else if(f.a) periodoPart = 'fino al ' + formatDate(f.a);
+  return tipiPart + ' · ' + periodoPart;
+}
+function matchPassesStatsFilter(m, f){
+  const tipo = m.tipo || 'Campionato';
+  if(f.tipi.indexOf(tipo)===-1) return false;
+  if(f.da && (!m.data || m.data < f.da)) return false;
+  if(f.a && (!m.data || m.data > f.a)) return false;
+  return true;
+}
+function renderStatsFilterHTML(){
+  const f = getStatsFilter();
+  return '' +
+  '<div class="stats-filter-row">' +
+    '<div class="field"><label>Da</label><input type="date" value="'+esc(f.da)+'" onchange="setStatsFilterField(\'da\',this.value)"></div>' +
+    '<div class="field"><label>A</label><input type="date" value="'+esc(f.a)+'" onchange="setStatsFilterField(\'a\',this.value)"></div>' +
+    '<div class="stats-filter-tipi">' +
+      STATS_FILTER_TIPI.map(t=>'<button type="button" class="stats-filter-chip' + (f.tipi.indexOf(t)>=0?' stats-filter-chip-active':'') + '" onclick="toggleStatsFilterTipo(\''+t+'\')">'+t+'</button>').join('') +
+    '</div>' +
+  '</div>';
+}
+function computeSeasonStats(filter){
+  filter = filter || getStatsFilter();
   let golFattiTot=0, golSubitiTot=0;
   const tipologiaFatti = {};
   const tipologiaSubiti = {};
@@ -3424,7 +3490,7 @@ function computeSeasonStats(){
   const perSede = { Casa: {partite:0, golFatti:0, golSubiti:0}, Trasferta: {partite:0, golFatti:0, golSubiti:0} };
   state.players.forEach(p=>{ perPlayer[p.id] = { nome:p.nome, convocazioni:0, titolare:0, subentrato:0, minutiTot:0, gol:0, golSubiti:0, assist:0, gialli:0, rossi:0, votiSum:0, votiCount:0 }; });
 
-  const playedMatches = state.matches.filter(m=>computeMatchStato(m)==='Giocata');
+  const playedMatches = state.matches.filter(m=>computeMatchStato(m)==='Giocata' && matchPassesStatsFilter(m, filter));
   playedMatches.forEach(m=>{
     const sede = (m.sede==='Trasferta') ? 'Trasferta' : 'Casa';
     perSede[sede].partite++;
@@ -3575,6 +3641,8 @@ function renderStatisticheView(){
     '<div class="card-header-row"><h2>Statistiche stagione '+esc(getAppUser().stagioneEtichetta)+'</h2>' +
       '<div class="pitch-actions"><button class="btn btn-small" onclick="exportSeasonPDF()">Esporta PDF</button><button class="btn btn-small" onclick="exportSeasonXLSX()">Esporta XLSX</button><button class="btn btn-small" onclick="exportPageImage(\'statistiche\')">Esporta immagine</button></div>' +
     '</div>' +
+    renderStatsFilterHTML() +
+    '<p class="hint" style="margin-top:6px;">' + esc(statsFilterLabel()) + '</p>' +
     '<div class="stat-cards">' +
       statCardHTML('Partite giocate', s.partiteGiocate) +
       statCardHTML('Gol fatti', s.golFattiTot) +
