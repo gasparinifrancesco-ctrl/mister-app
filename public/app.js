@@ -203,6 +203,21 @@ function displayName(fullName){
   const cognome = surnameOf(fullName), nome = givenNameOf(fullName);
   return nome ? (cognome + ' ' + nome) : cognome;
 }
+// Cognome da solo, salvo quando un altro giocatore selezionato in formazione predefinita
+// (titolare o riserva) ha lo stesso cognome: in quel caso si antepone l'iniziale del nome
+// (es. "M. Rossi") per non confonderli su campo/panchina dove c'è spazio solo per il cognome.
+function shortDisplayName(player){
+  if(!player) return '';
+  const cognome = surnameOf(player.nome);
+  const selectedIds = new Set([].concat(
+    (state.formazioneDefault.chips||[]).map(c=>c.playerId),
+    (state.formazioneDefault.riserve||[]).filter(Boolean)
+  ));
+  const collision = state.players.some(p=>p.id!==player.id && selectedIds.has(p.id) && surnameOf(p.nome)===cognome);
+  if(!collision) return cognome;
+  const iniziale = givenNameOf(player.nome).charAt(0).toUpperCase();
+  return (iniziale ? iniziale+'. ' : '') + cognome;
+}
 function getMatch(id){ return state.matches.find(m=>m.id===id); }
 function numGara(match, playerId){
   const n = match.numeriGara ? match.numeriGara[playerId] : null;
@@ -308,6 +323,11 @@ function migrateMatch(m){
   if(!m.formazioneAvversaria) m.formazioneAvversaria = { modulo:'', chips:[], arrows:[], noteCaratteristiche:'', notePiano:'' };
   if(!m.valutazioni) m.valutazioni = { nostraSquadra:{voto:null,note:''}, nostriGiocatori:{}, avversariSquadra:{voto:null,note:''}, avversariGiocatori:[] };
   if(!m.convocati) m.convocati = [];
+  // Finché la formazione non è fissata (pulsante "Salva formazione" nel tabellino), il campo
+  // di questa partita è uno specchio live della formazione predefinita, non dati propri.
+  if(m.formazioneFissata==null) m.formazioneFissata = false;
+  if(m.capitanoId===undefined) m.capitanoId = null;
+  if(m.viceCapitanoId===undefined) m.viceCapitanoId = null;
   Object.keys(m.statistiche).forEach(pid=>{ if(m.statistiche[pid] && m.statistiche[pid].gol) delete m.statistiche[pid].gol; });
   recomputeNumeriGara(m);
 }
@@ -433,7 +453,7 @@ function syncMatchFormationWithDefault(match){
   const max = maxConvocati(match);
   const defaultIds = [].concat(
     (state.formazioneDefault.chips||[]).map(c=>c.playerId),
-    state.formazioneDefault.riserve||[]
+    (state.formazioneDefault.riserve||[]).filter(Boolean)
   );
   match.convocati = defaultIds.slice(0, max);
   autoDistributeFromConvocati(match);
@@ -703,7 +723,7 @@ function starRatingHTML(value, size){
     const fillPct = Math.max(0, Math.min(1, v - i)) * 100;
     out += '<span style="position:relative; display:inline-block; width:'+size+'px; height:'+size+'px; line-height:0;">' +
       '<span style="position:absolute; top:0; left:0;">' + starIconSVG('var(--border)', size) + '</span>' +
-      '<span style="position:absolute; top:0; left:0; width:'+fillPct+'%; overflow:hidden;">' + starIconSVG('var(--accent)', size) + '</span>' +
+      '<span style="position:absolute; top:0; left:0; width:'+fillPct+'%; overflow:hidden;">' + starIconSVG('var(--yellow)', size) + '</span>' +
     '</span>';
   }
   out += '</span>';
@@ -738,7 +758,7 @@ function renderRosaRow(r, mode, idx){
   // Numero di riga fisso a sinistra (posizione nell'ordinamento corrente, non un id): resta
   // sempre visibile quanti giocatori ci sono in totale, qualunque sia la colonna scelta per
   // ordinare. La "X" per rimuovere il giocatore va invece sempre in fondo a destra.
-  const numCell = '<td class="roster-num-cell">'+(idx+1)+'</td>';
+  const numCell = '<td class="roster-num-cell" data-label="#">'+(idx+1)+'</td>';
   if(editing){
     const roleOpts = ROLE_CODES.map(rc=>'<option value="'+rc+'" '+(r.ruolo===rc?'selected':'')+'>'+rc+'</option>').join('');
     const roleOptsNone = '<option value="" '+(r.secondoRuolo?'':'selected')+'>—</option>' + ROLE_CODES.map(rc=>'<option value="'+rc+'" '+(r.secondoRuolo===rc?'selected':'')+'>'+rc+'</option>').join('');
@@ -749,16 +769,16 @@ function renderRosaRow(r, mode, idx){
     // resta sotto l'intestazione giusta invece di richiedere celle vuote di riempimento.
     return '<tr style="background:rgba(var(--accent-rgb),0.07);">' +
       numCell +
-      '<td><input type="text" style="width:150px;" value="'+esc(r.nome)+'" onchange="updatePlayerField(\''+r.id+'\',\'nome\',this.value)"></td>' +
-      '<td><select onchange="updatePlayerField(\''+r.id+'\',\'ruolo\',this.value)">'+roleOpts+'</select></td>' +
-      '<td><select onchange="updatePlayerField(\''+r.id+'\',\'secondoRuolo\',this.value)">'+roleOptsNone+'</select></td>' +
-      '<td><input type="number" min="1995" max="2020" style="width:75px;" value="'+esc(r.annoNascita||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'annoNascita\',this.value)" title="Anno di nascita"></td>' +
-      '<td><select onchange="updatePlayerField(\''+r.id+'\',\'piede\',this.value)">'+footOpts+'</select></td>' +
-      '<td><input type="number" min="100" max="220" style="width:70px;" value="'+esc(r.altezza||'')+'" placeholder="cm" onchange="updatePlayerField(\''+r.id+'\',\'altezza\',this.value)"></td>' +
-      '<td><select onchange="updatePlayerField(\''+r.id+'\',\'valutazione\',this.value)">'+starOptions+'</select></td>' +
-      '<td><label style="display:flex;align-items:center;gap:4px;font-size:0.68rem;white-space:nowrap;"><input type="checkbox" '+(r.aggregatoPrimaSquadra?'checked':'')+' style="width:auto;" onchange="updatePlayerCheckboxField(\''+r.id+'\',\'aggregatoPrimaSquadra\',this.checked)" title="Aggregato: non disponibile di default per gli allenamenti"> Aggregato</label></td>' +
-      '<td><input type="text" class="input-note" placeholder="note libere" value="'+esc(r.note||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'note\',this.value)"></td>' +
-      '<td style="white-space:nowrap; text-align:right;"><button class="btn btn-small btn-primary" onclick="stopEditPlayer()">OK</button> <button class="btn-icon" onclick="confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button></td>' +
+      '<td data-label="Nome"><input type="text" style="width:150px;" value="'+esc(r.nome)+'" onchange="updatePlayerField(\''+r.id+'\',\'nome\',this.value)"></td>' +
+      '<td data-label="Ruolo"><select onchange="updatePlayerField(\''+r.id+'\',\'ruolo\',this.value)">'+roleOpts+'</select></td>' +
+      '<td data-label="2° ruolo"><select onchange="updatePlayerField(\''+r.id+'\',\'secondoRuolo\',this.value)">'+roleOptsNone+'</select></td>' +
+      '<td data-label="Età"><input type="number" min="1995" max="2020" style="width:75px;" value="'+esc(r.annoNascita||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'annoNascita\',this.value)" title="Anno di nascita"></td>' +
+      '<td data-label="Piede"><select onchange="updatePlayerField(\''+r.id+'\',\'piede\',this.value)">'+footOpts+'</select></td>' +
+      '<td data-label="Altezza"><input type="number" min="100" max="220" style="width:70px;" value="'+esc(r.altezza||'')+'" placeholder="cm" onchange="updatePlayerField(\''+r.id+'\',\'altezza\',this.value)"></td>' +
+      '<td data-label="Valutazione"><select onchange="updatePlayerField(\''+r.id+'\',\'valutazione\',this.value)">'+starOptions+'</select></td>' +
+      '<td data-label="Aggregato"><label style="display:flex;align-items:center;gap:4px;font-size:0.68rem;white-space:nowrap;"><input type="checkbox" '+(r.aggregatoPrimaSquadra?'checked':'')+' style="width:auto;" onchange="updatePlayerCheckboxField(\''+r.id+'\',\'aggregatoPrimaSquadra\',this.checked)" title="Aggregato: non disponibile di default per gli allenamenti"> Aggregato</label></td>' +
+      '<td data-label="Note"><input type="text" class="input-note" placeholder="note libere" value="'+esc(r.note||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'note\',this.value)"></td>' +
+      '<td data-label="" style="white-space:nowrap; text-align:right;"><button class="btn btn-small btn-primary" onclick="stopEditPlayer()">OK</button> <button class="btn-icon" onclick="confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button></td>' +
     '</tr>';
   }
   const cells = { nome: '<td oncontextmenu="showRosaPlayerContextMenu(event,\''+r.id+'\')" title="Clic destro per esportare le statistiche">'+esc(displayName(r.nome))+'</td>' };
@@ -782,10 +802,13 @@ function renderRosaRow(r, mode, idx){
   cells.valutazione = '<td>'+starRatingHTML(r.valutazione)+'</td>';
   cells.note = '<td class="roster-note-cell">'+(r.note?esc(r.note):'—')+'</td>';
   const cols = rosaColsForMode(mode);
+  // Su schermo stretto la tabella diventa una sequenza di schede (vedi CSS): ogni <td>
+  // riceve l'etichetta della propria colonna come data-label, cosi un ::before puo
+  // mostrarla al posto dell'intestazione di colonna che in quella vista sparisce.
   return '<tr '+(canEdit && mode==='generali'?'onclick="startEditPlayer(\''+r.id+'\')" style="cursor:pointer;"':'')+'>' +
     numCell +
-    cols.map(([key])=>cells[key]).join('') +
-    '<td style="text-align:right;">'+(canEdit?'<button class="btn-icon" onclick="event.stopPropagation(); confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button>':'')+'</td>' +
+    cols.map(([key,label])=>cells[key].replace('<td', '<td data-label="'+esc(label)+'"')).join('') +
+    '<td data-label="" style="text-align:right;">'+(canEdit?'<button class="btn-icon" onclick="event.stopPropagation(); confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button>':'')+'</td>' +
   '</tr>';
 }
 function startEditPlayer(playerId){
@@ -950,7 +973,9 @@ function removePlayer(id){
   }
   if(state.formazioneDefault && state.formazioneDefault.chips){
     state.formazioneDefault.chips = state.formazioneDefault.chips.filter(c=>c.playerId!==id);
-    state.formazioneDefault.riserve = (state.formazioneDefault.riserve||[]).filter(pid=>pid!==id);
+    // Sostituisce con null invece di compattare: i posti riserva sono numerati fissi
+    // (S1..S13, vedi MAX_RISERVE_SLOTS), togliere un elemento non deve spostare gli altri.
+    state.formazioneDefault.riserve = (state.formazioneDefault.riserve||[]).map(pid=>pid===id?null:pid);
   }
   savePlayers();
   saveMatches();
@@ -1102,7 +1127,6 @@ function renderPianoSquadraPitch(def){
       const pid = getPianoScelta(s.numero, idx);
       return { idx: idx, pid: pid, p: pid ? state.players.find(pl=>pl.id===pid) : null };
     });
-    const best = picks[0].p;
     const expanded = state.pianoExpandedSlot === s.numero;
     let inner;
     if(expanded){
@@ -1110,22 +1134,23 @@ function renderPianoSquadraPitch(def){
         return '<div class="piano-pitch-row piano-pitch-row-'+pick.idx+'">' +
           '<span class="piano-pitch-tier">'+(pick.idx+1)+'</span>' +
           '<select onclick="event.stopPropagation()" onchange="setPianoScelta('+s.numero+','+pick.idx+',this.value)" title="'+esc(PIANO_SCELTA_LABELS[pick.idx])+'">' + playerOptionsForSlot(s.numero, pick.idx, pick.pid) + '</select>' +
+          (pick.p ? starRatingHTML(pick.p.valutazione, 8) : '') +
         '</div>';
       }).join('');
       inner = '<div class="piano-pitch-card-head">' +
           '<span class="piano-pitch-role">'+esc(s.ruolo)+'</span>' +
-          (best ? starRatingHTML(best.valutazione, 10) : '') +
         '</div>' + rowsHtml;
     } else {
       const compactRows = picks.map(function(pick){
         const label = pick.p ? esc(pianoDisplayName(pick.p, surnameCounts)) : '<span class="piano-pitch-empty">—</span>';
         return '<div class="piano-pitch-compact-row piano-pitch-compact-row-'+pick.idx+'">' +
-          '<span class="piano-pitch-tier">'+(pick.idx+1)+'</span>' + label +
+          '<span class="piano-pitch-tier">'+(pick.idx+1)+'</span>' +
+          '<span class="piano-pitch-compact-name">'+label+'</span>' +
+          (pick.p ? starRatingHTML(pick.p.valutazione, 8) : '') +
         '</div>';
       }).join('');
       inner = '<div class="piano-pitch-card-head">' +
           '<span class="piano-pitch-role">'+esc(s.ruolo)+'</span>' +
-          (best ? starRatingHTML(best.valutazione, 10) : '') +
         '</div>' + compactRows;
     }
     return '<div class="piano-pitch-card' + (expanded?' piano-pitch-card-expanded':'') + '" data-numero="'+s.numero+'" style="left:'+leftPct+'%; top:'+topPct+'%;" onclick="togglePianoCardExpand('+s.numero+', event)">' +
@@ -1184,7 +1209,7 @@ function deleteMatch(id){
 }
 function openMatch(id){
   const match = getMatch(id);
-  if(match && computeMatchStato(match)==='Programmata' && syncMatchFormationWithDefault(match)){
+  if(match && !match.formazioneFissata && syncMatchFormationWithDefault(match)){
     saveMatches();
   }
   state.currentView = 'match';
@@ -1233,7 +1258,6 @@ function renderMatchView(){
         '<span class="pill pill-muted">' + stato + '</span>' +
         '<span class="score-badge">' + gf + ' - ' + gs + '</span>' +
         '<button class="btn btn-small" onclick="exportMatchPDF(\'' + match.id + '\')">PDF</button>' +
-        '<button class="btn btn-small" onclick="exportMatchXLSX(\'' + match.id + '\')">XLSX</button>' +
         '<button class="btn btn-small" onclick="exportPageImage(\'partita-' + match.id + '\')">Esporta immagine</button>' +
         (canEdit ? '<button class="btn btn-small btn-danger" onclick="deleteMatch(\'' + match.id + '\')">Elimina</button>' : '') +
       '</div>' +
@@ -1262,8 +1286,11 @@ function renderMatchTab(){
   const prevScrollEl = holder.querySelector('.roster-side-list');
   const prevScrollTop = prevScrollEl ? prevScrollEl.scrollTop : null;
   if(state.currentMatchTab==='convocazione'){
+    // Finché la formazione non è fissata, questa scheda è uno specchio live della
+    // formazione predefinita: si aggiorna a ogni render, non solo alla prima apertura.
+    if(!match.formazioneFissata && syncMatchFormationWithDefault(match)) saveMatches();
     holder.innerHTML = renderConvocazioneTab(match);
-    if(canEdit){ attachNostraPitchInteractions(match.id); attachNostraBenchDrag(match.id); }
+    if(canEdit && match.formazioneFissata){ attachNostraPitchInteractions(match.id); attachNostraBenchDrag(match.id); }
   } else if(state.currentMatchTab==='avversari'){
     holder.innerHTML = renderAvversariTab(match);
     if(canEdit){ attachAvversariaPitchInteractions(match.id); attachAvversariaBenchDrag(match.id); }
@@ -1278,18 +1305,70 @@ function renderMatchTab(){
   }
 }
 
+/* ---------- capitano/vice (per partita) ---------- */
+function updateMatchCaptainField(matchId, field, value){
+  const match = getMatch(matchId);
+  const other = field==='capitanoId' ? 'viceCapitanoId' : 'capitanoId';
+  if(value && match[other]===value){ alert('Non può essere sia capitano sia vice.'); return; }
+  match[field] = value || null;
+  saveMatches();
+  renderMatchTab();
+}
+function renderCapitanoViceHTML(match){
+  const options = match.convocati.map(id=>state.players.find(p=>p.id===id)).filter(Boolean)
+    .sort((a,b)=>displayName(a.nome).localeCompare(displayName(b.nome)));
+  function optsFor(selected){
+    return '<option value="">—</option>' + options.map(p=>'<option value="'+p.id+'" '+(selected===p.id?'selected':'')+'>'+esc(displayName(p.nome))+'</option>').join('');
+  }
+  const capName = match.capitanoId ? displayName((state.players.find(p=>p.id===match.capitanoId)||{}).nome||'') : null;
+  const viceName = match.viceCapitanoId ? displayName((state.players.find(p=>p.id===match.viceCapitanoId)||{}).nome||'') : null;
+  return '<div class="form-row">' +
+      '<div class="field"><label>Capitano</label><select onchange="updateMatchCaptainField(\''+match.id+'\',\'capitanoId\',this.value)">'+optsFor(match.capitanoId)+'</select></div>' +
+      '<div class="field"><label>Vice capitano</label><select onchange="updateMatchCaptainField(\''+match.id+'\',\'viceCapitanoId\',this.value)">'+optsFor(match.viceCapitanoId)+'</select></div>' +
+    '</div>' +
+    ((capName||viceName) ? '<p class="hint">' + (capName?'Capitano: <strong>'+esc(capName)+'</strong>':'') + (capName&&viceName?' · ':'') + (viceName?'Vice: <strong>'+esc(viceName)+'</strong>':'') + '</p>' : '');
+}
 /* ---------- tab CONVOCAZIONE + FORMAZIONE NOSTRA ---------- */
+function renderFormazioneActionsHTML(match){
+  return '<div class="pitch-actions">' +
+    '<button class="btn btn-small" onclick="exportConvocatiPDF(\''+match.id+'\')">Stampa convocati (alfabetico)</button>' +
+    '<button class="btn btn-small" onclick="exportDistintaPDF(\''+match.id+'\')">Stampa distinta (per numero)</button>' +
+    (match.formazioneFissata
+      ? '<span class="pill pill-muted">Salvata come storico</span>'
+      : '<button class="btn btn-primary btn-small" onclick="freezeMatchFormation(\''+match.id+'\')">Salva formazione</button>') +
+  '</div>';
+}
 function renderConvocazioneTab(match){
   const max = maxConvocati(match);
+  if(!match.formazioneFissata){
+    return '' +
+    '<div class="card">' +
+      '<div class="card-header-row"><h2>Formazione</h2><span class="pill pill-muted">' + match.convocati.length + ' / ' + max + ' — dalla formazione predefinita</span></div>' +
+      renderFormazioneActionsHTML(match) +
+      '<p class="hint">Rispecchia in tempo reale la Formazione predefinita: si aggiorna da sola finché non la salvi qui sopra, che la fissa come storico di questa partita.</p>' +
+      renderCapitanoViceHTML(match) +
+      '<div class="formation-mirror">' +
+        '<div class="pitch-bench-row">' +
+          '<div class="pitch-wrap">' + renderDefaultPitchSVG() + '</div>' +
+          '<div class="default-bench-panel">' + benchDefaultHTML() + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="formazione-piano-panel">' +
+        '<div class="field"><label>Piano partita</label><textarea rows="6" placeholder="Idee, cambi previsti, punti chiave..." onchange="updateAvvNote(\''+match.id+'\',\'notePiano\',this.value)">'+esc(match.formazioneAvversaria.notePiano)+'</textarea></div>' +
+        '<div class="field"><label>Note avversari</label><textarea rows="4" placeholder="Caratteristiche della squadra avversaria..." onchange="updateAvvNote(\''+match.id+'\',\'noteCaratteristiche\',this.value)">'+esc(match.formazioneAvversaria.noteCaratteristiche)+'</textarea></div>' +
+      '</div>' +
+    '</div>';
+  }
   const formationOptions = '<option value="">Scegli modulo…</option>' + FORMATION_KEYS.map(k=>'<option value="'+k+'" '+(match.formazioneNostra.modulo===k?'selected':'')+'>'+k+'</option>').join('');
   return '' +
   '<div class="card">' +
-    '<div class="card-header-row"><h2>Formazione</h2><span class="hint">' + match.convocati.length + ' / ' + max + ' (' + (match.tipo==='Amichevole'?'amichevole':'campionato') + ')</span></div>' +
+    '<div class="card-header-row"><h2>Formazione</h2><span class="hint">' + match.convocati.length + ' / ' + max + ' (' + (match.tipo==='Amichevole'?'amichevole':'campionato') + ') — fissata, storico di questa partita</span></div>' +
+    renderFormazioneActionsHTML(match) +
+    renderCapitanoViceHTML(match) +
     '<div class="form-row">' +
       '<div class="field"><label>Modulo</label><select onchange="if(this.value) applyFormationNostra(\''+match.id+'\',this.value)">'+formationOptions+'</select></div>' +
       '<button class="btn ' + (state.drawMode.nostra?'btn-active':'') + '" onclick="toggleDrawMode(\'nostra\')">' + (state.drawMode.nostra?'Termina disegno':'Disegna movimenti') + '</button>' +
       '<button class="btn" onclick="clearArrows(\''+match.id+'\',\'nostra\')">Cancella frecce</button>' +
-      '<button class="btn btn-small" onclick="exportConvocatiPDF(\''+match.id+'\')">Esporta convocati</button>' +
     '</div>' +
     '<p class="hint">Clic su un nome in rosa per convocarlo: il 1° selezionato va in campo, poi il 2°, e così via fino a riempire gli 11 e la panchina. Tasto destro su un nome per scegliere direttamente la posizione/numero. Puoi anche trascinare dalla panchina, o un giocatore già in campo per riposizionarlo o toglierlo.</p>' +
     '<div class="tactic-layout">' +
@@ -1373,7 +1452,7 @@ function showPlayerContextMenu(evt, matchId, playerId){
 }
 function hideContextMenu(){
   const m = document.getElementById('player-context-menu');
-  if(m) m.style.display = 'none';
+  if(m){ m.style.display = 'none'; m.classList.remove('context-menu-anchored'); }
 }
 function moveToBench(matchId, playerId){
   const match = getMatch(matchId);
@@ -1403,11 +1482,25 @@ function toggleConvocato(matchId, playerId){
 }
 function exportConvocatiPDF(matchId){
   const match = getMatch(matchId);
-  const convocati = match.convocati.map(id=>state.players.find(p=>p.id===id)).filter(Boolean).sort((a,b)=>a.nome.localeCompare(b.nome));
+  const convocati = match.convocati.map(id=>state.players.find(p=>p.id===id)).filter(Boolean)
+    .sort((a,b)=>surnameOf(a.nome).localeCompare(surnameOf(b.nome)));
   const html = '<table class="print-table"><thead><tr><th>#</th><th>Nome</th></tr></thead><tbody>' +
     convocati.map((p,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(displayName(p.nome))+'</td></tr>').join('') +
   '</tbody></table>';
-  exportPDF('Convocati vs ' + match.avversario, html);
+  exportPDF('Elenco convocati vs ' + match.avversario, html);
+}
+// Distinta ufficiale: ordinata per numero di maglia assegnato in questa partita, capitano e
+// vice indicati accanto al nome.
+function exportDistintaPDF(matchId){
+  const match = getMatch(matchId);
+  const players = sortByNumGara(match, match.convocati.map(id=>state.players.find(p=>p.id===id)).filter(Boolean));
+  const html = '<table class="print-table"><thead><tr><th>#</th><th>Nome</th><th></th></tr></thead><tbody>' +
+    players.map(p=>{
+      const badge = p.id===match.capitanoId ? '(C)' : (p.id===match.viceCapitanoId ? '(V)' : '');
+      return '<tr><td>'+esc(numGara(match,p.id))+'</td><td>'+esc(displayName(p.nome))+'</td><td>'+badge+'</td></tr>';
+    }).join('') +
+  '</tbody></table>';
+  exportPDF('Distinta vs ' + match.avversario, html);
 }
 
 /* ---------- lavagne: campo, sagome, frecce ---------- */
@@ -1825,6 +1918,24 @@ function attachAvversariaPitchInteractions(matchId){
 }
 
 /* ---------- formazione predefinita (pagina Rosa) ---------- */
+// Il campo (segni del terreno + frecce + slot vuoti tratteggiati) resta un SVG, ma i
+// giocatori piazzati sono blocchetti HTML sovrapposti in percentuale — stessa tecnica già
+// usata in Piano Squadra — cosi ognuno può avere dentro un vero pulsante (il triangolino
+// che apre la tendina) invece di un elemento SVG difficile da dimensionare bene ovunque.
+function pitchCardNameRowHTML(p, playerId){
+  return '<span class="pitch-card-namerow">' +
+    '<span class="pitch-card-name">'+esc(shortDisplayName(p))+'</span>' +
+    '<button type="button" class="pitch-card-triangle" onclick="event.stopPropagation(); openDefaultAssignMenu(event, \''+playerId+'\')" aria-label="Cambia posizione">▾</button>' +
+  '</span>';
+}
+function defaultPitchCardHTML(c){
+  const p = state.players.find(pl=>pl.id===c.playerId);
+  const leftPct = (c.x/68*100).toFixed(2), topPct = (c.y/105*100).toFixed(2);
+  return '<div class="pitch-card" data-id="'+c.playerId+'" data-player-id="'+c.playerId+'" style="left:'+leftPct+'%; top:'+topPct+'%;">' +
+    '<span class="pitch-card-num">'+esc(c.numero)+'</span>' +
+    pitchCardNameRowHTML(p, c.playerId) +
+  '</div>';
+}
 function renderDefaultPitchSVG(){
   const slots = state.formazioneDefault.slots || [];
   const chips = state.formazioneDefault.chips || [];
@@ -1833,25 +1944,31 @@ function renderDefaultPitchSVG(){
     '<g><circle cx="'+s.x+'" cy="'+s.y+'" r="2.6" fill="none" stroke="var(--accent)" stroke-width="0.3" stroke-dasharray="1,0.8" opacity="0.55"/>' +
     '<text x="'+s.x+'" y="'+(s.y+0.9)+'" text-anchor="middle" font-size="2.4" fill="var(--accent)" opacity="0.75" font-family="Oswald, sans-serif">'+s.numero+'</text></g>'
   ).join('');
-  const chipsSvg = chips.map(c=>{
-    const p = state.players.find(pl=>pl.id===c.playerId);
-    const cognome = p ? surnameOf(p.nome) : '';
-    return '<g class="chip" data-id="'+c.playerId+'" transform="translate('+c.x+','+c.y+')">' +
-      '<circle r="2.6" fill="#0E2233" stroke="var(--accent)" stroke-width="0.35"/>' +
-      '<text text-anchor="middle" dy="0.9" font-size="2.6" fill="#F4F1EA" font-family="Oswald, sans-serif">'+esc(c.numero)+'</text>' +
-      '<text text-anchor="middle" dy="4.3" font-size="1.7" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="0.35">'+esc(cognome)+'</text>' +
-    '</g>';
-  }).join('');
   const arrowsSvg = (state.formazioneDefault.arrows||[]).map(a=>arrowSVG(a,'default')).join('');
-  return '<svg id="pitch-default" viewBox="0 0 68 105" class="pitch-svg">' +
-    '<defs><marker id="arrowhead-default" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="var(--accent)"/></marker></defs>' +
-    pitchMarkingsSVG() +
-    '<g class="arrows-layer">'+arrowsSvg+'</g>' +
-    '<g class="slots-layer">'+emptySvg+'</g>' +
-    '<g class="chips-layer">'+chipsSvg+'</g>' +
-  '</svg>';
+  const cardsHtml = chips.map(defaultPitchCardHTML).join('');
+  return '<div class="pitch-html-wrap">' +
+    '<svg id="pitch-default" viewBox="0 0 68 105" class="pitch-svg">' +
+      '<defs><marker id="arrowhead-default" markerWidth="3" markerHeight="3" refX="2.4" refY="1.5" orient="auto"><path d="M0,0 L3,1.5 L0,3 Z" fill="var(--accent)"/></marker></defs>' +
+      pitchMarkingsSVG() +
+      '<g class="arrows-layer">'+arrowsSvg+'</g>' +
+      '<g class="slots-layer">'+emptySvg+'</g>' +
+    '</svg>' +
+    '<div class="pitch-cards-layer">'+cardsHtml+'</div>' +
+  '</div>';
 }
-const MAX_SQUAD_SELECTION = 24;
+// 11 titolari fissi + fino a 20 riserve numerate e fisse (S1..S20, non un elenco che si
+// accorcia/allunga — così la tendina di assegnazione può elencarle tutte, libere e occupate,
+// esattamente come fa per i titolari). state.formazioneDefault.riserve è quindi un array a
+// posizione fissa: riserve[i] è il playerId a S(i+1), o null/undefined se libero.
+const MAX_RISERVE_SLOTS = 20;
+const MAX_SQUAD_SELECTION = 11 + MAX_RISERVE_SLOTS;
+function placeInFirstFreeReserveSlot(playerId){
+  if(!state.formazioneDefault.riserve) state.formazioneDefault.riserve = [];
+  const riserve = state.formazioneDefault.riserve;
+  const freeIdx = riserve.findIndex(v=>!v);
+  if(freeIdx!==-1) riserve[freeIdx] = playerId;
+  else riserve.push(playerId);
+}
 function applyDefaultFormationModulo(moduloKey){
   const template = FORMATIONS[moduloKey];
   if(!template) return;
@@ -1873,7 +1990,7 @@ function clearDefaultFormation(){
   }, 'Svuota');
 }
 function totalDefaultSelectionCount(){
-  return (state.formazioneDefault.chips||[]).length + (state.formazioneDefault.riserve||[]).length;
+  return (state.formazioneDefault.chips||[]).length + (state.formazioneDefault.riserve||[]).filter(Boolean).length;
 }
 function isDefaultSelected(playerId){
   return (state.formazioneDefault.chips||[]).some(c=>c.playerId===playerId) || (state.formazioneDefault.riserve||[]).includes(playerId);
@@ -1892,14 +2009,19 @@ function assignDefaultPlayerToSlot(playerId, slotNumero){
   const occupantChip = chips.find(c=>c.numero===slotNumero && c.playerId!==playerId);
   const previousChip = chips.find(c=>c.playerId===playerId);
   state.formazioneDefault.chips = chips.filter(c=>c.playerId!==playerId && c.numero!==slotNumero);
-  state.formazioneDefault.riserve = (state.formazioneDefault.riserve||[]).filter(id=>id!==playerId);
+  if(!state.formazioneDefault.riserve) state.formazioneDefault.riserve = [];
+  const prevReserveIdx = state.formazioneDefault.riserve.indexOf(playerId);
+  if(prevReserveIdx!==-1) state.formazioneDefault.riserve[prevReserveIdx] = null;
   if(occupantChip){
     if(previousChip){
       const prevSlot = (state.formazioneDefault.slots||[]).find(s=>s.numero===previousChip.numero);
       state.formazioneDefault.chips.push({ playerId: occupantChip.playerId, numero: previousChip.numero, x: prevSlot?prevSlot.x:previousChip.x, y: prevSlot?prevSlot.y:previousChip.y });
+    } else if(prevReserveIdx!==-1){
+      // Scambio esatto: l'occupante prende esattamente il posto riserva lasciato libero da chi
+      // arriva (non il primo posto libero in assoluto, anche se ce n'era uno prima).
+      state.formazioneDefault.riserve[prevReserveIdx] = occupantChip.playerId;
     } else {
-      if(!state.formazioneDefault.riserve) state.formazioneDefault.riserve = [];
-      state.formazioneDefault.riserve.push(occupantChip.playerId);
+      placeInFirstFreeReserveSlot(occupantChip.playerId);
     }
   }
   state.formazioneDefault.chips.push({ playerId, numero: slotNumero, x: slot.x, y: slot.y });
@@ -1908,7 +2030,7 @@ function assignDefaultPlayerToSlot(playerId, slotNumero){
 }
 // Rilascio nella lista rosa/panchina su un'altra riga invece che sul campo: stesso scambio
 // di assignDefaultPlayerToSlot se il bersaglio è un titolare (ha uno slot), altrimenti
-// (bersaglio in riserva) uno scambio equivalente senza numero di slot fisso.
+// (bersaglio in riserva) uno scambio sul posto riserva numerato del bersaglio.
 function dropOnDefaultFormationTarget(playerId, targetPlayerId){
   if(playerId===targetPlayerId) return;
   const targetChip = (state.formazioneDefault.chips||[]).find(c=>c.playerId===targetPlayerId);
@@ -1916,137 +2038,176 @@ function dropOnDefaultFormationTarget(playerId, targetPlayerId){
     assignDefaultPlayerToSlot(playerId, targetChip.numero);
     return;
   }
-  if((state.formazioneDefault.riserve||[]).includes(targetPlayerId)){
-    assignDefaultPlayerToReserveSwap(playerId, targetPlayerId);
+  const targetReserveIdx = (state.formazioneDefault.riserve||[]).indexOf(targetPlayerId);
+  if(targetReserveIdx!==-1){
+    assignDefaultPlayerToReserveSlot(playerId, targetReserveIdx);
   }
   // Il bersaglio non è selezionato: non ha nessuna posizione da cedere, nessuna azione.
 }
-function assignDefaultPlayerToReserveSwap(playerId, targetPlayerId){
+// Posti riserva numerati fissi (S1..S13, indice 0-based): assegna playerId al posto
+// `index`, spostando chi c'era prima nel posto lasciato libero da chi arriva (titolare o
+// riserva), o nel primo posto riserva libero se chi arriva veniva da fuori selezione.
+function assignDefaultPlayerToReserveSlot(playerId, index){
   if(!isDefaultSelected(playerId) && totalDefaultSelectionCount() >= MAX_SQUAD_SELECTION){
     alert('Hai già selezionato il massimo di ' + MAX_SQUAD_SELECTION + ' giocatori.');
     return;
   }
+  if(!state.formazioneDefault.riserve) state.formazioneDefault.riserve = [];
+  const riserve = state.formazioneDefault.riserve;
+  const occupantId = riserve[index];
   const previousChip = (state.formazioneDefault.chips||[]).find(c=>c.playerId===playerId);
+  const previousReserveIdx = riserve.indexOf(playerId);
   state.formazioneDefault.chips = (state.formazioneDefault.chips||[]).filter(c=>c.playerId!==playerId);
-  state.formazioneDefault.riserve = (state.formazioneDefault.riserve||[]).filter(id=>id!==playerId);
-  if(previousChip){
-    // chi era in riserva prende la posizione titolare lasciata libera da chi arriva
-    state.formazioneDefault.riserve = state.formazioneDefault.riserve.filter(id=>id!==targetPlayerId);
-    state.formazioneDefault.chips.push({ playerId: targetPlayerId, numero: previousChip.numero, x: previousChip.x, y: previousChip.y });
+  if(previousReserveIdx!==-1) riserve[previousReserveIdx] = null;
+  if(occupantId && occupantId!==playerId){
+    if(previousChip){
+      const prevSlot = (state.formazioneDefault.slots||[]).find(s=>s.numero===previousChip.numero);
+      state.formazioneDefault.chips.push({ playerId: occupantId, numero: previousChip.numero, x: prevSlot?prevSlot.x:previousChip.x, y: prevSlot?prevSlot.y:previousChip.y });
+      riserve[index] = null;
+    } else if(previousReserveIdx!==-1){
+      riserve[previousReserveIdx] = occupantId;
+    } else {
+      const freeIdx = riserve.findIndex((v,i)=>!v && i!==index);
+      if(freeIdx!==-1) riserve[freeIdx] = occupantId; else riserve.push(occupantId);
+    }
   }
-  if(!state.formazioneDefault.riserve.includes(playerId)) state.formazioneDefault.riserve.push(playerId);
+  riserve[index] = playerId;
   saveFormazioneDefault();
   renderView();
 }
 function removeFromDefaultFormation(playerId){
   state.formazioneDefault.chips = (state.formazioneDefault.chips||[]).filter(c=>c.playerId!==playerId);
-  state.formazioneDefault.riserve = (state.formazioneDefault.riserve||[]).filter(id=>id!==playerId);
+  const idx = (state.formazioneDefault.riserve||[]).indexOf(playerId);
+  if(idx!==-1) state.formazioneDefault.riserve[idx] = null;
   saveFormazioneDefault();
   renderView();
 }
-function toggleDefaultFormationSelection(playerId){
-  if(!state.formazioneDefault.modulo){ alert('Scegli prima un modulo.'); return; }
-  if(isDefaultSelected(playerId)){ removeFromDefaultFormation(playerId); return; }
+// Azione rapida da tasto destro: chi non è ancora selezionato va al primo posto libero
+// (titolare prima, riserva se i titolari sono già pieni); chi è già selezionato si
+// deseleziona. Nessuna tendina — per scegliere un posto preciso c'è il triangolino.
+function quickToggleDefaultPlayer(playerId){
+  if(isDefaultSelected(playerId)){
+    removeFromDefaultFormation(playerId);
+    return;
+  }
   if(totalDefaultSelectionCount() >= MAX_SQUAD_SELECTION){
     alert('Hai già selezionato il massimo di ' + MAX_SQUAD_SELECTION + ' giocatori.');
     return;
   }
-  const filledNumeri = new Set((state.formazioneDefault.chips||[]).map(c=>c.numero));
-  const slot = (state.formazioneDefault.slots||[]).find(s=>!filledNumeri.has(s.numero));
-  if(slot){
-    assignDefaultPlayerToSlot(playerId, slot.numero);
-  } else {
-    if(!state.formazioneDefault.riserve) state.formazioneDefault.riserve = [];
-    state.formazioneDefault.riserve.push(playerId);
-    saveFormazioneDefault();
-    renderView();
+  const slots = (state.formazioneDefault.slots||[]).slice().sort((a,b)=>a.numero-b.numero);
+  const chips = state.formazioneDefault.chips||[];
+  const freeSlot = slots.find(s=>!chips.some(c=>c.numero===s.numero));
+  if(freeSlot){
+    assignDefaultPlayerToSlot(playerId, freeSlot.numero);
+    return;
   }
+  placeInFirstFreeReserveSlot(playerId);
+  saveFormazioneDefault();
+  renderView();
 }
-// Click destro su un giocatore NON in selezione: tendina con i soli posti liberi (titolari
-// senza chip + eventuale voce "Riserva"), riusando lo stesso #player-context-menu/
-// hideContextMenu già usato per la convocazione partita (showPlayerContextMenu) — lì elenca
-// tutti gli slot con l'occupante, qui invece solo quelli vuoti, come richiesto.
-function showAssignDefaultSlotMenu(evt, playerId){
+// Tendina unificata per assegnare un giocatore a un posto: si apre solo dal triangolino
+// (mai da tocco/tasto destro/doppio click) — prima voce "Deseleziona" se già piazzato.
+// Elenca sempre tutti gli 11 slot titolari (liberi poi occupati, scambiabili) e tutti i
+// posti riserva numerati S1..S13 (liberi poi occupati, scambiabili) — un solo menu, sempre
+// uguale, mai un piazzamento "a caso". Resta ancorata all'elemento che l'ha aperta e
+// posizionata nel flusso della pagina (non "fixed"): se è più alta dello spazio rimasto si
+// scorre la pagina per vederla tutta, non è la tendina stessa ad avere una sua scrollbar.
+function openDefaultAssignMenu(evt, playerId){
   const menu = document.getElementById('player-context-menu');
   let html = '';
+  if(isDefaultSelected(playerId)){
+    html += '<div class="context-menu-item" onclick="removeFromDefaultFormation(\''+playerId+'\'); hideContextMenu();">Deseleziona</div>';
+  }
   if(!state.formazioneDefault.modulo){
-    html = '<div class="context-menu-item" style="color:var(--text-dim);">Scegli prima un modulo</div>';
+    html += '<div class="context-menu-item" style="color:var(--text-dim);">Scegli prima un modulo</div>';
   } else {
-    const filledNumeri = new Set((state.formazioneDefault.chips||[]).map(c=>c.numero));
-    const emptySlots = (state.formazioneDefault.slots||[]).filter(s=>!filledNumeri.has(s.numero)).sort((a,b)=>a.numero-b.numero);
-    const atMax = totalDefaultSelectionCount() >= MAX_SQUAD_SELECTION;
-    emptySlots.forEach(s=>{
+    const chips = state.formazioneDefault.chips||[];
+    const slots = (state.formazioneDefault.slots||[]).slice().sort((a,b)=>a.numero-b.numero);
+    const free = slots.filter(s=>!chips.some(c=>c.numero===s.numero));
+    const occupied = slots.filter(s=>chips.some(c=>c.numero===s.numero) && !chips.some(c=>c.numero===s.numero && c.playerId===playerId));
+    free.forEach(s=>{
       html += '<div class="context-menu-item" onclick="assignDefaultPlayerToSlot(\''+playerId+'\','+s.numero+'); hideContextMenu();">N. '+s.numero+' — '+esc(s.ruolo)+'</div>';
     });
-    if(!atMax){
-      html += '<div class="context-menu-item" onclick="addDefaultPlayerToRiserve(\''+playerId+'\'); hideContextMenu();">Riserva</div>';
-    }
-    if(!html){
-      html = '<div class="context-menu-item" style="color:var(--text-dim);">Nessun posto libero</div>';
-    }
+    occupied.forEach(s=>{
+      const chip = chips.find(c=>c.numero===s.numero);
+      const occ = chip ? state.players.find(pl=>pl.id===chip.playerId) : null;
+      html += '<div class="context-menu-item" onclick="assignDefaultPlayerToSlot(\''+playerId+'\','+s.numero+'); hideContextMenu();">N. '+s.numero+' — '+esc(s.ruolo)+(occ?' ('+esc(shortDisplayName(occ))+')':'')+'</div>';
+    });
+  }
+  const riserve = state.formazioneDefault.riserve || [];
+  for(let i=0;i<MAX_RISERVE_SLOTS;i++){
+    const occId = riserve[i];
+    if(occId===playerId) continue;
+    const occ = occId ? state.players.find(pl=>pl.id===occId) : null;
+    html += '<div class="context-menu-item" onclick="assignDefaultPlayerToReserveSlot(\''+playerId+'\','+i+'); hideContextMenu();">S'+(i+1)+(occ?' — '+esc(shortDisplayName(occ)):'')+'</div>';
   }
   menu.innerHTML = html;
-  const x = Math.min(evt.clientX, window.innerWidth-190);
-  const y = Math.min(evt.clientY, window.innerHeight-220);
-  menu.style.left = x + 'px';
-  menu.style.top = y + 'px';
+  menu.classList.add('context-menu-anchored');
+  const anchor = evt.currentTarget && evt.currentTarget.nodeType===1 ? evt.currentTarget : evt.target.closest('button, [data-player-id]');
+  const rect = (anchor||evt.target).getBoundingClientRect();
+  const left = Math.min(rect.left + window.scrollX, document.documentElement.scrollWidth - 200);
+  const top = rect.bottom + window.scrollY + 4;
+  menu.style.left = Math.max(4, left) + 'px';
+  menu.style.top = top + 'px';
   menu.style.display = 'block';
 }
-function addDefaultPlayerToRiserve(playerId){
-  if(isDefaultSelected(playerId)) return;
-  if(totalDefaultSelectionCount() >= MAX_SQUAD_SELECTION){
-    alert('Hai già selezionato il massimo di ' + MAX_SQUAD_SELECTION + ' giocatori.');
-    return;
-  }
-  if(!state.formazioneDefault.riserve) state.formazioneDefault.riserve = [];
-  state.formazioneDefault.riserve.push(playerId);
-  saveFormazioneDefault();
-  renderView();
-}
 function benchDefaultHTML(){
-  const riserve = state.formazioneDefault.riserve || [];
-  if(riserve.length===0) return '<p class="hint">Nessuna riserva selezionata. Click (anche destro) su un giocatore in rosa per aggiungerlo.</p>';
-  return '<div class="bench">' + riserve.map(id=>{
-    const p = state.players.find(pl=>pl.id===id);
+  const riserveRaw = state.formazioneDefault.riserve || [];
+  const entries = riserveRaw.map((id,i)=>({id, slotLabel:'S'+(i+1)})).filter(e=>e.id);
+  if(entries.length===0) return '<p class="hint">Nessuna riserva selezionata. Tocca il triangolino su un giocatore in rosa per aggiungerlo.</p>';
+  return '<div class="bench">' + entries.map(entry=>{
+    const p = state.players.find(pl=>pl.id===entry.id);
     if(!p) return '';
-    return '<button class="bench-chip" data-player-id="'+p.id+'"><span class="bench-num">'+esc(p.ruolo)+'</span><span class="bench-name">'+esc(displayName(p.nome))+'</span></button>';
+    return '<div class="bench-chip pitch-card" data-player-id="'+p.id+'">' +
+      '<span class="pitch-card-num">'+esc(entry.slotLabel)+'</span>' +
+      pitchCardNameRowHTML(p, p.id) +
+    '</div>';
   }).join('') + '</div>';
 }
+// Un tocco secco non fa mai niente (rischio di scombinare la formazione per sbaglio): per
+// cambiare posto a mano serve il triangolino (apre la tendina con tutti i posti). Il tasto
+// destro è invece un'azione rapida diretta (vedi quickToggleDefaultPlayer): seleziona al
+// primo posto libero chi non è ancora selezionato, deseleziona chi lo è già — niente tendina.
+// Il trascinamento parte non appena ci si sposta oltre DRAG_JITTER_PX (immediato, senza
+// attesa): un'etichetta di solo testo (nome e cognome, senza sfondo) segue il dito/puntatore.
+const DRAG_JITTER_PX = 6;
 function wireDefaultSelectOrDrag(el, svg, playerId){
-  el.addEventListener('contextmenu', function(e){ e.preventDefault(); });
-  el.addEventListener('pointerdown', function(e){
+  el.addEventListener('contextmenu', function(e){
     e.preventDefault();
-    const isRightClick = e.button === 2;
+    quickToggleDefaultPlayer(playerId);
+  });
+  el.addEventListener('pointerdown', function(e){
+    if(e.target.closest('.roster-side-triangle, .pitch-card-triangle')) return;
+    if(e.button !== 0) return;
+    e.preventDefault();
     const startX = e.clientX, startY = e.clientY;
-    let moved = false;
-    // Il tasto destro non trascina mai — libera un giocatore già selezionato o apre subito
-    // la tendina dei posti liberi per uno non selezionato, niente fantasma di trascinamento.
+    let dragActive = false;
     let ghost = null;
-    if(!isRightClick){
-      ghost = document.createElement('div');
-      ghost.className = 'drag-ghost';
-      const p0 = state.players.find(pl=>pl.id===playerId);
-      ghost.textContent = p0 ? displayName(p0.nome) : '';
-      document.body.appendChild(ghost);
-      ghost.style.left = e.clientX + 'px';
-      ghost.style.top = e.clientY + 'px';
-    }
     try{ el.setPointerCapture(e.pointerId); }catch(err){}
     function onMove(e2){
-      if(Math.abs(e2.clientX-startX) > 4 || Math.abs(e2.clientY-startY) > 4) moved = true;
+      if(!dragActive){
+        if(Math.abs(e2.clientX-startX) > DRAG_JITTER_PX || Math.abs(e2.clientY-startY) > DRAG_JITTER_PX){
+          dragActive = true;
+          el.classList.add('is-dragging-source');
+          ghost = document.createElement('div');
+          ghost.className = 'drag-ghost';
+          const p0 = state.players.find(pl=>pl.id===playerId);
+          ghost.textContent = p0 ? displayName(p0.nome) : '';
+          document.body.appendChild(ghost);
+        } else {
+          return;
+        }
+      }
       if(ghost){ ghost.style.left = e2.clientX + 'px'; ghost.style.top = e2.clientY + 'px'; }
     }
     function onUp(e2){
       try{ el.releasePointerCapture(e.pointerId); }catch(err){}
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
+      el.classList.remove('is-dragging-source');
       if(ghost) ghost.remove();
-      if(isRightClick){
-        if(isDefaultSelected(playerId)) removeFromDefaultFormation(playerId);
-        else showAssignDefaultSlotMenu(e2, playerId);
-        return;
-      }
-      if(moved && svg){
+      if(!dragActive) return;
+      if(svg){
         const rect = svg.getBoundingClientRect();
         if(e2.clientX>=rect.left && e2.clientX<=rect.right && e2.clientY>=rect.top && e2.clientY<=rect.bottom){
           if(!state.formazioneDefault.modulo){ alert('Scegli prima un modulo.'); return; }
@@ -2060,20 +2221,14 @@ function wireDefaultSelectOrDrag(el, svg, playerId){
           return;
         }
       }
-      if(moved){
-        // Rilascio dentro la lista rosa/panchina invece che sul campo: se cade su un'altra
-        // riga, scambia le posizioni esattamente come un rilascio sullo slot corrispondente
-        // sul campo — comodo perché non serve più puntare con precisione l'icona piccola.
-        const dropEl = document.elementFromPoint(e2.clientX, e2.clientY);
-        const targetRow = dropEl ? dropEl.closest('[data-player-id]') : null;
-        const targetPlayerId = targetRow ? targetRow.getAttribute('data-player-id') : null;
-        if(targetPlayerId && targetPlayerId!==playerId){
-          dropOnDefaultFormationTarget(playerId, targetPlayerId);
-          return;
-        }
-      }
-      if(!moved){
-        toggleDefaultFormationSelection(playerId);
+      // Rilascio dentro la lista rosa/panchina invece che sul campo: se cade su un'altra
+      // riga, scambia le posizioni esattamente come un rilascio sullo slot corrispondente
+      // sul campo — comodo perché non serve più puntare con precisione l'icona piccola.
+      const dropEl = document.elementFromPoint(e2.clientX, e2.clientY);
+      const targetRow = dropEl ? dropEl.closest('[data-player-id]') : null;
+      const targetPlayerId = targetRow ? targetRow.getAttribute('data-player-id') : null;
+      if(targetPlayerId && targetPlayerId!==playerId){
+        dropOnDefaultFormationTarget(playerId, targetPlayerId);
       }
     }
     document.addEventListener('pointermove', onMove);
@@ -2095,37 +2250,56 @@ function attachDefaultPitchInteractions(){
     pt.x = evt.clientX; pt.y = evt.clientY;
     return pt.matrixTransform(svg.getScreenCTM().inverse());
   }
-  svg.querySelectorAll('.chip').forEach(chipEl=>{
-    chipEl.style.cursor = 'grab';
-    chipEl.addEventListener('pointerdown', function(e){
-      e.stopPropagation();
-      chipEl.setPointerCapture(e.pointerId);
-      const startPt = toPoint(e);
-      let moved = false;
-      const id = chipEl.getAttribute('data-id');
-      const chipData = state.formazioneDefault.chips.find(c=>c.playerId===id);
-      if(!chipData) return;
-      function onMove(e2){
-        const p = toPoint(e2);
-        if(Math.abs(p.x-startPt.x) > 0.5 || Math.abs(p.y-startPt.y) > 0.5) moved = true;
-        chipData.x = Math.min(66, Math.max(2, p.x));
-        chipData.y = Math.min(104, Math.max(2, p.y));
-        chipEl.setAttribute('transform', 'translate(' + chipData.x + ',' + chipData.y + ')');
-      }
-      function onUp(e2){
-        svg.removeEventListener('pointermove', onMove);
-        svg.removeEventListener('pointerup', onUp);
-        try{ chipEl.releasePointerCapture(e.pointerId); }catch(err){}
-        if(!moved){
-          state.formazioneDefault.chips = state.formazioneDefault.chips.filter(c=>c.playerId!==id);
+  const cardsLayer = svg.parentElement ? svg.parentElement.querySelector('.pitch-cards-layer') : null;
+  if(cardsLayer){
+    cardsLayer.querySelectorAll('.pitch-card').forEach(cardEl=>{
+      cardEl.addEventListener('contextmenu', function(e){
+        e.preventDefault();
+        quickToggleDefaultPlayer(cardEl.getAttribute('data-id'));
+      });
+      cardEl.addEventListener('pointerdown', function(e){
+        // Il triangolino ha il suo onclick indipendente: non deve avviare anche il
+        // trascinamento della scheda su cui sta.
+        if(e.target.closest('.pitch-card-triangle')) return;
+        if(e.button !== 0) return;
+        e.stopPropagation();
+        const id = cardEl.getAttribute('data-id');
+        const chipData = state.formazioneDefault.chips.find(c=>c.playerId===id);
+        if(!chipData) return;
+        try{ cardEl.setPointerCapture(e.pointerId); }catch(err){}
+        const startPt = toPoint(e);
+        let dragActive = false;
+        function onMove(e2){
+          const p = toPoint(e2);
+          if(!dragActive){
+            if(Math.abs(p.x-startPt.x) > 0.6 || Math.abs(p.y-startPt.y) > 0.6){
+              dragActive = true;
+              cardEl.classList.add('is-dragging-source');
+            } else {
+              return;
+            }
+          }
+          chipData.x = Math.min(66, Math.max(2, p.x));
+          chipData.y = Math.min(104, Math.max(2, p.y));
+          cardEl.style.left = (chipData.x/68*100) + '%';
+          cardEl.style.top = (chipData.y/105*100) + '%';
         }
-        saveFormazioneDefault();
-        renderView();
-      }
-      svg.addEventListener('pointermove', onMove);
-      svg.addEventListener('pointerup', onUp);
+        function onUp(e2){
+          cardEl.removeEventListener('pointermove', onMove);
+          cardEl.removeEventListener('pointerup', onUp);
+          try{ cardEl.releasePointerCapture(e.pointerId); }catch(err){}
+          cardEl.classList.remove('is-dragging-source');
+          // Tocco secco (nessuno spostamento): non fa niente, per cambiare posto o togliere
+          // il giocatore serve il triangolino (tendina) o il tasto destro (rapido).
+          if(dragActive) saveFormazioneDefault();
+        }
+        // Il pointer è catturato su cardEl (elemento HTML fratello dell'svg, non discendente):
+        // gli eventi vanno ascoltati sulla card stessa, altrimenti pointermove/up non arrivano mai.
+        cardEl.addEventListener('pointermove', onMove);
+        cardEl.addEventListener('pointerup', onUp);
+      });
     });
-  });
+  }
   if(state.drawMode.formazioneDefault){
     svg.addEventListener('pointerdown', function(e){
       if(e.target.closest('.chip')) return;
@@ -2231,30 +2405,6 @@ function renderNextMatchBar(){
     '<span class="next-match-when">' + formatDate(nm.data) + (nm.ora?(' • '+esc(nm.ora)):'') + '</span>' +
     icons;
 }
-function exportDefaultFormationXLSX(){
-  ensureXLSX(function(){
-    const ids = [].concat(
-      (state.formazioneDefault.chips||[]).map(c=>c.playerId),
-      state.formazioneDefault.riserve||[]
-    );
-    const convocati = ids.map(id=>state.players.find(p=>p.id===id)).filter(Boolean)
-      .sort((a,b)=>surnameOf(a.nome).localeCompare(surnameOf(b.nome)));
-    const nextMatch = findNextMatch();
-    let title = 'Convocazioni partita';
-    if(nextMatch){
-      title += ' Vs ' + nextMatch.avversario + ' del ' + formatDate(nextMatch.data);
-      if(nextMatch.ora) title += ' alle ore ' + nextMatch.ora;
-    }
-    const data = [ [], [title, null] ];
-    convocati.forEach((p,i)=>{ data.push([i+1, displayName(p.nome)]); });
-    const ws = XLSX.utils.aoa_to_sheet(data.length>2 ? data : data.concat([['','']]));
-    ws['!merges'] = [{ s:{r:1,c:0}, e:{r:1,c:1} }];
-    ws['!cols'] = [{ wch:6 }, { wch:30 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Convocati');
-    XLSX.writeFile(wb, 'convocati-formazione-predefinita.xlsx');
-  });
-}
 function slotRoleForDefaultPlayer(playerId){
   const chip = (state.formazioneDefault.chips||[]).find(c=>c.playerId===playerId);
   if(chip){
@@ -2267,6 +2417,13 @@ function slotRoleForDefaultPlayer(playerId){
 }
 function setDefaultFormationSort(mode){
   state.defaultFormationSort = mode;
+  renderView();
+}
+// Preferenza di sola visualizzazione (non salvata sul server, come l'ordinamento sopra):
+// nasconde dall'elenco rosa qui i giocatori aggregati dalla prima squadra, per non
+// affollare la selezione quando non sono rilevanti. Non tocca chi è già in campo/panchina.
+function toggleHideAggregatiFormazione(){
+  state.hideAggregatiFormazione = !state.hideAggregatiFormazione;
   renderView();
 }
 function sortPlayersForDefaultFormation(players){
@@ -2299,9 +2456,11 @@ function renderDefaultFormationCard(){
   const canEdit = can('edit_formazione');
   const formationOptions = '<option value="">Scegli modulo…</option>' + FORMATION_KEYS.map(k=>'<option value="'+k+'" '+(state.formazioneDefault.modulo===k?'selected':'')+'>'+k+'</option>').join('');
   const sortMode = state.defaultFormationSort || 'ruolo';
-  const playersSorted = sortPlayersForDefaultFormation(state.players);
+  const hideAggregati = !!state.hideAggregatiFormazione;
+  const basePlayers = hideAggregati ? state.players.filter(p=>!p.aggregatoPrimaSquadra) : state.players;
+  const playersSorted = sortPlayersForDefaultFormation(basePlayers);
+  const seasonStats = computeSeasonStats();
   const chipIds = new Set(state.formazioneDefault.chips.map(c=>c.playerId));
-  const riserveIds = new Set(state.formazioneDefault.riserve||[]);
   const totalCount = totalDefaultSelectionCount();
   return '' +
   '<div class="card">' +
@@ -2310,37 +2469,41 @@ function renderDefaultFormationCard(){
         '<span class="pill pill-muted">' + totalCount + ' / ' + MAX_SQUAD_SELECTION + ' selezionati</span>' +
         (canEdit ? '<button class="btn btn-small ' + (state.drawMode.formazioneDefault?'btn-active':'') + '" onclick="toggleDefaultDrawMode()">' + (state.drawMode.formazioneDefault?'Termina disegno':'Disegna movimenti') + '</button>' : '') +
         (canEdit ? '<button class="btn btn-small" onclick="clearDefaultArrows()">Cancella frecce</button>' : '') +
-        '<button class="btn btn-small" onclick="exportDefaultFormationXLSX()">Esporta convocati XLSX</button>' +
         (canEdit ? '<button class="btn btn-small" onclick="clearDefaultFormation()">Svuota</button>' : '') +
       '</div>' +
     '</div>' +
-    (canEdit ? '<p class="hint">Scegli il modulo, poi su ogni giocatore in rosa clicca (sinistro o destro) per aggiungerlo/rimuoverlo dal primo posto libero, oppure trascinalo direttamente sulla posizione in campo. Verrà usata per popolare automaticamente le nuove partite quando convochi questi giocatori. Il modulo scelto qui — o cambiato dentro una partita — resta il modulo predefinito anche per le partite successive.</p>' : '<p class="hint">Sola lettura: non hai il permesso di modificare la formazione predefinita.</p>') +
+    (canEdit ? '<p class="hint">Scegli il modulo, poi trascina i giocatori dalla rosa in campo (subito, senza attese). Sul campo o in rosa: triangolino per scegliere un posto preciso, tasto destro per selezionare/deselezionare rapido al primo posto libero. Verrà usata per popolare automaticamente le nuove partite quando convochi questi giocatori. Il modulo scelto qui — o cambiato dentro una partita — resta il modulo predefinito anche per le partite successive.</p>' : '<p class="hint">Sola lettura: non hai il permesso di modificare la formazione predefinita.</p>') +
     '<div class="form-row"><div class="field"><label>Modulo</label><select '+(canEdit?'':'disabled')+' onchange="if(this.value) applyDefaultFormationModulo(this.value)">'+formationOptions+'</select></div></div>' +
     '<div class="tactic-layout">' +
       '<div'+(canEdit?'':' class="readonly-block"')+'>' +
-        '<div class="pitch-wrap">' + renderDefaultPitchSVG() + '</div>' +
-        '<h3>Riserve</h3><div id="default-formation-bench">' + benchDefaultHTML() + '</div>' +
+        '<h3>Riserve</h3>' +
+        '<div class="pitch-bench-row">' +
+          '<div class="pitch-wrap">' + renderDefaultPitchSVG() + '</div>' +
+          '<div class="default-bench-panel" id="default-formation-bench">' + benchDefaultHTML() + '</div>' +
+        '</div>' +
       '</div>' +
       '<div>' +
         '<div class="card-header-row"><h3>Rosa</h3>' +
           '<div class="pitch-actions">' +
             '<button class="btn btn-small ' + (sortMode==='ruolo'?'btn-active':'') + '" onclick="setDefaultFormationSort(\'ruolo\')">Ruolo</button>' +
             '<button class="btn btn-small ' + (sortMode==='numero'?'btn-active':'') + '" onclick="setDefaultFormationSort(\'numero\')">Selezione</button>' +
+            '<button class="btn btn-small ' + (hideAggregati?'btn-active':'') + '" onclick="toggleHideAggregatiFormazione()">' + (hideAggregati?'Mostra aggregati':'Nascondi aggregati') + '</button>' +
           '</div>' +
         '</div>' +
         '<div class="roster-side-list default-formation-roster'+(canEdit?'':' readonly-block')+'">' +
           playersSorted.map(p=>{
             const isStarter = chipIds.has(p.id);
-            const isReserve = riserveIds.has(p.id);
             const slotRole = slotRoleForDefaultPlayer(p.id);
-            const dotClass = isStarter ? 'dot-on' : (isReserve ? 'dot-reserve' : 'dot-off');
+            const votoMedio = (seasonStats.perPlayer[p.id] && seasonStats.perPlayer[p.id].votiCount)
+              ? (seasonStats.perPlayer[p.id].votiSum / seasonStats.perPlayer[p.id].votiCount) : null;
             return '<div class="roster-side-row ' + (isStarter?'roster-side-on':'') + '" data-player-id="'+p.id+'">' +
               '<span class="roster-side-slotrole">' + (slotRole?esc(slotRole):'') + '</span>' +
-              '<span class="roster-side-name">' + esc(displayName(p.nome)) + '</span>' +
-              '<span class="roster-side-role">' + esc(p.ruolo) + '</span>' +
-              '<span class="roster-side-foot">' + esc(p.piede?p.piede.slice(0,3):'-') + '</span>' +
               starRatingHTML(p.valutazione, 11) +
-              '<span class="roster-side-dot ' + dotClass + '"></span>' +
+              '<button type="button" class="roster-side-triangle" onclick="event.stopPropagation(); openDefaultAssignMenu(event, \''+p.id+'\')" aria-label="Cambia posizione">▾</button>' +
+              '<span class="roster-side-name">' + esc(displayName(p.nome)) + '</span>' +
+              '<span class="roster-side-role">' + esc(p.ruolo) + (p.secondoRuolo?'/'+esc(p.secondoRuolo):'') + '</span>' +
+              playerFormaHTML(p.id) +
+              '<span class="roster-side-voto">' + (votoMedio!=null?votoMedio.toFixed(1):'-') + '</span>' +
             '</div>';
           }).join('') +
         '</div>' +
@@ -2471,6 +2634,15 @@ async function importTabellinoBlock(matchId){
   alert(problems.length
     ? 'Importazione completata con alcuni avvisi:\n\n' + problems.join('\n')
     : 'Importazione completata.');
+}
+function freezeMatchFormation(matchId){
+  const match = getMatch(matchId);
+  if(match.formazioneFissata) return;
+  if(!confirm('Salvare la formazione attuale come storico definitivo di questa partita? Da qui in poi non seguirà più le modifiche alla formazione predefinita.')) return;
+  syncMatchFormationWithDefault(match);
+  match.formazioneFissata = true;
+  saveMatches();
+  renderMatchTab();
 }
 function renderTabellinoTab(match){
   const importCard = '<div class="card"><h2>Importa tabellino</h2>' +
@@ -3237,6 +3409,49 @@ function computeSeasonStats(){
 
   return { golFattiTot, golSubitiTot, tipologiaFatti, tipologiaSubiti, perPlayer, perSede, partiteGiocate: playedMatches.length };
 }
+// Ultimi voti di un giocatore in ordine cronologico (dal più vecchio al più recente), solo
+// dalle partite giocate dove ha ricevuto una valutazione: serve per la barra "forma" nella
+// lista giocatori di Formazione, un dato diverso dalla media stagionale di computeSeasonStats.
+function playerRecentForm(playerId, count){
+  count = count || 5;
+  const playedMatches = state.matches.filter(m=>computeMatchStato(m)==='Giocata').slice().sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const voti = [];
+  playedMatches.forEach(m=>{
+    const v = (m.valutazioni && m.valutazioni.nostriGiocatori && m.valutazioni.nostriGiocatori[playerId]) || null;
+    if(v && v.voto) voti.push(parseFloat(v.voto));
+  });
+  return voti.slice(-count);
+}
+// Gradiente continuo (non a soglie a scatti) per la barra "forma": verde per i voti alti,
+// sfumando verso l'arancione per quelli bassi, mai un rosso acceso — cosi un 6.9 e un 7.1
+// hanno colori quasi uguali invece di un salto netto, e anche una partita storta non sembra
+// un giudizio durissimo. Interpolazione lineare in HSL tra pochi punti di riferimento.
+const FORM_COLOR_STOPS = [
+  { voto: 8.5, h: 140, s: 55, l: 38 },
+  { voto: 7.0, h: 122, s: 50, l: 45 },
+  { voto: 6.0, h: 75,  s: 55, l: 48 },
+  { voto: 5.0, h: 38,  s: 65, l: 50 },
+  { voto: 4.0, h: 24,  s: 65, l: 48 },
+];
+function formaVotoColor(voto){
+  const v = Math.max(4, Math.min(8.5, Number(voto)||0));
+  for(let i=0;i<FORM_COLOR_STOPS.length-1;i++){
+    const a = FORM_COLOR_STOPS[i], b = FORM_COLOR_STOPS[i+1];
+    if(v<=a.voto && v>=b.voto){
+      const t = (a.voto-v)/(a.voto-b.voto);
+      const h = a.h + (b.h-a.h)*t, s = a.s + (b.s-a.s)*t, l = a.l + (b.l-a.l)*t;
+      return 'hsl('+h.toFixed(0)+', '+s.toFixed(0)+'%, '+l.toFixed(0)+'%)';
+    }
+  }
+  return 'hsl(24, 65%, 48%)';
+}
+function playerFormaHTML(playerId){
+  const voti = playerRecentForm(playerId, 5);
+  if(voti.length===0) return '<span class="forma-empty">—</span>';
+  return '<span class="forma-bars" title="Ultime '+voti.length+' partite: '+voti.map(v=>v.toFixed(1)).join(', ')+'">' +
+    voti.map(v=>'<span class="forma-bar" style="background:'+formaVotoColor(v)+'"></span>').join('') +
+  '</span>';
+}
 function statCardHTML(label, value){
   return '<div class="stat-card"><div class="stat-card-value">' + value + '</div><div class="stat-card-label">' + esc(label) + '</div></div>';
 }
@@ -3568,25 +3783,6 @@ function exportRosaXLSX(){
     XLSX.writeFile(wb, 'rosa-'+(getAppUser().stagioneEtichetta.replace(/[^a-z0-9]+/gi,'-').toLowerCase()||'stagione')+'.xlsx');
   });
 }
-function exportMatchXLSX(matchId){
-  const match = getMatch(matchId);
-  ensureXLSX(function(){
-    const wb = XLSX.utils.book_new();
-    const starters = (match.formazioneNostra.chips||[]).slice().sort((a,b)=>a.numero-b.numero).map(c=>{
-      const p = state.players.find(pl=>pl.id===c.playerId);
-      return { Numero: c.numero, Nome: p?displayName(p.nome):'' };
-    });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(starters.length?starters:[{Numero:'',Nome:''}]), 'Formazione');
-    const assignedIds = new Set((match.formazioneNostra.chips||[]).map(c=>c.playerId));
-    const benchIds = match.convocati.filter(id=>!assignedIds.has(id));
-    const bench = benchIds.map(id=>{ const p=state.players.find(pl=>pl.id===id); return { Numero: numGara(match,id), Nome: p?displayName(p.nome):'' }; });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bench.length?bench:[{Numero:'',Nome:''}]), 'Panchina');
-    const noteRows = [{ 'Piano partita': match.formazioneAvversaria.notePiano||'', 'Note avversari': match.formazioneAvversaria.noteCaratteristiche||'' }];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(noteRows), 'Note');
-    const safeName = match.avversario.replace(/[^a-z0-9]+/gi,'-');
-    XLSX.writeFile(wb, 'partita-' + safeName + '.xlsx');
-  });
-}
 function exportSeasonXLSX(){
   const s = computeSeasonStats();
   ensureXLSX(function(){
@@ -3615,7 +3811,7 @@ function starInputHTML(current, readonly){
   const v = current || 0;
   let out = '<span class="star-input'+(readonly?' star-input-readonly':'')+'">';
   for(let i=1;i<=5;i++){
-    out += '<button type="button" class="star-input-btn" '+(readonly?'disabled':'onclick="setSchemaVotoPreferenza('+i+')"')+' aria-label="'+i+' stelle">' + starIconSVG(i<=v ? 'var(--accent)' : 'var(--border)', 20) + '</button>';
+    out += '<button type="button" class="star-input-btn" '+(readonly?'disabled':'onclick="setSchemaVotoPreferenza('+i+')"')+' aria-label="'+i+' stelle">' + starIconSVG(i<=v ? 'var(--yellow)' : 'var(--border)', 20) + '</button>';
   }
   out += '</span>';
   return out;
@@ -5978,15 +6174,23 @@ const SECTION_TIPS = {
     { title: 'Si aggiorna da solo', text: 'Cambi qualcosa in Rosa? Il Piano Squadra si aggiorna in automatico: non serve rifare nulla qui.' },
   ],
   formazione: [
-    { title: 'Imposta il modulo', text: 'Scegli il modulo (4-3-3, 4-4-2...) e trascina i giocatori dalla rosa sul campo per posizionarli negli slot.' },
-    { title: 'Click destro per assegnare rapido', text: 'Clicca col tasto destro su una maglia vuota sul campo per scegliere subito chi metterci, senza dover trascinare.' },
-    { title: 'Si ripropone da sola', text: 'La formazione tipo impostata qui viene riproposta automaticamente per ogni nuova partita in Calendario: da lì puoi comunque modificarla solo per quella singola gara.' },
+    { title: 'Imposta il modulo', text: 'Scegli il modulo (4-3-3, 4-4-2...) e trascina i giocatori dalla rosa sul campo: il trascinamento parte subito, non serve tenere premuto.' },
+    { title: 'Tasto destro per assegnare rapido', text: 'Tasto destro su un giocatore non ancora selezionato lo mette subito al primo posto libero; tasto destro su chi è già selezionato lo toglie dalla formazione.' },
+    { title: 'Triangolino per scegliere il posto', text: 'Il triangolino — sul campo, in panchina o in rosa — apre l\'elenco completo dei posti (titolari e fino a 20 riserve numerate S1, S2...) per scegliere esattamente dove mettere un giocatore.' },
+    { title: 'Nascondi gli aggregati', text: 'Con molti giocatori aggregati dalla prima squadra, il pulsante "Nascondi aggregati" sopra l\'elenco rosa li toglie di mezzo mentre scegli la formazione.' },
+    { title: 'Si ripropone da sola', text: 'La formazione tipo impostata qui viene rispecchiata in tempo reale in ogni nuova partita in Calendario, finché non la salvi da lì: da quel momento resta lo storico di quella singola gara.' },
   ],
   calendario: [
     { title: 'Aggiungi eventi', text: 'Clicca su un giorno (anche da telefono) per aggiungere una partita o un allenamento.' },
     { title: 'Segna le presenze', text: 'Clicca su un allenamento già segnato in calendario per registrare chi era presente e chi assente.' },
     { title: 'Importa o esporta', text: 'Hai già un calendario partite in un file Excel? Puoi importarlo da qui sotto, oppure esportare tutto in PDF o XLSX per condividerlo con la società.' },
-    { title: 'Si collega alla Formazione', text: 'Ogni partita di campionato riprende in automatico la formazione tipo: aprendola puoi modificarla solo per quella gara, senza toccare quella predefinita.' },
+    { title: 'Si collega alla Formazione', text: 'Ogni partita non ancora giocata rispecchia in tempo reale la formazione predefinita: aprendola la vedi aggiornata da sola finché non la salvi come storico di quella gara.' },
+  ],
+  match: [
+    { title: 'Specchio della formazione tipo', text: 'La scheda Formazione di una partita non ancora giocata rispecchia in tempo reale la Formazione predefinita: cambiala di là, si aggiorna qui da sola.' },
+    { title: 'Capitano e vice', text: 'Scegli capitano e vicecapitano di questa partita dalla scheda Formazione: compaiono anche nella distinta stampabile.' },
+    { title: 'Salva formazione', text: 'Quando la formazione è definitiva, premi "Salva formazione": da quel momento resta fissa come storico di questa partita, anche se poi cambi la Formazione predefinita.' },
+    { title: 'Stampe pronte', text: 'Dalla scheda Formazione stampi l\'elenco convocati in ordine alfabetico e la distinta ufficiale ordinata per numero, con capitano e vice indicati.' },
   ],
   schema: [
     { title: 'La libreria esercizi', text: 'Qui crei gli esercizi con il disegnatore tattico: campo, giocatori, frecce e palloni.' },
