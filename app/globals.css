@@ -382,6 +382,15 @@
   .piano-pitch-row select{ flex:1; min-width:0; font-size:0.78rem; padding:3px 4px; background:var(--panel-2); border:1px solid var(--border); border-radius:4px; color:var(--text); cursor:pointer; }
   .piano-pitch-row-0 select{ font-weight:700; color:var(--chalk); border-color:var(--accent-dim); }
   @media (max-width:640px){ .piano-pitch-card{ min-width:110px; } .piano-pitch-card-expanded{ min-width:170px; } .piano-pitch-row select{ font-size:0.7rem; } }
+  /* Da telefono: stesso contenuto delle card sul campo, ma impilate invece che in
+     percentuale sul disegno — vedi renderPianoSquadraMobileList in app.js. */
+  .piano-mobile-list{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .piano-mobile-card{
+    position:static; transform:none; width:100%; min-width:0; max-width:none;
+    background:rgba(20,20,20,0.94); border:1px solid var(--border); border-radius:8px;
+    padding:8px 12px 9px; box-shadow:var(--shadow-card); cursor:pointer;
+  }
+  .piano-mobile-card.piano-pitch-card-expanded{ width:100%; min-width:0; max-width:none; z-index:auto; }
 
   /* partite */
   .match-list{ display:flex; flex-direction:column; gap:2px; margin-top:8px; }
@@ -723,7 +732,11 @@
   }
   .formazione-piano-panel textarea{ width:100%; }
   @media (max-width:640px){
-    .pitch-bench-row{ flex-direction:column; }
+    /* flex-wrap:wrap (dalla regola base) combinato con flex-direction:column qui sotto fa
+       collassare l'altezza di .pitch-wrap a 0 — il campo va a comporre una seconda "colonna"
+       invisibile sovrapposta alla panchina invece di stare impilato sopra: bug reale, non
+       solo estetico, trovato testando davvero il flusso da telefono. */
+    .pitch-bench-row{ flex-direction:column; flex-wrap:nowrap; }
     .default-bench-panel{
       flex-direction:row; flex-wrap:wrap; width:100%; min-width:0; justify-content:center;
     }

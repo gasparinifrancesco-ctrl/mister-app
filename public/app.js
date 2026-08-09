@@ -1185,6 +1185,30 @@ function playerOptionsForSlot(numero, idx, selectedId){
   return '<option value="" ' + (!selectedId?'selected':'') + '>—</option>' +
     sorted.map(p=>'<option value="'+p.id+'" '+(p.id===selectedId?'selected':'')+'>'+esc(pianoDisplayName(p, surnameCounts))+'</option>').join('');
 }
+// Testa + tre righe di scelta (1a/2a/3a) di uno slot: identiche sia sul campo (desktop) sia
+// nell'elenco (mobile), cambia solo il contenitore attorno — un cerchietto col solo numero
+// non basterebbe qui, servono tre nomi leggibili per posizione.
+function renderPianoCardInner(s, expanded, surnameCounts){
+  const picks = [0,1,2].map(idx=>{
+    const pid = getPianoScelta(s.numero, idx);
+    return { idx: idx, pid: pid, p: pid ? state.players.find(pl=>pl.id===pid) : null };
+  });
+  const rowsHtml = expanded ? picks.map(function(pick){
+    return '<div class="piano-pitch-row piano-pitch-row-'+pick.idx+'">' +
+      '<span class="piano-pitch-tier">'+(pick.idx+1)+'</span>' +
+      '<select onclick="event.stopPropagation()" onchange="setPianoScelta('+s.numero+','+pick.idx+',this.value)" title="'+esc(PIANO_SCELTA_LABELS[pick.idx])+'">' + playerOptionsForSlot(s.numero, pick.idx, pick.pid) + '</select>' +
+      (pick.p ? starRatingHTML(pick.p.valutazione, 8) : '') +
+    '</div>';
+  }).join('') : picks.map(function(pick){
+    const label = pick.p ? esc(pianoDisplayName(pick.p, surnameCounts)) : '<span class="piano-pitch-empty">—</span>';
+    return '<div class="piano-pitch-compact-row piano-pitch-compact-row-'+pick.idx+'">' +
+      '<span class="piano-pitch-tier">'+(pick.idx+1)+'</span>' +
+      '<span class="piano-pitch-compact-name">'+label+'</span>' +
+      (pick.p ? starRatingHTML(pick.p.valutazione, 8) : '') +
+    '</div>';
+  }).join('');
+  return '<div class="piano-pitch-card-head"><span class="piano-pitch-role">'+esc(s.ruolo)+'</span></div>' + rowsHtml;
+}
 function renderPianoSquadraPitch(def){
   const slots = def.slots || [];
   const surnameCounts = pianoSurnameCounts();
@@ -1193,44 +1217,35 @@ function renderPianoSquadraPitch(def){
     if(s.ruolo==='Por') leftPctNum *= 0.55;
     const leftPct = leftPctNum.toFixed(2);
     const topPct = (s.x / 68 * 100).toFixed(2);
-    const picks = [0,1,2].map(idx=>{
-      const pid = getPianoScelta(s.numero, idx);
-      return { idx: idx, pid: pid, p: pid ? state.players.find(pl=>pl.id===pid) : null };
-    });
     const expanded = state.pianoExpandedSlot === s.numero;
-    let inner;
-    if(expanded){
-      const rowsHtml = picks.map(function(pick){
-        return '<div class="piano-pitch-row piano-pitch-row-'+pick.idx+'">' +
-          '<span class="piano-pitch-tier">'+(pick.idx+1)+'</span>' +
-          '<select onclick="event.stopPropagation()" onchange="setPianoScelta('+s.numero+','+pick.idx+',this.value)" title="'+esc(PIANO_SCELTA_LABELS[pick.idx])+'">' + playerOptionsForSlot(s.numero, pick.idx, pick.pid) + '</select>' +
-          (pick.p ? starRatingHTML(pick.p.valutazione, 8) : '') +
-        '</div>';
-      }).join('');
-      inner = '<div class="piano-pitch-card-head">' +
-          '<span class="piano-pitch-role">'+esc(s.ruolo)+'</span>' +
-        '</div>' + rowsHtml;
-    } else {
-      const compactRows = picks.map(function(pick){
-        const label = pick.p ? esc(pianoDisplayName(pick.p, surnameCounts)) : '<span class="piano-pitch-empty">—</span>';
-        return '<div class="piano-pitch-compact-row piano-pitch-compact-row-'+pick.idx+'">' +
-          '<span class="piano-pitch-tier">'+(pick.idx+1)+'</span>' +
-          '<span class="piano-pitch-compact-name">'+label+'</span>' +
-          (pick.p ? starRatingHTML(pick.p.valutazione, 8) : '') +
-        '</div>';
-      }).join('');
-      inner = '<div class="piano-pitch-card-head">' +
-          '<span class="piano-pitch-role">'+esc(s.ruolo)+'</span>' +
-        '</div>' + compactRows;
-    }
     return '<div class="piano-pitch-card' + (expanded?' piano-pitch-card-expanded':'') + '" data-numero="'+s.numero+'" style="left:'+leftPct+'%; top:'+topPct+'%;" onclick="togglePianoCardExpand('+s.numero+', event)">' +
-      inner +
+      renderPianoCardInner(s, expanded, surnameCounts) +
     '</div>';
   }).join('');
   return '<div class="piano-pitch-wrap">' +
     '<svg viewBox="0 0 105 68" class="piano-pitch-svg"><g transform="translate(105,0) rotate(90)">' + pitchMarkingsSVG() + '</g></svg>' +
     '<div class="piano-pitch-cards">' + cardsHtml + '</div>' +
   '</div>';
+}
+// Da telefono il campo con le schede posizionate in percentuale non regge: card larghe
+// almeno 110-140px (servono tre nomi leggibili, non un numero) finiscono per accavallarsi
+// non appena il campo scende sotto i 4-500px di larghezza reale. Stesso contenuto (stesso
+// renderPianoCardInner, stessa interazione di espansione), ma in un elenco impilato invece
+// che sul disegno del campo — un ruolo alla volta, ordinato come ovunque nell'app
+// (portiere, difesa, centrocampo, attacco).
+function renderPianoSquadraMobileList(def){
+  const surnameCounts = pianoSurnameCounts();
+  const slots = (def.slots || []).slice().sort(function(a,b){
+    const ra = ROLE_ORDER[a.ruolo]!=null ? ROLE_ORDER[a.ruolo] : 99;
+    const rb = ROLE_ORDER[b.ruolo]!=null ? ROLE_ORDER[b.ruolo] : 99;
+    return ra!==rb ? ra-rb : a.numero-b.numero;
+  });
+  return '<div class="piano-mobile-list">' + slots.map(s=>{
+    const expanded = state.pianoExpandedSlot === s.numero;
+    return '<div class="piano-mobile-card' + (expanded?' piano-pitch-card-expanded':'') + '" data-numero="'+s.numero+'" onclick="togglePianoCardExpand('+s.numero+', event)">' +
+      renderPianoCardInner(s, expanded, surnameCounts) +
+    '</div>';
+  }).join('') + '</div>';
 }
 function togglePianoCardExpand(numero, evt){
   if(evt) evt.stopPropagation();
@@ -1264,7 +1279,7 @@ function renderPianoSquadraView(){
       '<div class="pitch-actions"><button class="btn btn-small" onclick="exportPageImage(\'piano-squadra\')">Esporta immagine</button></div>' +
     '</div>' +
     (canEdit ? '<p class="hint">Modulo <strong>' + esc(def.modulo) + '</strong>, ereditato dalla formazione predefinita in Rosa. Su ogni posizione scegli direttamente dal campo la 1ª, 2ª e 3ª scelta: se più posizioni condividono lo stesso ruolo, condividono anche le stesse scelte.</p>' : '<p class="hint">Sola lettura: non hai il permesso di modificare il Piano Squadra.</p>') +
-    '<div'+(canEdit?'':' class="readonly-block"')+'>' + renderPianoSquadraPitch(def) + '</div>' +
+    '<div'+(canEdit?'':' class="readonly-block"')+'>' + (isMobileLayout() ? renderPianoSquadraMobileList(def) : renderPianoSquadraPitch(def)) + '</div>' +
   '</div>';
 }
 
