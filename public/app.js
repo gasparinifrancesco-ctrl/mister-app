@@ -2577,8 +2577,20 @@ function sortPlayersForDefaultFormation(players){
 function renderFormazioneView(){
   return renderDefaultFormationCard();
 }
+function setFormazioneMobileTab(tab){
+  state.formazioneMobileTab = tab;
+  renderView();
+}
 function renderDefaultFormationCard(){
   const canEdit = can('edit_formazione');
+  // Da telefono campo e rosa restano impilati uno sotto l'altro (la griglia va già a
+  // colonna singola sotto gli 860px): con una rosa vera, non i 10-15 giocatori di prova,
+  // significa scorrere a lungo ogni volta solo per raggiungere un nome. La pillola lascia
+  // mostrare l'uno o l'altro blocco per intero; da desktop/tablet restano sempre affiancati.
+  const mobileTab = state.formazioneMobileTab || 'campo';
+  const mobile = isMobileLayout();
+  const showCampo = !mobile || mobileTab==='campo';
+  const showRosa = !mobile || mobileTab==='rosa';
   const formationOptions = '<option value="">Scegli modulo…</option>' + FORMATION_KEYS.map(k=>'<option value="'+k+'" '+(state.formazioneDefault.modulo===k?'selected':'')+'>'+k+'</option>').join('');
   const sortMode = state.defaultFormationSort || 'ruolo';
   const hideAggregati = !!state.hideAggregatiFormazione;
@@ -2599,14 +2611,20 @@ function renderDefaultFormationCard(){
     '</div>' +
     (canEdit ? '<p class="hint">Scegli il modulo, poi trascina i giocatori dalla rosa in campo (subito, senza attese). Sul campo o in rosa: triangolino per scegliere un posto preciso, tasto destro per selezionare/deselezionare rapido al primo posto libero. Verrà usata per popolare automaticamente le nuove partite quando convochi questi giocatori. Il modulo scelto qui — o cambiato dentro una partita — resta il modulo predefinito anche per le partite successive.</p>' : '<p class="hint">Sola lettura: non hai il permesso di modificare la formazione predefinita.</p>') +
     '<div class="form-row"><div class="field"><label>Modulo</label><select '+(canEdit?'':'disabled')+' onchange="if(this.value) applyDefaultFormationModulo(this.value)">'+formationOptions+'</select></div></div>' +
+    '<div class="segmented">' +
+      '<button class="' + (mobileTab==='campo'?'segmented-active':'') + '" onclick="setFormazioneMobileTab(\'campo\')">Campo</button>' +
+      '<button class="' + (mobileTab==='rosa'?'segmented-active':'') + '" onclick="setFormazioneMobileTab(\'rosa\')">Rosa</button>' +
+    '</div>' +
     '<div class="tactic-layout">' +
+      (!showCampo ? '' :
       '<div'+(canEdit?'':' class="readonly-block"')+'>' +
         '<h3>Riserve</h3>' +
         '<div class="pitch-bench-row">' +
           '<div class="pitch-wrap">' + renderDefaultPitchSVG() + '</div>' +
           '<div class="default-bench-panel" id="default-formation-bench">' + benchDefaultHTML() + '</div>' +
         '</div>' +
-      '</div>' +
+      '</div>') +
+      (!showRosa ? '' :
       '<div>' +
         '<div class="card-header-row"><h3>Rosa</h3>' +
           '<div class="pitch-actions">' +
@@ -2632,7 +2650,7 @@ function renderDefaultFormationCard(){
             '</div>';
           }).join('') +
         '</div>' +
-      '</div>' +
+      '</div>') +
     '</div>' +
   '</div>';
 }
