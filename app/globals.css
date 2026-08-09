@@ -687,7 +687,10 @@
     .pitch-card-triangle{ font-size:0.7rem; }
   }
   @media (max-width:400px){
-    .pitch-card-name{ display:none; }
+    .pitch-card{ gap:1px; }
+    .pitch-card-num{ width:24px; height:24px; font-size:0.66rem; border-width:1.2px; }
+    .pitch-card-name{ font-size:0.5rem; max-width:38px; }
+    .pitch-card-triangle{ font-size:0.6rem; }
   }
   .forma-bars{ display:inline-flex; gap:2px; align-items:center; vertical-align:middle; }
   .forma-bar{ width:5px; height:14px; border-radius:2px; display:inline-block; }

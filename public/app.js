@@ -30,8 +30,8 @@ function isMobileLayout(){
 })();
 
 /* ---------- costanti ---------- */
-const ROLE_CODES = ['Por','DC','TD','TS','MD','CC','ES','ED','ATT'];
-const ROLE_ORDER = { 'Por':0, 'DC':1, 'TD':2, 'TS':2, 'MD':3, 'CC':4, 'ES':5, 'ED':5, 'ATT':6 };
+const ROLE_CODES = ['Por','DC','TD','TS','CDC','CC','COC','ES','ED','ATT','AD','AS'];
+const ROLE_ORDER = { 'Por':0, 'DC':1, 'TD':2, 'TS':2, 'CDC':3, 'CC':4, 'COC':4, 'ES':5, 'ED':5, 'ATT':6, 'AD':6, 'AS':6 };
 const FOOT_OPTIONS = ['', 'Destro','Sinistro','Ambidestro'];
 const GOAL_TYPES_FATTI = ['Azione','Rigore','Punizione diretta','Punizione indiretta',"Calcio d'angolo",'Autogol avversario'];
 const GOAL_TYPES_SUBITI = ['Azione','Rigore','Punizione diretta','Punizione indiretta',"Calcio d'angolo",'Autogol nostro'];
@@ -46,20 +46,20 @@ const FORMATIONS = {
   ],
   '4-3-3': [
     {ruolo:'Por', numero:1, x:0.50, y:0.95},{ruolo:'TD', numero:2, x:0.85, y:0.78},{ruolo:'DC', numero:5, x:0.62, y:0.82},
-    {ruolo:'DC', numero:6, x:0.38, y:0.82},{ruolo:'TS', numero:3, x:0.15, y:0.78},{ruolo:'MD', numero:4, x:0.50, y:0.58},
+    {ruolo:'DC', numero:6, x:0.38, y:0.82},{ruolo:'TS', numero:3, x:0.15, y:0.78},{ruolo:'CDC', numero:4, x:0.50, y:0.58},
     {ruolo:'CC', numero:8, x:0.68, y:0.45},{ruolo:'CC', numero:10,x:0.32, y:0.45},{ruolo:'ED', numero:7, x:0.85, y:0.15},
     {ruolo:'ATT', numero:9, x:0.50, y:0.10},{ruolo:'ES', numero:11,x:0.15, y:0.15}
   ],
   '3-5-2': [
     {ruolo:'Por', numero:1, x:0.50, y:0.95},{ruolo:'DC', numero:5, x:0.65, y:0.80},{ruolo:'DC', numero:6, x:0.50, y:0.83},
     {ruolo:'DC', numero:3, x:0.35, y:0.80},{ruolo:'TD', numero:2, x:0.88, y:0.55},{ruolo:'CC', numero:8, x:0.65, y:0.48},
-    {ruolo:'MD', numero:4, x:0.50, y:0.55},{ruolo:'CC', numero:10,x:0.35, y:0.48},{ruolo:'TS', numero:11,x:0.12, y:0.55},
+    {ruolo:'CDC', numero:4, x:0.50, y:0.55},{ruolo:'CC', numero:10,x:0.35, y:0.48},{ruolo:'TS', numero:11,x:0.12, y:0.55},
     {ruolo:'ATT', numero:9, x:0.40, y:0.12},{ruolo:'ATT', numero:7, x:0.60, y:0.12}
   ],
   '4-2-3-1': [
     {ruolo:'Por', numero:1, x:0.50, y:0.95},{ruolo:'TD', numero:2, x:0.85, y:0.78},{ruolo:'DC', numero:5, x:0.62, y:0.82},
-    {ruolo:'DC', numero:6, x:0.38, y:0.82},{ruolo:'TS', numero:3, x:0.15, y:0.78},{ruolo:'MD', numero:4, x:0.62, y:0.60},
-    {ruolo:'MD', numero:8, x:0.38, y:0.60},{ruolo:'ES', numero:11,x:0.15, y:0.35},{ruolo:'CC', numero:10,x:0.50, y:0.30},
+    {ruolo:'DC', numero:6, x:0.38, y:0.82},{ruolo:'TS', numero:3, x:0.15, y:0.78},{ruolo:'CDC', numero:4, x:0.62, y:0.60},
+    {ruolo:'CDC', numero:8, x:0.38, y:0.60},{ruolo:'ES', numero:11,x:0.15, y:0.35},{ruolo:'CC', numero:10,x:0.50, y:0.30},
     {ruolo:'ED', numero:7, x:0.85, y:0.35},{ruolo:'ATT', numero:9, x:0.50, y:0.10}
   ],
   '3-4-3': [
@@ -386,6 +386,10 @@ function migratePlayer(p){
   if(typeof p.aggregatoPrimaSquadra !== 'boolean') p.aggregatoPrimaSquadra = false;
   if(typeof p.valutazione !== 'number') p.valutazione = 0;
   if(typeof p.note !== 'string') p.note = '';
+  // MD (mediano) è stato rinominato CDC: chi ha già un giocatore o un modulo salvato con
+  // il vecchio codice lo ritrova qui, senza dover riassegnare a mano il ruolo.
+  if(p.ruolo==='MD') p.ruolo = 'CDC';
+  if(p.secondoRuolo==='MD') p.secondoRuolo = 'CDC';
 }
 function migrateAllenamento(a){
   if(!a.presenze) a.presenze = {};
@@ -426,6 +430,7 @@ async function loadData(){
   state.onboarding.loaded = true;
   if(!Array.isArray(state.formazioneDefault.riserve)) state.formazioneDefault.riserve = [];
   if(!Array.isArray(state.formazioneDefault.arrows)) state.formazioneDefault.arrows = [];
+  (state.formazioneDefault.slots||[]).forEach(s=>{ if(s.ruolo==='MD') s.ruolo = 'CDC'; });
   const pianoMigrated = migratePianoSquadraKeys();
   const pianoDeduped = dedupePianoSquadra();
   if(pianoMigrated || pianoDeduped) savePianoSquadra();
@@ -1067,8 +1072,8 @@ async function importRosaEstratta(){
     {nome:'Riccardo Salvioli', ruolo:'TD', secondoRuolo:'', piede:'', annoNascita:2009},
     {nome:'Edoardo Iannacone', ruolo:'TS', secondoRuolo:'', piede:'Sinistro', annoNascita:2008},
     {nome:'Stefano Romano', ruolo:'TS', secondoRuolo:'ES', piede:'Sinistro', annoNascita:2007},
-    {nome:'Samuele Sposito', ruolo:'MD', secondoRuolo:'', piede:'', annoNascita:2009},
-    {nome:'Angelo Musciacchio', ruolo:'MD', secondoRuolo:'', piede:'', annoNascita:2008},
+    {nome:'Samuele Sposito', ruolo:'CDC', secondoRuolo:'', piede:'', annoNascita:2009},
+    {nome:'Angelo Musciacchio', ruolo:'CDC', secondoRuolo:'', piede:'', annoNascita:2008},
     {nome:'Riccardo Rinaldi', ruolo:'CC', secondoRuolo:'', piede:'', annoNascita:2008},
     {nome:'Mattia Costa', ruolo:'CC', secondoRuolo:'', piede:'', annoNascita:2008},
     {nome:'Nicolò Rossi', ruolo:'CC', secondoRuolo:'', piede:'', annoNascita:2008},
@@ -1082,7 +1087,7 @@ async function importRosaEstratta(){
     {nome:'Erbion Bulku', ruolo:'ED', secondoRuolo:'', piede:'', annoNascita:2008},
     {nome:'Luca Poso', ruolo:'ATT', secondoRuolo:'', piede:'', annoNascita:2010},
     {nome:'Matia Bulku', ruolo:'ATT', secondoRuolo:'', piede:'Destro', annoNascita:2008},
-    {nome:'Antonio Bruno', ruolo:'ATT', secondoRuolo:'MD', piede:'', annoNascita:2008},
+    {nome:'Antonio Bruno', ruolo:'ATT', secondoRuolo:'CDC', piede:'', annoNascita:2008},
     {nome:'Emanuele Berni', ruolo:'TD', secondoRuolo:'', piede:'', annoNascita:2007},
     {nome:'Davide Di Stasio', ruolo:'CC', secondoRuolo:'', piede:'', annoNascita:2007},
     {nome:'Riccardo Nappa', ruolo:'ES', secondoRuolo:'', piede:'Sinistro', annoNascita:2008}
