@@ -4281,11 +4281,17 @@ function renderSchemaLibrary(){
   const categoriaChips = s.categorie.map(c=>
     '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategoria===c.key?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="setSchemaFilterCategoria(\''+c.key+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaCategoriaContextMenu(event,\''+c.key+'\')" title="Clic destro per rinominare, cambiare colore o eliminare"':'')+'>'+esc(c.label)+'</button>'
   ).join('') + (canEditLibrary ? '<button type="button" class="schema-cat-chip schema-cat-add-chip" onclick="createSchemaCategoria()">+ Nuova fase</button>' : '');
+  // Il disegnatore tattico (per creare un esercizio nuovo) serve spazio e precisione che uno
+  // schermo da telefono non offre: da mobile resta raggiungibile solo da computer, mentre
+  // sfogliare la libreria e comporre una seduta scegliendo esercizi già pronti funziona
+  // comunque, senza bisogno del disegnatore.
+  const canCreateExercise = canEditLibrary && !isMobileLayout();
   return schemaSubNavHTML('library') +
     '<div class="card">' +
       '<div class="card-header-row"><h2>Libreria esercizi</h2>' +
-        (canEditLibrary ? '<div class="pitch-actions"><button class="btn btn-primary btn-small" onclick="openSchemaNewExercise()">+ Nuovo esercizio</button></div>' : '') +
+        (canCreateExercise ? '<div class="pitch-actions"><button class="btn btn-primary btn-small" onclick="openSchemaNewExercise()">+ Nuovo esercizio</button></div>' : '') +
       '</div>' +
+      (canEditLibrary && !canCreateExercise ? '<p class="hint">Per creare un nuovo esercizio (serve il disegnatore tattico) usa un computer. Da qui puoi comunque sfogliare la libreria e comporre una seduta.</p>' : '') +
       '<div class="form-row">' +
         '<div class="field field-grow"><label>Cerca</label><input id="schema-filter-search" type="text" placeholder="titolo o etichetta" value="'+esc(s.filterSearch)+'" oninput="onSchemaFilterChange()"></div>' +
       '</div>' +
