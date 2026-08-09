@@ -1,3 +1,34 @@
+/* ---------- responsive ---------- */
+// Stessa soglia della barra di navigazione in basso in globals.css: sopra i 760px (o in
+// orizzontale con più di 500px di altezza) si è su desktop/tablet, sotto si è nel layout
+// mobile con tab dedicate al posto delle colonne affiancate.
+function isMobileLayout(){
+  if(typeof window==='undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(max-width:760px), (max-height:500px) and (orientation:landscape)').matches;
+}
+(function watchMobileLayout(){
+  if(typeof window==='undefined') return;
+  let wasMobile = null;
+  let timer = null;
+  function check(){
+    const nowMobile = isMobileLayout();
+    if(nowMobile!==wasMobile){
+      wasMobile = nowMobile;
+      // Solo se l'app ha già fatto il primo render: renderView() esiste solo dopo che lo
+      // script intero è stato interpretato (viene definito più sotto in questo stesso file).
+      if(typeof renderView==='function') renderView();
+    }
+  }
+  window.addEventListener('resize', function(){
+    clearTimeout(timer);
+    timer = setTimeout(check, 150);
+  });
+  window.addEventListener('orientationchange', function(){
+    clearTimeout(timer);
+    timer = setTimeout(check, 150);
+  });
+})();
+
 /* ---------- costanti ---------- */
 const ROLE_CODES = ['Por','DC','TD','TS','MD','CC','ES','ED','ATT'];
 const ROLE_ORDER = { 'Por':0, 'DC':1, 'TD':2, 'TS':2, 'MD':3, 'CC':4, 'ES':5, 'ED':5, 'ATT':6 };
@@ -867,6 +898,35 @@ function computePlayerStatsRow(playerId, stats){
     percentPresenza: computePresenzaPercent(p.id)
   };
 }
+function rosaMobileRoleGroup(ruolo){
+  const ord = ROLE_ORDER[ruolo];
+  if(ord===0) return 'Portieri';
+  if(ord===1 || ord===2) return 'Difensori';
+  if(ord===6) return 'Attaccanti';
+  if(ord!=null) return 'Centrocampisti';
+  return 'Altro';
+}
+// Da telefono, quando l'ordinamento attivo è "per ruolo", inframezza intestazioni di gruppo
+// (Portieri/Difensori/Centrocampisti/Attaccanti) tra le righe: le righe arrivano già ordinate
+// per ROLE_ORDER, quindi basta accorgersi di quando il gruppo cambia rispetto alla riga prima.
+// Da A-Z o da desktop (dove le colonne ordinabili in intestazione bastano da sole) niente
+// intestazioni, elenco piatto come sempre.
+function renderRosaTbodyRows(rows, mode, sort){
+  const groupByRole = isMobileLayout() && sort.column==='ruolo';
+  let lastGroup = null;
+  let html = '';
+  rows.forEach((r,i)=>{
+    if(groupByRole){
+      const g = rosaMobileRoleGroup(r.ruolo);
+      if(g!==lastGroup){
+        lastGroup = g;
+        html += '<tr class="rosa-group-header-row"><td class="rosa-group-header" colspan="99">'+esc(g)+'</td></tr>';
+      }
+    }
+    html += renderRosaRow(r, mode, i);
+  });
+  return html;
+}
 function renderRosaView(){
   const stats = computeSeasonStats();
   let rows = state.players.map(p=>computePlayerStatsRow(p.id, stats));
@@ -896,13 +956,17 @@ function renderRosaView(){
       ROSA_VIEW_MODES.map(([key,label])=>'<button class="btn btn-small ' + (mode===key?'btn-active':'') + '" onclick="setRosaViewMode(\''+key+'\')">'+label+'</button>').join('') +
     '</div>' +
     (mode==='statistiche' ? (renderStatsFilterHTML() + '<p class="hint" style="margin:6px 0 10px;">' + esc(statsFilterLabel()) + '</p>') : '') +
+    '<div class="segmented">' +
+      '<button class="' + (sort.column==='ruolo'?'segmented-active':'') + '" onclick="sortRosaBy(\'ruolo\')">Per ruolo</button>' +
+      '<button class="' + (sort.column==='nome'?'segmented-active':'') + '" onclick="sortRosaBy(\'nome\')">A-Z</button>' +
+    '</div>' +
     (rows.length===0 ? '<p class="hint">Nessun giocatore in rosa. Aggiungilo o importalo qui sotto.</p>' :
       '<div class="rosa-table-wrap"><table class="rosa-table"><thead><tr>' +
         '<th class="roster-num-cell">#</th>' +
         cols.map(([key,label])=>rosaTh(label,key)).join('') +
         '<th></th>' +
       '</tr></thead><tbody>' +
-        rows.map((r,i)=>renderRosaRow(r, mode, i)).join('') +
+        renderRosaTbodyRows(rows, mode, sort) +
       '</tbody></table></div>' +
       '<p class="hint" style="margin-top:8px;">Clicca un\'intestazione per ordinare, clicca una riga per modificare i dati del giocatore. Le statistiche derivano dai tabellini partita e dalle presenze allenamento; "Gol subiti" conta solo per i portieri.</p>'
     ) +
@@ -3119,6 +3183,42 @@ function confirmAddMatchFromCalendar(){
   openMatch(match.id);
 }
 function pad2(n){ return n<10 ? '0'+n : ''+n; }
+function calendarioMobileMode(){
+  return state.calendarioMobileView || 'agenda';
+}
+function setCalendarioMobileView(mode){
+  state.calendarioMobileView = mode;
+  renderView();
+}
+// Stesso eventsByDate già raccolto per la griglia mensile, solo presentato come elenco
+// cronologico invece che come celle affiancate: da telefono la griglia dice "qualcosa
+// succede il 15" solo se tocchi quella cella, l'agenda lo dice già leggendo dall'alto.
+// Resta legata allo stesso mese/cursore della griglia (stessi ← → e "Oggi"), non è un
+// "prossimi eventi" assoluto: un solo modo di sfogliare il calendario, due presentazioni.
+function renderCalendarAgendaHTML(eventsByDate, year, month, daysInMonth, todayStr){
+  const items = [];
+  for(let d=1; d<=daysInMonth; d++){
+    const dateStr = year + '-' + pad2(month+1) + '-' + pad2(d);
+    const evs = eventsByDate[dateStr];
+    if(evs && evs.length) items.push({ dateStr, d, evs });
+  }
+  if(items.length===0) return '<p class="hint">Nessun evento in questo mese.</p>';
+  return '<div class="cal-agenda">' + items.map(it=>{
+    const dow = DAY_NAMES[(new Date(it.dateStr+'T00:00:00').getDay()+6)%7];
+    const isToday = it.dateStr===todayStr;
+    return '<div class="cal-agenda-day' + (isToday?' cal-agenda-day-today':'') + '">' +
+      '<div class="cal-agenda-date"><div class="cal-agenda-daynum">'+it.d+'</div><div class="cal-agenda-dow">'+esc(dow.slice(0,3))+'</div></div>' +
+      '<div class="cal-agenda-events">' + it.evs.map(e=>{
+        const cls = e.type==='match' ? ('cal-agenda-badge cal-event-match-' + matchTipoLabel(e.tipo)) : 'cal-agenda-badge cal-event-training';
+        const action = e.type==='match' ? "openMatch('"+e.id+"')" : "openAllenamento('"+e.id+"')";
+        return '<div class="cal-agenda-item" onclick="'+action+'">' +
+          '<div class="cal-agenda-item-main"><span class="'+cls+'"></span><span class="cal-agenda-item-title">'+esc(e.label)+'</span></div>' +
+          (e.sub?'<div class="cal-agenda-item-sub">'+esc(e.sub)+'</div>':'') +
+        '</div>';
+      }).join('') + '</div>' +
+    '</div>';
+  }).join('') + '</div>';
+}
 function renderCalendarioView(){
   initCalendarCursor();
   const canEditCal = can('edit_calendario');
@@ -3162,6 +3262,8 @@ function renderCalendarioView(){
   const trailing = (7 - (totalCells % 7)) % 7;
   for(let i=0;i<trailing;i++){ cells += '<div class="cal-cell cal-cell-empty"></div>'; }
 
+  const mobileMode = calendarioMobileMode();
+  const showAgenda = isMobileLayout() && mobileMode==='agenda';
   return '' +
   '<div class="card">' +
     '<div class="cal-toolbar">' +
@@ -3171,8 +3273,14 @@ function renderCalendarioView(){
       '<button class="btn btn-small" onclick="calendarToday()">Oggi</button>' +
       '<button class="btn btn-small" onclick="exportPageImage(\'calendario\')">Esporta immagine</button>' +
     '</div>' +
-    '<div class="cal-grid cal-grid-header">' + DAY_NAMES.map(dn=>'<div class="cal-headcell">'+dn+'</div>').join('') + '</div>' +
-    '<div class="cal-grid">' + cells + '</div>' +
+    '<div class="segmented">' +
+      '<button class="' + (mobileMode==='agenda'?'segmented-active':'') + '" onclick="setCalendarioMobileView(\'agenda\')">Agenda</button>' +
+      '<button class="' + (mobileMode==='mese'?'segmented-active':'') + '" onclick="setCalendarioMobileView(\'mese\')">Mese</button>' +
+    '</div>' +
+    (showAgenda ? renderCalendarAgendaHTML(eventsByDate, year, month, daysInMonth, todayStr) : (
+      '<div class="cal-grid cal-grid-header">' + DAY_NAMES.map(dn=>'<div class="cal-headcell">'+dn+'</div>').join('') + '</div>' +
+      '<div class="cal-grid">' + cells + '</div>'
+    )) +
   '</div>' +
   '<div class="card">' +
     '<h3>Esporta / importa calendario</h3>' +

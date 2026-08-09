@@ -300,6 +300,18 @@
   .rosa-table tbody tr:hover{ background: var(--panel-2); }
   .rosa-table td:nth-child(2){ font-weight:500; }
   .rosa-table td:first-child, .rosa-table th:first-child{ white-space:nowrap; }
+  /* Pillola a scelta singola tra 2-3 opzioni (ordina Rosa per ruolo/A-Z, Campo/Rosa in
+     Formazione, Prossima seduta/Libreria in Allenamenti, Squadra/Giocatori in Statistiche):
+     un solo componente riutilizzato ovunque serve lo stesso tipo di scelta, cosi si impara
+     una volta sola come si usa. Nascosta di default: la mostrano solo le viste mobile che
+     ne hanno bisogno, per non duplicare un controllo che a schermo largo ha già altre vie
+     (tab, colonne ordinabili) per fare la stessa cosa. */
+  .segmented{ display:none; gap:2px; background:var(--panel-2); border-radius:999px; padding:2px; margin-bottom:12px; }
+  .segmented button{
+    flex:1; border:none; background:none; color:var(--text-dim); font-family:'Inter',sans-serif;
+    font-size:0.78rem; font-weight:600; padding:7px 10px; border-radius:999px; cursor:pointer;
+  }
+  .segmented button.segmented-active{ background:var(--accent); color:#1A0D00; }
   .roster-name{ font-weight:500; }
   .roster-role{ color: var(--text-dim); font-size: 0.82rem; }
   .roster-num-cell{ width:1%; white-space:nowrap; text-align:center; color:var(--text-dim); font-variant-numeric:tabular-nums; }
@@ -324,8 +336,26 @@
     .rosa-table td[data-label=""]::before{ content:none; }
     .rosa-table td:nth-child(2){ font-size:1rem; font-weight:700; color:var(--chalk); }
     .rosa-table td:nth-child(2)::before{ content:none; }
-    .roster-num-cell{ display:none; }
+    .rosa-table td.roster-num-cell{ display:none; }
     .roster-note-cell{ max-width:none; white-space:normal; text-overflow:clip; }
+    /* Solo nome, ruolo, età, valutazione da telefono: il resto (2° ruolo, piede, altezza,
+       aggregato, note) resta a un tocco sulla riga, che apre comunque la scheda completa.
+       Queste etichette esistono solo nelle colonne di "Info generali": la vista "Statistiche"
+       ne genera altre e non viene toccata da questa regola. */
+    .rosa-table td[data-label="2° ruolo"], .rosa-table td[data-label="Piede"],
+    .rosa-table td[data-label="Altezza"], .rosa-table td[data-label="Aggregato"],
+    .rosa-table td[data-label="Note"]{ display:none; }
+    .segmented{ display:flex; }
+    /* Intestazione di gruppo ("Portieri", "Difensori"...) inserita tra le schede quando
+       l'ordinamento è "per ruolo": una riga di solo testo, non un'altra scheda con bordo. */
+    .rosa-table tr.rosa-group-header-row{ border:none; background:none; padding:0; margin-bottom:2px; }
+    .rosa-table tr.rosa-group-header-row:first-child{ margin-top:0; }
+    .rosa-table td.rosa-group-header{
+      display:block; padding:16px 2px 6px; border-bottom:none;
+      font-family:'Inter',sans-serif; font-size:0.72rem; font-weight:700;
+      text-transform:uppercase; letter-spacing:0.06em; color:var(--text-dim);
+    }
+    .rosa-table td.rosa-group-header::before{ content:none; }
   }
 
   /* piano squadra */
@@ -820,6 +850,27 @@
   .cal-cell-editable{ cursor:pointer; -webkit-tap-highlight-color:transparent; }
   .cal-cell-editable:hover{ border-color:var(--accent-dim); }
   .cal-cell-editable:active{ background:var(--accent-wash); }
+  /* Vista agenda (mobile): stessi eventi della griglia, presentati come elenco cronologico
+     invece che come celle affiancate — un giorno per riga, un pallino colorato per tipo
+     evento invece del riquadro pieno (qui basta riconoscerlo al volo, non leggerne il testo
+     dentro un rettangolo stretto). */
+  .cal-agenda{ display:flex; flex-direction:column; margin-top:10px; }
+  .cal-agenda-day{ display:flex; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .cal-agenda-day:last-child{ border-bottom:none; }
+  .cal-agenda-day-today .cal-agenda-daynum{ color:var(--accent); }
+  .cal-agenda-date{ width:36px; text-align:center; flex-shrink:0; }
+  .cal-agenda-daynum{ font-family:'Roboto Condensed','Arial Narrow',sans-serif; font-size:1.15rem; font-weight:700; color:var(--chalk); line-height:1; }
+  .cal-agenda-dow{ font-size:0.6rem; color:var(--text-dim); text-transform:uppercase; margin-top:2px; }
+  .cal-agenda-events{ flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
+  .cal-agenda-item{ cursor:pointer; }
+  .cal-agenda-item-main{ display:flex; align-items:center; gap:7px; }
+  .cal-agenda-badge{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .cal-agenda-badge.cal-event-match-campionato{ background:var(--accent); border:none; }
+  .cal-agenda-badge.cal-event-match-amichevole{ background:var(--success); border:none; }
+  .cal-agenda-badge.cal-event-match-coppa{ background:var(--yellow); border:none; }
+  .cal-agenda-badge.cal-event-training{ background:var(--text-dim); border:none; }
+  .cal-agenda-item-title{ font-size:0.86rem; color:var(--chalk); font-weight:600; }
+  .cal-agenda-item-sub{ font-size:0.72rem; color:var(--text-dim); margin-left:15px; margin-top:1px; }
 
   /* export "Calendario Preparazione": stessi stili sia per la cattura immagine (fuori
      schermo, mai in stampa) sia per il PDF dentro #print-area — colori sempre presenti
