@@ -181,6 +181,10 @@ let state = {
     placeMode: null,
     eraserMode: false,
     activeColor: SCHEMA_COLORS[0],
+    activeGiocatoreSize: 1,
+    // Cronologia indietro/avanti del disegno (chip/frecce/zone) del livello attualmente
+    // aperto: si azzera cambiando livello, vedi schemaInitHistoryForLivello.
+    drawHistory: { livelloId: null, stack: [], index: -1 },
     colorPickerOpen: false,
     activeLineType: 'passaggio',
     livelloPicker: null,
@@ -4401,12 +4405,81 @@ async function loadSchemaExercise(id){
   state.schema.exerciseId = id;
   if(res.exercise && res.exercise.livelli.length){
     state.schema.activeLivelloId = res.exercise.livelli[0].id;
+    schemaInitHistoryForLivello(state.schema.activeLivelloId);
   }
 }
 function schemaActiveLivello(){
   const e = state.schema.currentExercise;
   if(!e || !e.livelli.length) return null;
   return e.livelli.find(l=>l.id===state.schema.activeLivelloId) || e.livelli[0];
+}
+// Layout campo preimpostati, punto di partenza per il disegno invece di un campo vuoto.
+// Coordinate in metri, stesso sistema di riferimento del viewBox SVG (x=larghezza, y=lunghezza,
+// origine in alto a sinistra). Il cerchio di centrocampo è sempre un cerchio INTERO centrato
+// sulla linea che lo taglia (y=0 per il centrocampo di "metà campo", y=centro per quello di
+// "campo intero"): la metà che cade fuori dal viewBox viene tagliata automaticamente dal
+// browser (comportamento di default di <svg>, overflow implicito sul viewBox), risultando in un
+// mezzo cerchio senza bisogno di disegnare un arco a mano.
+const SCHEMA_FIELD_PRESET_SIZES = {
+  meta:   { larghezzaCampo: 68, lunghezzaCampo: 52.5 },
+  intero: { larghezzaCampo: 68, lunghezzaCampo: 105 },
+  libero: { larghezzaCampo: 20, lunghezzaCampo: 28 },
+};
+const SCHEMA_FIELD_PRESET_LABELS = { meta: 'Metà campo', intero: 'Campo intero', libero: 'Libero' };
+function schemaFieldPresetData(key){
+  const empty = { chips: [], arrows: [], zones: [] };
+  if(key==='meta'){
+    const w = 68, h = 52.5;
+    return {
+      chips: [{ id: uid(), x: w/2, y: h, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0 }],
+      arrows: [],
+      zones: [
+        { id: uid(), x:(w-40)/2, y:h-16, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
+        { id: uid(), x:(w-18)/2, y:h-5.5, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
+        { id: uid(), x:w/2-9.15, y:-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio' },
+      ],
+    };
+  }
+  if(key==='intero'){
+    const w = 68, h = 105;
+    return {
+      chips: [
+        { id: uid(), x:w/2, y:0, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0 },
+        { id: uid(), x:w/2, y:h, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0 },
+      ],
+      arrows: [
+        { id: uid(), x1:0, y1:h/2, x2:w, y2:h/2, tipo:'campo-linea', color: SCHEMA_COLORS[0], numero:null },
+      ],
+      zones: [
+        { id: uid(), x:(w-40)/2, y:0, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
+        { id: uid(), x:(w-18)/2, y:0, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
+        { id: uid(), x:(w-40)/2, y:h-16, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
+        { id: uid(), x:(w-18)/2, y:h-5.5, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
+        { id: uid(), x:w/2-9.15, y:h/2-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio' },
+      ],
+    };
+  }
+  return empty;
+}
+function confirmApplySchemaFieldPreset(key){
+  const label = SCHEMA_FIELD_PRESET_LABELS[key] || key;
+  showConfirmModal('Sostituire il disegno di questo livello con il layout "'+label+'"? Giocatori, frecce e zone attuali andranno persi.', function(){
+    applySchemaFieldPreset(key);
+  });
+}
+async function applySchemaFieldPreset(key){
+  const size = SCHEMA_FIELD_PRESET_SIZES[key] || SCHEMA_FIELD_PRESET_SIZES.libero;
+  const data = schemaFieldPresetData(key);
+  const livelloId = state.schema.activeLivelloId;
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, {
+    larghezzaCampo: size.larghezzaCampo, lunghezzaCampo: size.lunghezzaCampo, schemaCampo: JSON.stringify(data),
+  });
+  if(res.livello){
+    const idx = state.schema.currentExercise.livelli.findIndex(l=>l.id===livelloId);
+    if(idx>=0) state.schema.currentExercise.livelli[idx] = res.livello;
+    schemaInitHistoryForLivello(livelloId);
+    renderView();
+  }
 }
 function parseSchemaCampo(livello){
   let d;
@@ -4425,9 +4498,12 @@ function parseSchemaCampo(livello){
     label: c.label || '',
     ruolo: c.ruolo==='portiere' ? 'portiere' : null,
     rot: typeof c.rot==='number' ? c.rot : 0,
-    // Solo per tipo 'testo': moltiplicatore di dimensione del font (1 = default), regolabile
-    // dal menu contestuale A-/A+. Ignorato per tutti gli altri tipi di chip.
+    // Moltiplicatore di dimensione (1 = default), regolabile dal menu contestuale A-/A+ —
+    // per i chip 'giocatore' scala il cerchio, per 'testo' il font. Ignorato dagli altri tipi.
     size: typeof c.size==='number' && c.size>0 ? c.size : 1,
+    // Solo per tipo 'testo': font più sottile (300) invece del semi-bold di default (600),
+    // toggle dal menu contestuale.
+    sottile: c.sottile===true,
   }));
   d.arrows = d.arrows.map(a=>({
     id: a.id || uid(),
@@ -4455,6 +4531,9 @@ function parseSchemaCampo(livello){
     // "pieno" = tinta colorata (tattico), "contorno" = solo bordo bianco/neutro, per
     // disegnare marcature reali del campo come l'area di rigore.
     stile: z.stile==='contorno' ? 'contorno' : 'pieno',
+    // Forma del bounding box x/y/w/h: 'rect' (default, disegno manuale) o 'cerchio' (solo dai
+    // layout preimpostati, per il cerchio di centrocampo — vedi SCHEMA_FIELD_PRESETS).
+    shape: z.shape==='cerchio' ? 'cerchio' : 'rect',
   }));
   return d;
 }
@@ -4522,8 +4601,13 @@ function schemaConeSVG(c, w){
 // insieme alla larghezza campo (w), cosi il testo resta proporzionato se il campo cambia.
 function schemaTextChipSVG(c, w){
   const fontSize = w*0.045*(c.size||1);
+  // "Sottile" (toggle dal menu contestuale) riduce sia il peso del font sia il contorno di
+  // contrasto: usare solo font-weight più basso non bastava, il contorno spesso lo faceva
+  // sembrare comunque grassetto.
+  const fontWeight = c.sottile ? 300 : 600;
+  const strokeW = w*(c.sottile ? 0.008 : 0.012);
   return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
-    '<text text-anchor="middle" dominant-baseline="central" font-size="'+fontSize+'" fill="'+c.color+'" font-family="Inter, sans-serif" font-weight="600" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.012)+'" stroke-linejoin="round">'+esc(c.label||'Testo')+'</text>' +
+    '<text text-anchor="middle" dominant-baseline="central" font-size="'+fontSize+'" fill="'+c.color+'" font-family="Inter, sans-serif" font-weight="'+fontWeight+'" paint-order="stroke" stroke="#0B141C" stroke-width="'+strokeW+'" stroke-linejoin="round">'+esc(c.label||'Testo')+'</text>' +
   '</g>';
 }
 function schemaChipSVG(c, w, printMode){
@@ -4536,28 +4620,37 @@ function schemaChipSVG(c, w, printMode){
   if(c.tipo==='testo') return schemaTextChipSVG(c, w);
   // Raggio/bordo leggermente più generosi e font Inter SemiBold per il numero, invece
   // dell'Oswald condensato usato altrove: più leggibili e coerenti con la nuova identità.
-  const r = w*0.036;
+  // "size" (menu contestuale A-/A+) scala l'intero chip in proporzione, numero/etichetta
+  // inclusi, cosi restano leggibili a qualunque dimensione invece di restare fissi mentre
+  // il cerchio cambia.
+  const sz = c.size||1;
+  const r = w*0.036*sz;
   const numeroLabel = c.numero!=null ? String(c.numero) : (c.label ? c.label.charAt(0).toUpperCase() : '');
   // Il portiere ha una forma distinta (quadrato arrotondato) invece del cerchio, cosi si
   // riconosce a colpo d'occhio senza dover leggere il numero.
   const shape = c.ruolo==='portiere'
-    ? '<rect x="'+(-r)+'" y="'+(-r)+'" width="'+(r*2)+'" height="'+(r*2)+'" rx="'+(r*0.3)+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.006)+'"/>'
-    : '<circle r="'+r+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.006)+'"/>';
+    ? '<rect x="'+(-r)+'" y="'+(-r)+'" width="'+(r*2)+'" height="'+(r*2)+'" rx="'+(r*0.3)+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.006*sz)+'"/>'
+    : '<circle r="'+r+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.006*sz)+'"/>';
   return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
     shape +
-    (numeroLabel ? '<text text-anchor="middle" dy="'+(w*0.014)+'" font-size="'+(w*0.038)+'" fill="#0B141C" font-family="Inter, sans-serif" font-weight="600">'+esc(numeroLabel)+'</text>' : '') +
-    (c.label ? '<text text-anchor="middle" dy="'+(w*0.078)+'" font-size="'+(w*0.028)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.012)+'">'+esc(c.label)+'</text>' : '') +
+    (numeroLabel ? '<text text-anchor="middle" dy="'+(w*0.014*sz)+'" font-size="'+(w*0.038*sz)+'" fill="#0B141C" font-family="Inter, sans-serif" font-weight="600">'+esc(numeroLabel)+'</text>' : '') +
+    (c.label ? '<text text-anchor="middle" dy="'+(w*0.078*sz)+'" font-size="'+(w*0.028*sz)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.012*sz)+'">'+esc(c.label)+'</text>' : '') +
   '</g>';
 }
 function schemaZoneSVG(z, printMode){
+  const isCircle = z.shape==='cerchio';
+  const geomAttrs = isCircle
+    ? 'cx="'+(z.x+z.w/2)+'" cy="'+(z.y+z.h/2)+'" rx="'+(z.w/2)+'" ry="'+(z.h/2)+'"'
+    : 'x="'+z.x+'" y="'+z.y+'" width="'+z.w+'" height="'+z.h+'"';
+  const tag = isCircle ? 'ellipse' : 'rect';
   if(z.stile==='contorno'){
     // Solo bordo, nessuna tinta: per marcature reali del campo (area di rigore, area
-    // piccola...) invece che zone tattiche colorate. Bianco traslucido sul campo tecnico
-    // scuro, grigio in stampa.
+    // piccola, cerchio di centrocampo...) invece che zone tattiche colorate. Bianco
+    // traslucido sul campo tecnico scuro, grigio in stampa.
     const color = printMode ? '#555' : 'rgba(255,255,255,0.18)';
-    return '<rect class="schema-zone" data-id="'+z.id+'" x="'+z.x+'" y="'+z.y+'" width="'+z.w+'" height="'+z.h+'" fill="none" stroke="'+color+'" stroke-width="0.2"/>';
+    return '<'+tag+' class="schema-zone" data-id="'+z.id+'" '+geomAttrs+' fill="none" stroke="'+color+'" stroke-width="0.2"/>';
   }
-  return '<rect class="schema-zone" data-id="'+z.id+'" x="'+z.x+'" y="'+z.y+'" width="'+z.w+'" height="'+z.h+'" fill="'+z.color+'" fill-opacity="0.22" stroke="'+z.color+'" stroke-width="0.15" stroke-dasharray="0.4,0.3"/>';
+  return '<'+tag+' class="schema-zone" data-id="'+z.id+'" '+geomAttrs+' fill="'+z.color+'" fill-opacity="0.22" stroke="'+z.color+'" stroke-width="0.15" stroke-dasharray="0.4,0.3"/>';
 }
 function smoothPathFromPoints(points){
   if(points.length<2) return '';
@@ -4695,7 +4788,7 @@ function showSchemaGuidaModal(){
   const box = document.getElementById('event-modal-box');
   box.innerHTML =
     '<h3>Guida rapida disegnatore</h3>' +
-    '<p>Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore; sul testo: cambiare dimensione A-/A+). Con giocatore/pallone/porta/portina/cono/testo attivo, clicca sul campo per posizionarlo (il testo chiede subito cosa scrivere); con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo.</p>' +
+    '<p>Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore; su giocatore e testo: cambiare dimensione A-/A+, l\'ultima scelta resta di default per i prossimi giocatori piazzati; sul testo anche sottile/grassetto). Con giocatore/pallone/porta/portina/cono/testo attivo, clicca sul campo per posizionarlo (il testo chiede subito cosa scrivere); con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo. "Layout" sostituisce il disegno con un campo preimpostato (metà campo, campo intero, libero) da cui partire; "Indietro/Avanti" annulla o ripete le ultime modifiche al disegno di questo livello.</p>' +
     '<div class="modal-actions"><button type="button" class="btn btn-primary" onclick="closeEventModal()">Ho capito</button></div>';
   document.getElementById('event-modal-overlay').style.display = 'flex';
 }
@@ -4729,6 +4822,12 @@ function schemaToolbarHTML(livello){
   const lineButtons = lineTypes.map(([key,icon,title])=>
     schemaToolBtn(s.drawMode && s.activeLineType===key, "setSchemaLineTypeAndDraw('"+key+"')", title, icon)
   ).join('');
+  const layoutGroup = schemaToolGroupHTML(
+    '<span class="hint schema-toolbar-label">Layout</span>' +
+    ['meta','intero','libero'].map(key=>
+      '<button type="button" class="btn btn-small" onclick="confirmApplySchemaFieldPreset(\''+key+'\')" title="Sostituisce il disegno con questo layout, punto di partenza per disegnare">'+SCHEMA_FIELD_PRESET_LABELS[key]+'</button>'
+    ).join('')
+  );
   const campoGroup = schemaToolGroupHTML(
     '<span class="hint schema-toolbar-label">Campo (m)</span>' +
     '<input id="schema-ex-larghezza" type="number" step="1" min="1" value="'+Math.round(livello.larghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input schema-property-input" title="Larghezza campo">' +
@@ -4751,6 +4850,11 @@ function schemaToolbarHTML(livello){
     schemaToolBtn(s.eraserMode, 'setSchemaEraserMode()', 'Gomma: clicca un elemento per eliminarlo', SCHEMA_ICON_GOMMA) +
     ((s.drawMode || s.placeMode || s.eraserMode) ? '<button class="btn btn-small" onclick="stopSchemaDrawing()">Termina</button>' : '')
   );
+  const h = state.schema.drawHistory;
+  const historyGroup = schemaToolGroupHTML(
+    '<button type="button" class="btn btn-small" onclick="undoSchemaCampo()" '+(h.index<=0?'disabled':'')+' title="Annulla l\'ultima modifica al disegno">↶ Indietro</button>' +
+    '<button type="button" class="btn btn-small" onclick="redoSchemaCampo()" '+(h.index>=h.stack.length-1?'disabled':'')+' title="Ripeti la modifica annullata">↷ Avanti</button>'
+  );
   const colorGroup =
     '<span class="hint schema-toolbar-label">Colore</span>' + colorSwatches +
     '<span class="schema-color-picker-wrap">' +
@@ -4759,7 +4863,7 @@ function schemaToolbarHTML(livello){
     '</span>';
   return '<div class="schema-toolbar">' +
     '<div class="schema-toolbar-row">' +
-      campoGroup + giocatoriGroup + oggettiGroup + lineeGroup + cancellaGroup +
+      layoutGroup + campoGroup + giocatoriGroup + oggettiGroup + lineeGroup + cancellaGroup + historyGroup +
     '</div>' +
     '<div class="schema-toolbar-row schema-toolbar-row-colors">'+colorGroup+'</div>' +
   '</div>';
@@ -4983,7 +5087,17 @@ function confirmDeleteSchemaExercise(){
 /* ---------- livelli di progressione (stesso esercizio, non un esercizio nuovo) ---------- */
 function switchSchemaLivello(livelloId){
   state.schema.activeLivelloId = livelloId;
+  schemaInitHistoryForLivello(livelloId);
   renderView();
+}
+// Azzera/inizializza la cronologia indietro/avanti del disegno per il livello che sta per
+// diventare attivo, registrando lo stato attuale come primo punto della pila: cosi il primo
+// "Indietro" dopo la prima modifica torna davvero allo stato con cui si è aperto il livello,
+// non a uno stato vuoto.
+function schemaInitHistoryForLivello(livelloId){
+  const e = state.schema.currentExercise;
+  const livello = e ? e.livelli.find(l=>l.id===livelloId) : null;
+  state.schema.drawHistory = { livelloId: livelloId, stack: [livello ? livello.schemaCampo : '{}'], index: 0 };
 }
 async function addSchemaLivello(){
   // Titolo/N.giocatori/misure precompilati dal livello attualmente aperto (invece di
@@ -4997,6 +5111,7 @@ async function addSchemaLivello(){
   if(res.livello){
     state.schema.currentExercise.livelli.push(res.livello);
     state.schema.activeLivelloId = res.livello.id;
+    schemaInitHistoryForLivello(res.livello.id);
     renderView();
   } else alert('Errore: '+(res.error||'sconosciuto'));
 }
@@ -5005,6 +5120,7 @@ async function duplicateSchemaLivello(){
   if(res.livello){
     state.schema.currentExercise.livelli.push(res.livello);
     state.schema.activeLivelloId = res.livello.id;
+    schemaInitHistoryForLivello(res.livello.id);
     renderView();
   } else alert('Errore: '+(res.error||'sconosciuto'));
 }
@@ -5096,15 +5212,47 @@ function stopSchemaDrawing(){
   s.drawMode = false; s.placeMode = null; s.eraserMode = false;
   renderView();
 }
+// Ogni mutazione del disegno (chip/frecce/zone, dei colleghi resizeSchemaChip/deleteSchemaZone/
+// ecc.) passa da qui: è il punto unico dove registrare lo stato nella cronologia indietro/
+// avanti, prima di salvarlo. Un eventuale "futuro" (redo) più avanti nella pila viene troncato,
+// come qualunque cronologia indietro/avanti standard.
+function schemaPushHistory(livelloId, dataStr){
+  const h = state.schema.drawHistory;
+  if(h.livelloId !== livelloId){ state.schema.drawHistory = { livelloId: livelloId, stack: [dataStr], index: 0 }; return; }
+  h.stack = h.stack.slice(0, h.index+1);
+  h.stack.push(dataStr);
+  if(h.stack.length > 50) h.stack.shift(); // limite ragionevole, evita una crescita illimitata
+  h.index = h.stack.length-1;
+}
 async function saveSchemaCampo(data){
   const livelloId = state.schema.activeLivelloId;
-  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, { schemaCampo: JSON.stringify(data) });
+  const dataStr = JSON.stringify(data);
+  schemaPushHistory(livelloId, dataStr);
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, { schemaCampo: dataStr });
   if(res.livello){
     const idx = state.schema.currentExercise.livelli.findIndex(l=>l.id===livelloId);
     if(idx>=0) state.schema.currentExercise.livelli[idx] = res.livello;
     renderView();
   }
 }
+// Indietro/avanti: si muove solo il puntatore nella pila già registrata da schemaPushHistory
+// e si applica quello stato, senza spingere una nuova voce (altrimenti "Indietro" finirebbe
+// per creare a sua volta una nuova mossa "in avanti" nella cronologia).
+async function schemaHistoryGo(delta){
+  const h = state.schema.drawHistory;
+  const newIndex = h.index + delta;
+  if(newIndex < 0 || newIndex >= h.stack.length) return;
+  h.index = newIndex;
+  const livelloId = h.livelloId;
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, { schemaCampo: h.stack[h.index] });
+  if(res.livello){
+    const idx = state.schema.currentExercise.livelli.findIndex(l=>l.id===livelloId);
+    if(idx>=0) state.schema.currentExercise.livelli[idx] = res.livello;
+    renderView();
+  }
+}
+function undoSchemaCampo(){ return schemaHistoryGo(-1); }
+function redoSchemaCampo(){ return schemaHistoryGo(1); }
 function showSchemaChipContextMenu(evt, chipId){
   evt.preventDefault();
   evt.stopPropagation();
@@ -5119,12 +5267,15 @@ function showSchemaChipContextMenu(evt, chipId){
     html += '<div class="context-menu-item" onclick="numberSchemaChip(\''+chipId+'\'); hideContextMenu();">Numera</div>';
     html += '<div class="context-menu-item" onclick="toggleSchemaChipPortiere(\''+chipId+'\'); hideContextMenu();">'+(chip.ruolo==='portiere'?'Rimuovi ruolo portiere':'Segna come portiere')+'</div>';
   }
-  if(isTesto){
+  if(isTesto || chip.tipo==='giocatore'){
     html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
       '<span class="hint">Dimensione</span>' +
-      '<button type="button" class="btn btn-small" onclick="resizeSchemaTextChip(\''+chipId+'\',-0.15); hideContextMenu();">A-</button>' +
-      '<button type="button" class="btn btn-small" onclick="resizeSchemaTextChip(\''+chipId+'\',0.15); hideContextMenu();">A+</button>' +
+      '<button type="button" class="btn btn-small" onclick="resizeSchemaChip(\''+chipId+'\',-0.15); hideContextMenu();">A-</button>' +
+      '<button type="button" class="btn btn-small" onclick="resizeSchemaChip(\''+chipId+'\',0.15); hideContextMenu();">A+</button>' +
     '</div>';
+  }
+  if(isTesto){
+    html += '<div class="context-menu-item" onclick="toggleSchemaTextChipSottile(\''+chipId+'\'); hideContextMenu();">'+(chip.sottile?'Grassetto':'Sottile')+'</div>';
   }
   if(isGoal){
     html += '<div class="context-menu-item" onclick="rotateSchemaChip(\''+chipId+'\',-45); hideContextMenu();">Ruota ↺ 45°</div>';
@@ -5177,11 +5328,22 @@ function rotateSchemaChip(chipId, delta){
   chip.rot = ((chip.rot||0) + delta + 360) % 360;
   saveSchemaCampo(data);
 }
-function resizeSchemaTextChip(chipId, delta){
+function resizeSchemaChip(chipId, delta){
   const data = parseSchemaCampo(schemaActiveLivello());
   const chip = data.chips.find(c=>c.id===chipId);
   if(!chip) return;
-  chip.size = Math.max(0.4, Math.min(3, Math.round(((chip.size||1) + delta)*100)/100));
+  const newSize = Math.max(0.4, Math.min(3, Math.round(((chip.size||1) + delta)*100)/100));
+  chip.size = newSize;
+  // La dimensione scelta resta quella di default per i prossimi giocatori piazzati in
+  // questo disegno (stessa logica del colore attivo): non tocca reimpostarla ogni volta.
+  if(chip.tipo==='giocatore') state.schema.activeGiocatoreSize = newSize;
+  saveSchemaCampo(data);
+}
+function toggleSchemaTextChipSottile(chipId){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const chip = data.chips.find(c=>c.id===chipId);
+  if(!chip) return;
+  chip.sottile = !chip.sottile;
   saveSchemaCampo(data);
 }
 function deleteSchemaChip(chipId){
@@ -5432,7 +5594,11 @@ function attachSchemaFieldInteractions(){
         const dx = p.x-startPt.x, dy = p.y-startPt.y;
         if(Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) moved = true;
         zoneData.x = origX+dx; zoneData.y = origY+dy;
-        zoneEl.setAttribute('x', zoneData.x); zoneEl.setAttribute('y', zoneData.y);
+        if(zoneData.shape==='cerchio'){
+          zoneEl.setAttribute('cx', zoneData.x+zoneData.w/2); zoneEl.setAttribute('cy', zoneData.y+zoneData.h/2);
+        } else {
+          zoneEl.setAttribute('x', zoneData.x); zoneEl.setAttribute('y', zoneData.y);
+        }
       }
       function onUp(){
         svg.removeEventListener('pointermove', onMove);
@@ -5563,7 +5729,11 @@ function attachSchemaFieldInteractions(){
           return;
         }
         const data = parseSchemaCampo(schemaActiveLivello());
-        data.chips.push({ id: uid(), x:p.x, y:p.y, tipo:s.placeMode, color:s.activeColor, numero:null, label:'' });
+        // I nuovi giocatori nascono con l'ultima dimensione scelta (A-/A+ dal menu
+        // contestuale), non sempre 1: cosi non tocca reimpostarla per ognuno mentre si
+        // compone una formazione con giocatori volutamente più grandi/piccoli.
+        const size = s.placeMode==='giocatore' ? (s.activeGiocatoreSize||1) : 1;
+        data.chips.push({ id: uid(), x:p.x, y:p.y, tipo:s.placeMode, color:s.activeColor, numero:null, label:'', size:size });
         saveSchemaCampo(data);
       }
       svg.addEventListener('pointerup', onUp);
