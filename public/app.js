@@ -185,6 +185,7 @@ let state = {
     activeLineType: 'passaggio',
     livelloPicker: null,
     duplicatePicker: null,
+    pendingBlockTarget: null,
   }
 };
 let modalConfirmCallback = null;
@@ -5702,6 +5703,56 @@ async function loadSchemaSessionDetail(id){
   state.schema.currentSession = res.session || null;
   state.schema.sessionId = id;
 }
+// Riga di un esercizio sequenziale normale (slot con un solo item) — identica a prima
+// dell'introduzione dei blocchi paralleli, solo con le frecce che spostano lo SLOT (vedi
+// moveSchemaSessionSlot) invece del singolo item.
+function schemaSessionItemRowHTML(item, slotIdx, slotsLength, canEditSedute){
+  const titolo = item.livello ? item.livello.titolo : item.titoloSnapshot;
+  const nomeLivello = schemaLivelloLabel({ nome: item.livello ? item.livello.nome : item.livelloSnapshot });
+  return '<div class="schema-session-item-row">' +
+    '<div><strong>'+esc(titolo)+'</strong><div class="hint">'+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div></div>' +
+    '<input type="number" min="1" placeholder="min" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
+    '<div class="pitch-actions">' +
+      (canEditSedute && slotIdx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionSlot('+item.ordine+', -1)">↑</button>' : '') +
+      (canEditSedute && slotIdx<slotsLength-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionSlot('+item.ordine+', 1)">↓</button>' : '') +
+      (item.livello && can('edit_esercizi') ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.livello.esercizioId+'\')">Nota</button>' : '') +
+      (canEditSedute ? '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi</button>' : '') +
+    '</div>' +
+  '</div>';
+}
+// Card di un blocco di lavoro parallelo: N gruppi affiancati (ognuno un esercizio scelto
+// dalla libreria), col toggle "si invertono" e i pulsanti per aggiungere un altro gruppo o
+// eliminare l'intero blocco. Ogni gruppo si rimuove singolarmente con lo stesso pulsante
+// "Rimuovi" degli esercizi normali (l'API scioglie automaticamente il blocco se resta un
+// solo gruppo, vedi DELETE .../items/[itemId]).
+function schemaSessionBlockRowHTML(slot, slotIdx, slotsLength, canEditSedute){
+  const blocco = slot.items[0].blocco || { invertono:false };
+  const groupsHtml = slot.items.map(function(item){
+    const titolo = item.livello ? item.livello.titolo : item.titoloSnapshot;
+    const nomeLivello = schemaLivelloLabel({ nome: item.livello ? item.livello.nome : item.livelloSnapshot });
+    return '<div class="schema-block-group">' +
+      '<div class="hint">Gruppo '+(item.gruppo||'?')+'</div>' +
+      '<strong>'+esc(titolo)+'</strong>' +
+      '<div class="hint">'+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div>' +
+      '<input type="number" min="1" placeholder="min" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
+      (canEditSedute ? '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi gruppo</button>' : '') +
+    '</div>';
+  }).join('');
+  return '<div class="schema-block-card">' +
+    '<div class="schema-block-head">' +
+      '<strong>⇄ Blocco parallelo</strong>' +
+      (canEditSedute ? '<label class="schema-block-invertono"><input type="checkbox" '+(blocco.invertono?'checked':'')+' onchange="toggleSchemaBlockInvertono(\''+blocco.id+'\', this.checked)"> I gruppi si invertono a metà (tempo raddoppiato)</label>' : (blocco.invertono ? '<span class="hint">I gruppi si invertono a metà (tempo raddoppiato)</span>' : '')) +
+      '<div class="pitch-actions">' +
+        (canEditSedute && slotIdx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionSlot('+slot.ordine+', -1)">↑</button>' : '') +
+        (canEditSedute && slotIdx<slotsLength-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionSlot('+slot.ordine+', 1)">↓</button>' : '') +
+        (canEditSedute ? '<button class="btn btn-small btn-danger" onclick="confirmRemoveSchemaSessionBlock(\''+blocco.id+'\')">Elimina blocco</button>' : '') +
+      '</div>' +
+    '</div>' +
+    '<div class="schema-block-groups">' + groupsHtml +
+      (canEditSedute ? '<button class="btn btn-small schema-block-add-group" onclick="pickSchemaBlockTarget(\''+blocco.id+'\')">+ Aggiungi gruppo</button>' : '') +
+    '</div>' +
+  '</div>';
+}
 function renderSchemaSessionBuilder(){
   const s = state.schema;
   const sess = s.currentSession;
@@ -5757,31 +5808,36 @@ function renderSchemaSessionBuilder(){
         ) : '') +
       '</div>' +
     '</div>' +
-    '<div class="grid-2">' +
-      '<div class="card'+(canEditSedute?'':' readonly-block')+'">' +
-        '<h3>Libreria esercizi</h3>' +
-        '<div class="schema-exercise-grid schema-exercise-grid-compact">' + s.exercises.map(e=>schemaExerciseCardHTML(e, "addSchemaSessionItem('"+e.id+"')", true)).join('') + '</div>' +
-      '</div>' +
-      '<div class="card">' +
-        '<h3>Esercizi nella seduta</h3>' +
-        (sess.items.length===0 ? '<p class="hint">Nessun esercizio aggiunto. Clicca un esercizio nella libreria per aggiungerlo.</p>' :
-          sess.items.map((item,idx)=>{
-            const titolo = item.livello ? item.livello.titolo : item.titoloSnapshot;
-            const nomeLivello = schemaLivelloLabel({ nome: item.livello ? item.livello.nome : item.livelloSnapshot });
-            return '<div class="schema-session-item-row">' +
-              '<div><strong>'+esc(titolo)+'</strong><div class="hint">'+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div></div>' +
-              '<input type="number" min="1" placeholder="min" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
-              '<div class="pitch-actions">' +
-                (canEditSedute && idx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', -1)">↑</button>' : '') +
-                (canEditSedute && idx<sess.items.length-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionItem(\''+item.id+'\', 1)">↓</button>' : '') +
-                (item.livello && can('edit_esercizi') ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.livello.esercizioId+'\')">Nota</button>' : '') +
-                (canEditSedute ? '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi</button>' : '') +
-              '</div>' +
-            '</div>';
-          }).join('')
-        ) +
-      '</div>' +
-    '</div>' +
+    (function(){
+      const slots = schemaSessionSlots(sess.items);
+      const pending = state.schema.pendingBlockTarget;
+      // Se è attiva una scelta "aggiungi esercizio a questo blocco", la libreria si comporta
+      // normalmente ma un banner in cima chiarisce dove finirà il click, con un modo per
+      // annullare e tornare ad aggiungere in coda alla seduta come di consueto.
+      const pendingBanner = pending
+        ? '<div class="schema-block-pending-banner">Sto scegliendo l\'esercizio per un gruppo del blocco parallelo. <button type="button" class="btn btn-small" onclick="cancelSchemaBlockTarget()">Annulla</button></div>'
+        : '';
+      const librarySection =
+        '<div class="card'+(canEditSedute?'':' readonly-block')+'">' +
+          '<h3>Libreria esercizi</h3>' +
+          pendingBanner +
+          '<div class="schema-exercise-grid schema-exercise-grid-compact">' + s.exercises.map(e=>schemaExerciseCardHTML(e, "addSchemaSessionItem('"+e.id+"')", true)).join('') + '</div>' +
+        '</div>';
+      const sedutaSection =
+        '<div class="card">' +
+          '<div class="card-header-row"><h3>Esercizi nella seduta</h3>' +
+            (canEditSedute ? '<button class="btn btn-small" onclick="addSchemaSessionBlock()" title="Due o più esercizi svolti nello stesso momento invece che in sequenza">+ Blocco parallelo</button>' : '') +
+          '</div>' +
+          (slots.length===0 ? '<p class="hint">Nessun esercizio aggiunto. Clicca un esercizio nella libreria per aggiungerlo.</p>' :
+            slots.map(function(slot, idx){
+              return slot.items.length>1
+                ? schemaSessionBlockRowHTML(slot, idx, slots.length, canEditSedute)
+                : schemaSessionItemRowHTML(slot.items[0], idx, slots.length, canEditSedute);
+            }).join('')
+          ) +
+        '</div>';
+      return '<div class="grid-2">' + librarySection + sedutaSection + '</div>';
+    })() +
     '<div class="card">' +
       '<h3>Anteprima seduta (come viene esportata)</h3>' +
       '<p class="hint">Si aggiorna da sola man mano che aggiungi esercizi. Ogni foglio bianco è una pagina reale dell\'esportazione.</p>' +
@@ -5822,7 +5878,12 @@ async function addSchemaSessionItemWithLivello(livelloId){
   let livello = null;
   state.schema.exercises.some(e=>{ const l = e.livelli.find(x=>x.id===livelloId); if(l){ livello = l; return true; } return false; });
   const durataMinuti = livello ? livello.ripetizioni*livello.durataRipetizione : null;
-  await apiPost('/api/schema/sessions/'+state.schema.sessionId+'/items', { livelloId, durataMinuti });
+  // Se è attiva una scelta "sto aggiungendo un gruppo a questo blocco parallelo" (vedi
+  // addSchemaSessionBlock/pickSchemaBlockTarget), l'esercizio finisce in quel blocco invece
+  // che in coda alla seduta — consumato subito dopo, un solo utilizzo per volta.
+  const blockId = state.schema.pendingBlockTarget ? state.schema.pendingBlockTarget.blockId : null;
+  state.schema.pendingBlockTarget = null;
+  await apiPost('/api/schema/sessions/'+state.schema.sessionId+'/items', { livelloId, durataMinuti, blockId });
   await loadSchemaSessionDetail(state.schema.sessionId);
   renderView();
 }
@@ -5842,16 +5903,65 @@ async function setSchemaSessionItemDurata(itemId, value){
   await loadSchemaSessionDetail(state.schema.sessionId);
   renderView();
 }
-async function moveSchemaSessionItem(itemId, dir){
-  const items = state.schema.currentSession.items;
-  const idx = items.findIndex(i=>i.id===itemId);
+// Raggruppa gli item della seduta in "slot" per ordine: uno slot con un solo item è un
+// esercizio sequenziale normale, uno slot con 2+ item (stesso blockId) è un blocco di lavoro
+// parallelo — vedi SessionBlock/SessionItem.blockId in prisma/schema.prisma. Gli item sono
+// già ordinati [ordine, gruppo] dal server, quindi accorpare le righe consecutive con lo
+// stesso ordine basta.
+function schemaSessionSlots(items){
+  const slots = [];
+  let cur = null;
+  items.forEach(function(it){
+    if(cur && cur.ordine===it.ordine) cur.items.push(it);
+    else { cur = { ordine: it.ordine, blockId: it.blockId||null, items:[it] }; slots.push(cur); }
+  });
+  return slots;
+}
+// Sposta uno SLOT intero (un item singolo o tutti i gruppi di un blocco insieme) scambiando
+// il suo "ordine" con quello dello slot adiacente — così un blocco si muove come un'unica
+// unità nella sequenza, mai un suo singolo gruppo separatamente dagli altri.
+async function moveSchemaSessionSlot(ordine, dir){
+  const slots = schemaSessionSlots(state.schema.currentSession.items);
+  const idx = slots.findIndex(s=>s.ordine===ordine);
+  if(idx<0) return;
   const swapIdx = idx+dir;
-  if(swapIdx<0 || swapIdx>=items.length) return;
-  const a = items[idx], b = items[swapIdx];
-  await apiPatch('/api/schema/sessions/'+state.schema.sessionId+'/items/'+a.id, { ordine: b.ordine });
-  await apiPatch('/api/schema/sessions/'+state.schema.sessionId+'/items/'+b.id, { ordine: a.ordine });
+  if(swapIdx<0 || swapIdx>=slots.length) return;
+  const a = slots[idx], b = slots[swapIdx];
+  await Promise.all(
+    a.items.map(function(it){ return apiPatch('/api/schema/sessions/'+state.schema.sessionId+'/items/'+it.id, { ordine: b.ordine }); })
+    .concat(b.items.map(function(it){ return apiPatch('/api/schema/sessions/'+state.schema.sessionId+'/items/'+it.id, { ordine: a.ordine }); }))
+  );
   await loadSchemaSessionDetail(state.schema.sessionId);
   renderView();
+}
+async function addSchemaSessionBlock(){
+  const res = await apiPost('/api/schema/sessions/'+state.schema.sessionId+'/blocks', {});
+  if(res.block){
+    // Il blocco nasce vuoto: si passa subito in modalità "scegli il primo esercizio",
+    // così il coach clicca direttamente una card della libreria per riempire il Gruppo 1.
+    state.schema.pendingBlockTarget = { blockId: res.block.id };
+    renderView();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
+}
+function pickSchemaBlockTarget(blockId){
+  state.schema.pendingBlockTarget = { blockId: blockId };
+  renderView();
+}
+function cancelSchemaBlockTarget(){
+  state.schema.pendingBlockTarget = null;
+  renderView();
+}
+async function toggleSchemaBlockInvertono(blockId, checked){
+  await apiPatch('/api/schema/sessions/'+state.schema.sessionId+'/blocks/'+blockId, { invertono: checked });
+  await loadSchemaSessionDetail(state.schema.sessionId);
+  renderView();
+}
+function confirmRemoveSchemaSessionBlock(blockId){
+  showConfirmModal('Eliminare questo blocco parallelo? Vengono rimossi tutti i suoi gruppi.', async function(){
+    await apiDelete('/api/schema/sessions/'+state.schema.sessionId+'/blocks/'+blockId);
+    await loadSchemaSessionDetail(state.schema.sessionId);
+    renderView();
+  });
 }
 
 /* ---------- esportazione seduta: immagine / PDF / WhatsApp ---------- */
@@ -5922,6 +6032,32 @@ function schemaSessionExportItemHTML(item, idx){
     '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(item.livello, false, true) + '</div>' +
   '</div>';
 }
+// Un blocco di lavoro parallelo stampa i suoi gruppi affiancati in UNA sola voce numerata
+// (non una per gruppo, coerente con "senza ripetere l'intero blocco nella stampa"): la nota
+// sui gruppi che si invertono basta da sola a comunicare che il tempo è raddoppiato, senza
+// bisogno di duplicare le righe.
+function schemaSessionExportBlockHTML(slot, idx){
+  const blocco = slot.items[0].blocco || { invertono:false };
+  const columns = slot.items.map(function(item){
+    if(!item.livello) return '<div class="schema-export-block-col"><h4>Gruppo '+(item.gruppo||'?')+'</h4><p class="hint">Esercizio non più in libreria.</p></div>';
+    const ex = item.livello.esercizio;
+    const cat = schemaCategoriaInfo(ex.categoria);
+    const lv = item.livello;
+    const totaleCalcolato = Math.round(lv.ripetizioni*lv.durataRipetizione + Math.max(lv.ripetizioni-1,0)*(lv.recuperoSecondi||0)/60);
+    const tempoTotale = item.durataMinuti!=null ? item.durataMinuti : totaleCalcolato;
+    return '<div class="schema-export-block-col">' +
+      '<h4>Gruppo '+(item.gruppo||'?')+' — '+esc(lv.titolo)+'</h4>' +
+      '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(lv, false, true) + '</div>' +
+      '<p class="hint">'+tempoTotale+' min · '+lv.ripetizioni+'×'+lv.durataRipetizione+' min · recupero '+lv.recuperoSecondi+'s</p>' +
+      (cat ? '<p class="hint">'+esc(cat.label)+'</p>' : '') +
+      (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
+    '</div>';
+  }).join('');
+  return '<div class="schema-export-item schema-export-block">' +
+    '<h3>'+(idx+1)+'. Blocco parallelo'+(blocco.invertono ? ' <span class="hint">⇄ i gruppi si invertono a metà, tempo raddoppiato</span>' : '')+'</h3>' +
+    '<div class="schema-export-block-cols">' + columns + '</div>' +
+  '</div>';
+}
 // Invece di rimpicciolire tutto per stare su una sola facciata, si impagina su più fogli
 // A4 leggibili: il primo ha meta+ruoli coperti (che occupano già spazio) + 2 esercizi, i
 // successivi 3 esercizi ciascuno visto che hanno tutta la pagina libera. Ogni voce
@@ -5936,7 +6072,11 @@ function schemaSessionExportPages(sess){
   if(sess.caricoTotale!=null) metaParts.push('Carico '+sess.caricoTotale);
   metaParts.push('Durata '+sess.durataTotale+' min');
 
-  const itemsHtml = sess.items.map((item,idx)=>schemaSessionExportItemHTML(item, idx));
+  // Un blocco parallelo conta come UNA voce nella sequenza/impaginazione (2 poi 3 per
+  // pagina), non una per gruppo: occupa lo spazio di un esercizio normale, solo più largo.
+  const itemsHtml = schemaSessionSlots(sess.items).map((slot, idx)=>
+    slot.items.length>1 ? schemaSessionExportBlockHTML(slot, idx) : schemaSessionExportItemHTML(slot.items[0], idx)
+  );
   const pages = [];
 
   const firstChunk = itemsHtml.slice(0, 2);

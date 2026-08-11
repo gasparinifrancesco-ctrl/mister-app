@@ -500,6 +500,17 @@
   .schema-session-row:last-child{ border-bottom:none; }
   .schema-session-item-row{ display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
   .schema-session-item-row:last-child{ border-bottom:none; }
+  /* Blocco di lavoro parallelo nel costruttore seduta: card a sé (non una riga come gli
+     esercizi sequenziali) coi gruppi affiancati, cosi si distingue a colpo d'occhio dal
+     resto della lista. */
+  .schema-block-card{ border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin:8px 0; background:var(--panel-2); }
+  .schema-block-head{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+  .schema-block-head .pitch-actions{ margin-left:auto; }
+  .schema-block-invertono{ display:flex; align-items:center; gap:6px; font-size:0.82rem; color:var(--text-dim); cursor:pointer; }
+  .schema-block-groups{ display:flex; flex-wrap:wrap; gap:10px; align-items:stretch; }
+  .schema-block-group{ flex:1 1 160px; min-width:150px; border:1px solid var(--border); border-radius:6px; padding:8px 10px; background:var(--panel); display:flex; flex-direction:column; gap:4px; }
+  .schema-block-add-group{ align-self:center; }
+  .schema-block-pending-banner{ display:flex; align-items:center; gap:10px; background:var(--accent-wash); border:1px solid var(--accent); border-radius:6px; padding:8px 10px; margin-bottom:10px; font-size:0.85rem; }
   .star-input-btn:hover{ transform:scale(1.15); }
   .schema-tag-chip-row{ display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; }
   .schema-tag-chip{ display:inline-flex; align-items:center; gap:4px; font-size:0.76rem; padding:3px 9px; border-radius:999px; background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim); cursor:pointer; }
@@ -544,6 +555,14 @@
   .schema-export-item-diagram{ flex-shrink:0; width:260px; margin-top:0; }
   .schema-export-field{ max-width:360px; margin-top:8px; }
   @media (max-width:640px){ .schema-export-item{ flex-direction:column; } .schema-export-item-diagram{ width:100%; } }
+  /* Blocco parallelo in stampa/anteprima: i gruppi affiancati in colonne invece del layout
+     testo-a-sinistra/disegno-a-destra di un esercizio singolo, cosi si vede a colpo d'occhio
+     che vanno svolti nello stesso momento. */
+  .schema-export-block{ flex-direction:column; }
+  .schema-export-block-cols{ display:flex; gap:14px; width:100%; }
+  .schema-export-block-col{ flex:1; min-width:0; border:1px solid var(--border); border-radius:6px; padding:8px 10px; }
+  .schema-export-block-col .schema-export-item-diagram{ width:100%; }
+  @media (max-width:640px){ .schema-export-block-cols{ flex-direction:column; } }
   .schema-dim-input{ width:52px; text-align:center; }
   /* Campo (larghezza/lunghezza), Ripetizioni, Durata, Recupero: stessa altezza, stesso
      sfondo, stesso radius, cosi si leggono come un unico gruppo di controlli coerenti

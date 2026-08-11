@@ -37,6 +37,10 @@ export async function PATCH(request, { params }) {
   return Response.json({ item });
 }
 
+// Se l'item rimosso è l'unico che ancora tiene in piedi un blocco parallelo (restava un solo
+// gruppo su due), il blocco non ha più senso come "lavoro parallelo": il membro superstite
+// torna a essere un item sequenziale normale (blockId/gruppo azzerati) e il blocco si elimina,
+// invece di lasciare in giro un blocco fantasma con un solo gruppo.
 export async function DELETE(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
@@ -46,6 +50,18 @@ export async function DELETE(request, { params }) {
   const existing = await ownedItem(id, itemId, session.userId);
   if (!existing) return Response.json({ error: 'not found' }, { status: 404 });
 
+  const blockId = existing.blockId;
   await prisma.sessionItem.delete({ where: { id: itemId } });
+
+  if (blockId) {
+    const remaining = await prisma.sessionItem.findMany({ where: { blockId } });
+    if (remaining.length === 1) {
+      await prisma.sessionItem.update({ where: { id: remaining[0].id }, data: { blockId: null, gruppo: null } });
+      await prisma.sessionBlock.delete({ where: { id: blockId } });
+    } else if (remaining.length === 0) {
+      await prisma.sessionBlock.delete({ where: { id: blockId } });
+    }
+  }
+
   return Response.json({ ok: true });
 }

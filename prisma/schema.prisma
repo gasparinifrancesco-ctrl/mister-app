@@ -221,9 +221,27 @@ model Session {
 
   user            User             @relation(fields: [userId], references: [id])
   items           SessionItem[]
+  blocchi         SessionBlock[]
   considerazioni  Considerazione[]
 
   @@map("sessions")
+}
+
+// Blocco di lavoro parallelo: N esercizi (uno per "gruppo") svolti nello stesso momento
+// invece che in sequenza. Non ha un proprio campo ordine: la sua posizione nella seduta è
+// quella (contigua) dei SessionItem che vi appartengono — vedi SessionItem.blockId/gruppo.
+// "invertono" segnala che i gruppi si scambiano a metà seduta (il tempo di lavoro raddoppia
+// nel calcolo del totale, senza duplicare le righe in stampa — vedi withComputed in
+// app/api/schema/sessions/[id]/route.js).
+model SessionBlock {
+  id        String  @id @default(cuid())
+  sessionId String
+  invertono Boolean @default(false)
+
+  session Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  items   SessionItem[]
+
+  @@map("session_blocks")
 }
 
 // Rimpiazza il vecchio Session.note (un solo blocco di testo, implicitamente scritto
@@ -261,9 +279,16 @@ model SessionItem {
   livelloSnapshot String
   ordine          Int     @default(0)
   durataMinuti    Int?
+  // Se valorizzato, l'item fa parte di un blocco di lavoro parallelo (blockId) nella
+  // posizione "gruppo" (1, 2, 3...) tra quelli che lavorano nello stesso momento. Gli item
+  // dello stesso blocco devono avere ordine contiguo: la UI li raggruppa camminando la
+  // lista ordinata per ordine e accorpando le righe consecutive con lo stesso blockId.
+  blockId         String?
+  gruppo          Int?
 
-  session Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  livello Livello? @relation(fields: [livelloId], references: [id], onDelete: SetNull)
+  session Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  livello Livello?      @relation(fields: [livelloId], references: [id], onDelete: SetNull)
+  blocco  SessionBlock? @relation(fields: [blockId], references: [id], onDelete: SetNull)
 
   @@map("session_items")
 }

@@ -8,25 +8,44 @@ async function loadSession(id, userId) {
     where: { id, userId },
     include: {
       items: {
-        orderBy: { ordine: 'asc' },
-        include: { livello: { include: { esercizio: true } } },
+        orderBy: [{ ordine: 'asc' }, { gruppo: 'asc' }],
+        include: { livello: { include: { esercizio: true } }, blocco: true },
       },
       considerazioni: { orderBy: { creataIl: 'asc' } },
     },
   });
 }
 
+function schemaItemDurata(item) {
+  // Il livello può non esistere più (esercizio eliminato dopo l'uso): in quel caso
+  // conta solo la durata già salvata su questo item, senza una durata tipica di fallback.
+  const durataTipica = item.livello ? item.livello.ripetizioni * item.livello.durataRipetizione : 0;
+  return item.durataMinuti ?? durataTipica;
+}
+
 // Carico secondo il metodo session-RPE (Foster): un solo RPE (1-10) per l'intera seduta,
-// moltiplicato per la durata totale di lavoro pianificata (somma dei singoli esercizi).
-// Nessun calcolo per-esercizio: il carico è sempre e solo una proprietà della seduta.
+// moltiplicato per la durata totale di lavoro pianificata. Gli item con lo stesso "ordine"
+// condividono uno slot: se sono 2+ (un blocco di lavoro parallelo, vedi SessionBlock) NON si
+// sommano tra loro, conta solo il più lungo — raddoppiato se il blocco è a gruppi che si
+// invertono a metà seduta (blocco.invertono). Un singolo item per slot si comporta come oggi.
 async function withComputed(sessionRow, userId) {
   if (!sessionRow) return sessionRow;
-  const durataTotale = sessionRow.items.reduce((s, item) => {
-    // Il livello può non esistere più (esercizio eliminato dopo l'uso): in quel caso
-    // conta solo la durata già salvata su questo item, senza una durata tipica di fallback.
-    const durataTipica = item.livello ? item.livello.ripetizioni * item.livello.durataRipetizione : 0;
-    return s + (item.durataMinuti ?? durataTipica);
-  }, 0);
+  const slots = new Map();
+  sessionRow.items.forEach((item) => {
+    const arr = slots.get(item.ordine) || [];
+    arr.push(item);
+    slots.set(item.ordine, arr);
+  });
+  let durataTotale = 0;
+  slots.forEach((group) => {
+    if (group.length <= 1) {
+      durataTotale += schemaItemDurata(group[0]);
+    } else {
+      const maxDur = Math.max(...group.map(schemaItemDurata));
+      const invertono = group[0].blocco ? group[0].blocco.invertono : false;
+      durataTotale += invertono ? maxDur * 2 : maxDur;
+    }
+  });
   const caricoTotale = sessionRow.rpe != null ? sessionRow.rpe * durataTotale : null;
   const pastAllenamentoIds = await getPastAllenamentoIds(userId);
   const stato = schemaSessionStato(sessionRow, pastAllenamentoIds);
