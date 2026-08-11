@@ -33,6 +33,10 @@ export async function POST(request, { params }) {
     base = await prisma.livello.findFirst({ where: { id: body.duplicateFrom, esercizioId: id } });
   }
 
+  // Titolo/N.giocatori/misure campo: se è una duplicazione (base presente) si copiano dal
+  // livello di partenza; altrimenti li manda il client (di norma pre-compilati con i valori
+  // del livello attualmente aperto, così "+ Livello vuoto" non parte da un campo 0x0 senza
+  // giocatori) — sempre modificabili in seguito senza incidere sul livello di origine.
   const livello = await prisma.livello.create({
     data: {
       esercizioId: id,
@@ -43,6 +47,10 @@ export async function POST(request, { params }) {
       ripetizioni: base ? base.ripetizioni : undefined,
       durataRipetizione: base ? base.durataRipetizione : undefined,
       recuperoSecondi: base ? base.recuperoSecondi : undefined,
+      titolo: base ? base.titolo : (typeof body.titolo === 'string' && body.titolo.trim() ? body.titolo.trim() : ''),
+      numeroGiocatoriBase: base ? base.numeroGiocatoriBase : (body.numeroGiocatoriBase ? Number(body.numeroGiocatoriBase) : 8),
+      larghezzaCampo: base ? base.larghezzaCampo : (body.larghezzaCampo ? Number(body.larghezzaCampo) : 20),
+      lunghezzaCampo: base ? base.lunghezzaCampo : (body.lunghezzaCampo ? Number(body.lunghezzaCampo) : 28),
     },
   });
 

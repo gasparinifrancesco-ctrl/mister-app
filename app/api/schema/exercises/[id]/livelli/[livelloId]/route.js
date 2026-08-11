@@ -29,11 +29,15 @@ export async function PATCH(request, { params }) {
 
   const data = {};
   if (typeof body.nome === 'string') data.nome = body.nome;
+  if (typeof body.titolo === 'string') data.titolo = body.titolo;
   if (typeof body.descrizione === 'string') data.descrizione = body.descrizione;
   if (typeof body.schemaCampo === 'string') data.schemaCampo = body.schemaCampo;
   if (typeof body.ripetizioni !== 'undefined') data.ripetizioni = Number(body.ripetizioni);
   if (typeof body.durataRipetizione !== 'undefined') data.durataRipetizione = Number(body.durataRipetizione);
   if (typeof body.recuperoSecondi !== 'undefined') data.recuperoSecondi = Number(body.recuperoSecondi);
+  if (typeof body.numeroGiocatoriBase !== 'undefined') data.numeroGiocatoriBase = Number(body.numeroGiocatoriBase);
+  if (typeof body.larghezzaCampo !== 'undefined') data.larghezzaCampo = Number(body.larghezzaCampo);
+  if (typeof body.lunghezzaCampo !== 'undefined') data.lunghezzaCampo = Number(body.lunghezzaCampo);
 
   const livello = await prisma.livello.update({ where: { id: livelloId }, data });
   return Response.json({ livello });

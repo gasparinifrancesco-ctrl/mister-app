@@ -72,12 +72,8 @@ export async function PATCH(request, { params }) {
   }
 
   const data = {};
-  if (typeof body.titolo === 'string') data.titolo = body.titolo;
   if (typeof body.descrizione === 'string') data.descrizione = body.descrizione;
   if (Array.isArray(body.tags)) data.tags = JSON.stringify(body.tags);
-  if (typeof body.numeroGiocatoriBase !== 'undefined') data.numeroGiocatoriBase = Number(body.numeroGiocatoriBase);
-  if (typeof body.larghezzaCampo !== 'undefined') data.larghezzaCampo = Number(body.larghezzaCampo);
-  if (typeof body.lunghezzaCampo !== 'undefined') data.lunghezzaCampo = Number(body.lunghezzaCampo);
   if (typeof body.categoria === 'string') {
     if (!(await isValidCategoria(session.userId, body.categoria))) {
       return Response.json({ error: 'categoria non valida' }, { status: 400 });

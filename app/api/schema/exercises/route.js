@@ -25,8 +25,10 @@ export async function GET(request) {
     where: { userId: session.userId, ...(categoriaParam ? { categoria: categoriaParam } : {}) },
     include: {
       // schemaCampo del primo livello serve alla card libreria per mostrare l'anteprima
-      // in miniatura del disegno, invece di una lista "cieca" di soli titoli.
-      livelli: { select: { id: true, nome: true, ripetizioni: true, durataRipetizione: true, recuperoSecondi: true, schemaCampo: true }, orderBy: { ordine: 'asc' } },
+      // in miniatura del disegno, invece di una lista "cieca" di soli titoli. titolo/
+      // numeroGiocatoriBase/larghezzaCampo/lunghezzaCampo sono per-livello (indipendenti
+      // tra loro): la card mostra sempre quelli del primo livello come rappresentativi.
+      livelli: { select: { id: true, nome: true, titolo: true, numeroGiocatoriBase: true, larghezzaCampo: true, lunghezzaCampo: true, ripetizioni: true, durataRipetizione: true, recuperoSecondi: true, schemaCampo: true }, orderBy: { ordine: 'asc' } },
     },
     orderBy: { creatoIl: 'desc' },
   });
@@ -35,7 +37,9 @@ export async function GET(request) {
     ? exercises.filter((e) => {
         const s = search.toLowerCase();
         const tags = JSON.parse(e.tags || '[]');
-        return e.titolo.toLowerCase().includes(s) || tags.some((t) => t.toLowerCase().includes(s));
+        // Il titolo ora vive sul livello (indipendente per progressione): un esercizio
+        // compare se la ricerca combacia con il titolo di ALMENO uno dei suoi livelli.
+        return e.livelli.some((l) => l.titolo.toLowerCase().includes(s)) || tags.some((t) => t.toLowerCase().includes(s));
       })
     : exercises;
 
@@ -71,21 +75,25 @@ export async function POST(request) {
   }
 
   // Nessun calcolo automatico dalle dimensioni: un default ragionevole, sempre modificabile.
+  // Titolo/N.giocatori/misure campo vivono sul primo livello (indipendenti da eventuali
+  // livelli aggiunti dopo), non sull'esercizio.
   const exercise = await prisma.exercise.create({
     data: {
       userId: session.userId,
-      titolo,
       descrizione: descrizione || '',
-      numeroGiocatoriBase: Number(numeroGiocatoriBase),
-      larghezzaCampo: larghezzaCampo ? Number(larghezzaCampo) : 20,
-      lunghezzaCampo: lunghezzaCampo ? Number(lunghezzaCampo) : 28,
       tags: JSON.stringify(Array.isArray(tags) ? tags : []),
       categoria: categoria || '',
       // Il livello nasce con lo svolgimento vuoto: la descrizione generale (perché/a cosa
       // serve) e lo svolgimento del livello (come si fa, l'unico stampato) sono due campi
       // con scopi diversi, non uno la copia dell'altro.
       livelli: {
-        create: [{ nome: 'A', ordine: 0, descrizione: '' }],
+        create: [{
+          nome: 'A', ordine: 0, descrizione: '',
+          titolo,
+          numeroGiocatoriBase: Number(numeroGiocatoriBase),
+          larghezzaCampo: larghezzaCampo ? Number(larghezzaCampo) : 20,
+          lunghezzaCampo: lunghezzaCampo ? Number(lunghezzaCampo) : 28,
+        }],
       },
     },
     include: { livelli: true },

@@ -4340,12 +4340,12 @@ function schemaExerciseCardHTML(e, onclickAttr, compact){
   const primoLivello = e.livelli[0];
   const cls = 'schema-exercise-card' + (compact ? ' schema-exercise-card-compact' : '');
   return '<div class="'+cls+'" style="'+(cat?'border-left-color:'+cat.color+';':'')+'" onclick="'+onclickAttr+'">' +
-    '<div class="schema-exercise-card-thumb">' + (primoLivello ? renderSchemaFieldSVG(e, primoLivello, false) : '') + '</div>' +
+    '<div class="schema-exercise-card-thumb">' + (primoLivello ? renderSchemaFieldSVG(primoLivello, false) : '') + '</div>' +
     '<div class="schema-exercise-card-body">' +
-      '<div class="schema-exercise-card-head"><strong>'+esc(e.titolo)+'</strong>'+badge+'</div>' +
+      '<div class="schema-exercise-card-head"><strong>'+esc(primoLivello ? primoLivello.titolo : '')+'</strong>'+badge+'</div>' +
       '<div class="schema-exercise-card-meta">' +
         (cat ? '<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>' : '<span class="hint">Non categorizzato</span>') +
-        '<span class="hint">'+e.numeroGiocatoriBase+' giocatori</span>' +
+        '<span class="hint">'+(primoLivello ? primoLivello.numeroGiocatoriBase : '—')+' giocatori</span>' +
         (durata!=null ? '<span class="hint" title="Tempo totale, recuperi tra le serie inclusi">'+durata+' min tot.</span>' : '') +
       '</div>' +
       '<div class="hint">'+(tags.length ? esc(tags.join(', ')) : 'Nessuna etichetta')+'</div>' +
@@ -4667,9 +4667,9 @@ function schemaArrowGroupSVG(a, w, numero, printMode){
     '<circle class="schema-arrow-handle" data-end="2" cx="'+a.x2+'" cy="'+a.y2+'" r="'+(w*0.014)+'" fill="'+handleColor+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>';
   return '<g class="schema-arrow" data-id="'+a.id+'"'+(numero!=null?' data-numero="'+numero+'"':'')+'>'+visible+hit+badge+handles+'</g>';
 }
-function renderSchemaFieldSVG(exercise, livello, withId, printMode){
+function renderSchemaFieldSVG(livello, withId, printMode){
   const data = parseSchemaCampo(livello);
-  const w = exercise.larghezzaCampo || 20, h = exercise.lunghezzaCampo || 28;
+  const w = livello.larghezzaCampo || 20, h = livello.lunghezzaCampo || 28;
   const zonesSvg = data.zones.map(z=>schemaZoneSVG(z, printMode)).join('');
   const chipsSvg = data.chips.map(c=>schemaChipSVG(c,w,printMode)).join('');
   const arrowsSvg = data.arrows.map(a=>schemaArrowGroupSVG(a, w, a.numero, printMode)).join('');
@@ -4713,7 +4713,7 @@ function schemaToolGroupHTML(buttonsHtml){
 function schemaToolBtn(active, onclick, title, icon){
   return '<button type="button" class="schema-tool-btn'+(active?' schema-tool-btn-active':'')+'" onclick="'+onclick+'" title="'+title+'">'+icon+'</button>';
 }
-function schemaToolbarHTML(exercise){
+function schemaToolbarHTML(livello){
   const s = state.schema;
   const colorSwatches = SCHEMA_COLORS.map(c=>
     '<button type="button" class="schema-color-swatch '+(s.activeColor===c?'schema-color-swatch-active':'')+'" style="background:'+c+';" onclick="setSchemaActiveColor(\''+c+'\')" title="'+(SCHEMA_COLOR_LABELS[c]||'Colore')+'"></button>'
@@ -4730,9 +4730,9 @@ function schemaToolbarHTML(exercise){
   ).join('');
   const campoGroup = schemaToolGroupHTML(
     '<span class="hint schema-toolbar-label">Campo (m)</span>' +
-    '<input id="schema-ex-larghezza" type="number" step="1" min="1" value="'+Math.round(exercise.larghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input schema-property-input" title="Larghezza campo">' +
+    '<input id="schema-ex-larghezza" type="number" step="1" min="1" value="'+Math.round(livello.larghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input schema-property-input" title="Larghezza campo">' +
     '<span class="hint">×</span>' +
-    '<input id="schema-ex-lunghezza" type="number" step="1" min="1" value="'+Math.round(exercise.lunghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input schema-property-input" title="Lunghezza campo">'
+    '<input id="schema-ex-lunghezza" type="number" step="1" min="1" value="'+Math.round(livello.lunghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input schema-property-input" title="Lunghezza campo">'
   );
   const giocatoriGroup = schemaToolGroupHTML(
     schemaToolBtn(s.placeMode==='giocatore', "setSchemaPlaceMode('giocatore')", 'Aggiungi giocatore', SCHEMA_ICON_GIOCATORE) +
@@ -4890,12 +4890,10 @@ function renderSchemaExerciseSheet(){
     '<button class="btn btn-small" onclick="duplicateSchemaLivello()" title="Crea un nuovo livello partendo dal disegno e dai dati del livello '+esc(schemaLivelloLabel(livello))+'">Duplica livello '+esc(schemaLivelloLabel(livello))+' →</button>' : '');
   return schemaSubNavHTML('library') +
     '<div class="card">' +
-      '<div class="card-header-row"><h2 class="content-title">'+esc(e.titolo)+'</h2>' +
+      '<div class="card-header-row"><h2 class="content-title">'+esc(livello.titolo)+'</h2>' +
         '<div class="pitch-actions"><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button>'+(canEdit ? '<button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaExercise()">Elimina</button>' : '')+'</div>' +
       '</div>' +
       '<div class="form-row">' +
-        '<div class="field field-grow"><label>Titolo</label><input value="'+esc(e.titolo)+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'titolo\', this.value)"></div>' +
-        '<div class="field"><label>N. giocatori</label><input type="number" min="1" value="'+e.numeroGiocatoriBase+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'numeroGiocatoriBase\', this.value)"></div>' +
         '<div class="field"><label>Fase di allenamento</label><select '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'categoria\', this.value)">'+schemaCategoriaOptionsHTML(e.categoria)+'</select></div>' +
       '</div>' +
       '<div class="field"><label>Descrizione generale</label><textarea rows="2" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa, insieme allo svolgimento del livello scelto.</span></div>' +
@@ -4913,14 +4911,19 @@ function renderSchemaExerciseSheet(){
       '<h3>Progressione</h3>' +
       '<div class="pitch-actions" style="margin-bottom:12px;">'+livelloTabsHtml+'</div>' +
       (canEdit && e.livelli.length>1 ? '<button class="btn btn-small btn-danger" style="margin-bottom:12px;" onclick="deleteSchemaLivello(\''+livello.id+'\')">Elimina livello '+esc(schemaLivelloLabel(livello))+'</button>' : '') +
+      '<p class="hint">Titolo, N. giocatori e misure campo sono indipendenti per ogni livello: cambiarli qui non tocca gli altri livelli di progressione.</p>' +
+      '<div class="form-row">' +
+        '<div class="field field-grow"><label>Titolo</label><input value="'+esc(livello.titolo)+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'titolo\', this.value)"></div>' +
+        '<div class="field"><label>N. giocatori</label><input type="number" min="1" value="'+livello.numeroGiocatoriBase+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'numeroGiocatoriBase\', this.value)"></div>' +
+      '</div>' +
       '<div class="field"><label>Svolgimento di questo livello</label><textarea id="schema-livello-descrizione" class="schema-rich-text" rows="2" '+(canEdit?'title="Seleziona del testo e clicca col destro per grassetto/dimensione" onchange="saveSchemaLivelloField(\'descrizione\', this.value)"':'disabled')+'>'+esc(livello.descrizione)+'</textarea><span class="hint">L\'unica descrizione che compare in anteprima/stampa: come si svolge questo livello.</span></div>' +
       '<div class="form-row">' +
         '<div class="field"><label>Ripetizioni</label><input class="schema-property-input" type="number" min="1" value="'+livello.ripetizioni+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'ripetizioni\', this.value)"></div>' +
         '<div class="field"><label>Durata di ciascuna (min)</label><input class="schema-property-input" type="number" min="1" value="'+livello.durataRipetizione+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
         '<div class="field"><label>Recupero (sec)</label><input class="schema-property-input" type="number" min="0" value="'+livello.recuperoSecondi+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
       '</div>' +
-      (canEdit ? schemaToolbarHTML(e) : '') +
-      '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(e, livello) + '</div>' +
+      (canEdit ? schemaToolbarHTML(livello) : '') +
+      '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(livello) + '</div>' +
       (canEdit ? '<p class="hint">Trascina per spostare qualsiasi elemento, comprese le linee.<br>Click destro su un elemento per le opzioni (rinomina, colore, numerazione...). ' +
         '<button type="button" class="btn-link" onclick="showSchemaGuidaModal()">ⓘ Guida rapida</button></p>'
         : '<p class="hint">Sola lettura: non hai il permesso di modificare gli esercizi.</p>') +
@@ -4952,8 +4955,13 @@ async function saveSchemaExerciseField(field, value){
 async function onSchemaFieldSizeOverride(){
   const larghezzaCampo = Math.round(Number(document.getElementById('schema-ex-larghezza').value)) || 1;
   const lunghezzaCampo = Math.round(Number(document.getElementById('schema-ex-lunghezza').value)) || 1;
-  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { larghezzaCampo, lunghezzaCampo });
-  if(res.exercise){ state.schema.currentExercise = res.exercise; renderView(); }
+  const livelloId = state.schema.activeLivelloId;
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, { larghezzaCampo, lunghezzaCampo });
+  if(res.livello){
+    const idx = state.schema.currentExercise.livelli.findIndex(l=>l.id===livelloId);
+    if(idx>=0) state.schema.currentExercise.livelli[idx] = res.livello;
+    renderView();
+  }
 }
 async function addSchemaNote(){
   const textEl = document.getElementById('schema-ex-nuova-nota');
@@ -4964,7 +4972,8 @@ async function addSchemaNote(){
   renderView();
 }
 function confirmDeleteSchemaExercise(){
-  showConfirmModal('Eliminare "'+state.schema.currentExercise.titolo+'"? Elimina anche i livelli, le note e lo storico collegati.', async () => {
+  const primoLivello = state.schema.currentExercise.livelli[0];
+  showConfirmModal('Eliminare "'+(primoLivello ? primoLivello.titolo : 'questo esercizio')+'"? Elimina anche i livelli, le note e lo storico collegati.', async () => {
     await apiDelete('/api/schema/exercises/'+state.schema.exerciseId);
     openSchemaLibrary();
   });
@@ -4976,7 +4985,14 @@ function switchSchemaLivello(livelloId){
   renderView();
 }
 async function addSchemaLivello(){
-  const res = await apiPost('/api/schema/exercises/'+state.schema.exerciseId+'/livelli', {});
+  // Titolo/N.giocatori/misure precompilati dal livello attualmente aperto (invece di
+  // partire da un campo 0x0 senza giocatori): restano comunque indipendenti, modificabili
+  // in seguito senza incidere sul livello di origine.
+  const attuale = schemaActiveLivello();
+  const res = await apiPost('/api/schema/exercises/'+state.schema.exerciseId+'/livelli', attuale ? {
+    titolo: attuale.titolo, numeroGiocatoriBase: attuale.numeroGiocatoriBase,
+    larghezzaCampo: attuale.larghezzaCampo, lunghezzaCampo: attuale.lunghezzaCampo,
+  } : {});
   if(res.livello){
     state.schema.currentExercise.livelli.push(res.livello);
     state.schema.activeLivelloId = res.livello.id;
@@ -5750,7 +5766,7 @@ function renderSchemaSessionBuilder(){
         '<h3>Esercizi nella seduta</h3>' +
         (sess.items.length===0 ? '<p class="hint">Nessun esercizio aggiunto. Clicca un esercizio nella libreria per aggiungerlo.</p>' :
           sess.items.map((item,idx)=>{
-            const titolo = item.livello ? item.livello.esercizio.titolo : item.titoloSnapshot;
+            const titolo = item.livello ? item.livello.titolo : item.titoloSnapshot;
             const nomeLivello = schemaLivelloLabel({ nome: item.livello ? item.livello.nome : item.livelloSnapshot });
             return '<div class="schema-session-item-row">' +
               '<div><strong>'+esc(titolo)+'</strong><div class="hint">'+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div></div>' +
@@ -5796,7 +5812,7 @@ async function addSchemaSessionItem(exerciseId){
   const esercizio = state.schema.exercises.find(e=>e.id===exerciseId);
   if(!esercizio) return;
   if(esercizio.livelli.length>1){
-    state.schema.livelloPicker = { titolo: esercizio.titolo, livelli: esercizio.livelli, onChoose: addSchemaSessionItemWithLivello };
+    state.schema.livelloPicker = { titolo: esercizio.livelli[0].titolo, livelli: esercizio.livelli, onChoose: addSchemaSessionItemWithLivello };
     renderView();
     return;
   }
@@ -5893,9 +5909,9 @@ function schemaSessionExportItemHTML(item, idx){
   // formattazione (grassetto/dimensione, marcatori **/++) e gli a-capo preservati.
   return '<div class="schema-export-item">' +
     '<div class="schema-export-item-text">' +
-      '<h3>'+(idx+1)+'. '+esc(ex.titolo)+'</h3>' +
+      '<h3>'+(idx+1)+'. '+esc(lv.titolo)+'</h3>' +
       '<p>Tempo totale: '+tempoTotale+' min · '+lv.ripetizioni+'×'+lv.durataRipetizione+' min · recupero '+lv.recuperoSecondi+'s tra le serie</p>' +
-      '<p class="hint">Campo: '+(ex.lunghezzaCampo||'—')+'×'+(ex.larghezzaCampo||'—')+' m</p>' +
+      '<p class="hint">Campo: '+(lv.lunghezzaCampo||'—')+'×'+(lv.larghezzaCampo||'—')+' m</p>' +
       '<p class="hint">Obiettivo: ' +
         (cat ? '<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>' : 'Non categorizzato') +
         (tags.length ? ' · '+esc(tags.join(', ')) : '') +
@@ -5903,7 +5919,7 @@ function schemaSessionExportItemHTML(item, idx){
       (ex.descrizione ? '<p>'+schemaRichTextToHTML(ex.descrizione)+'</p>' : '') +
       (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
     '</div>' +
-    '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(ex, item.livello, false, true) + '</div>' +
+    '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(item.livello, false, true) + '</div>' +
   '</div>';
 }
 // Invece di rimpicciolire tutto per stare su una sola facciata, si impagina su più fogli

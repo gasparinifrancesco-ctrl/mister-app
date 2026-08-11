@@ -33,7 +33,7 @@ export async function POST(request, { params }) {
     data: {
       sessionId: id,
       livelloId,
-      titoloSnapshot: livello.esercizio.titolo,
+      titoloSnapshot: livello.titolo,
       livelloSnapshot: livello.nome,
       ordine,
       durataMinuti: durataMinuti != null && durataMinuti !== '' ? Number(durataMinuti) : null,

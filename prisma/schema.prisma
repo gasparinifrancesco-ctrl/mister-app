@@ -153,11 +153,7 @@ model Objective {
 model Exercise {
   id                  String   @id @default(cuid())
   userId              String
-  titolo              String
   descrizione         String   @default("")
-  numeroGiocatoriBase Int
-  larghezzaCampo      Float?
-  lunghezzaCampo      Float?
   tags                String   @default("[]")
   // Fase di allenamento a scelta vincolata (non una etichetta libera): riscaldamento,
   // tecnica-individuale, tecnica-collettiva, tattica, finalizzazione, partita-tema, portieri.
@@ -187,6 +183,14 @@ model Livello {
   ripetizioni       Int    @default(1)
   durataRipetizione Int    @default(15)
   recuperoSecondi   Int    @default(0)
+  // Spostati qui da Exercise: ogni livello di progressione ha il proprio titolo e la propria
+  // messa in campo (giocatori, dimensioni), modificabili senza incidere sugli altri livelli
+  // dello stesso esercizio — solo tags/categoria/votoPreferenza restano condivisi a livello
+  // di Exercise (metadati di famiglia, non della singola progressione).
+  titolo              String @default("")
+  numeroGiocatoriBase Int    @default(8)
+  larghezzaCampo      Float  @default(20)
+  lunghezzaCampo      Float  @default(28)
 
   esercizio    Exercise      @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
   sessionItems SessionItem[]
