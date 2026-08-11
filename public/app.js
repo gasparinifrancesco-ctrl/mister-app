@@ -4426,17 +4426,20 @@ const SCHEMA_FIELD_PRESET_SIZES = {
   libero: { larghezzaCampo: 20, lunghezzaCampo: 28 },
 };
 const SCHEMA_FIELD_PRESET_LABELS = { meta: 'Metà campo', intero: 'Campo intero', libero: 'Libero' };
+// Ogni elemento generato da un preset porta guida:true, cosi riapplicare un layout (o
+// passarne a un altro) sostituisce SOLO i segni del campo generati dal preset precedente,
+// senza toccare giocatori/frecce/zone aggiunti a mano dall'allenatore.
 function schemaFieldPresetData(key){
   const empty = { chips: [], arrows: [], zones: [] };
   if(key==='meta'){
     const w = 60, h = 52.5;
     return {
-      chips: [{ id: uid(), x: w/2, y: h, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0 }],
+      chips: [{ id: uid(), x: w/2, y: h, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0, guida:true }],
       arrows: [],
       zones: [
-        { id: uid(), x:(w-40)/2, y:h-16, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
-        { id: uid(), x:(w-18)/2, y:h-5.5, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
-        { id: uid(), x:w/2-9.15, y:-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio' },
+        { id: uid(), x:(w-40)/2, y:h-16, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:(w-18)/2, y:h-5.5, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:w/2-9.15, y:-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio', guida:true },
       ],
     };
   }
@@ -4444,40 +4447,54 @@ function schemaFieldPresetData(key){
     const w = 60, h = 105;
     return {
       chips: [
-        { id: uid(), x:w/2, y:0, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0 },
-        { id: uid(), x:w/2, y:h, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0 },
+        { id: uid(), x:w/2, y:0, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0, guida:true },
+        { id: uid(), x:w/2, y:h, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0, guida:true },
       ],
       arrows: [
-        { id: uid(), x1:0, y1:h/2, x2:w, y2:h/2, tipo:'campo-linea', color: SCHEMA_COLORS[0], numero:null },
+        { id: uid(), x1:0, y1:h/2, x2:w, y2:h/2, tipo:'campo-linea', color: SCHEMA_COLORS[0], numero:null, guida:true },
       ],
       zones: [
-        { id: uid(), x:(w-40)/2, y:0, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
-        { id: uid(), x:(w-18)/2, y:0, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
-        { id: uid(), x:(w-40)/2, y:h-16, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
-        { id: uid(), x:(w-18)/2, y:h-5.5, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect' },
-        { id: uid(), x:w/2-9.15, y:h/2-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio' },
+        { id: uid(), x:(w-40)/2, y:0, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:(w-18)/2, y:0, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:(w-40)/2, y:h-16, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:(w-18)/2, y:h-5.5, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:w/2-9.15, y:h/2-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio', guida:true },
       ],
     };
   }
   return empty;
 }
-function confirmApplySchemaFieldPreset(key){
-  const label = SCHEMA_FIELD_PRESET_LABELS[key] || key;
-  showConfirmModal('Sostituire il disegno di questo livello con il layout "'+label+'"? Giocatori, frecce e zone attuali andranno persi.', function(){
-    applySchemaFieldPreset(key);
-  });
-}
+// Cambia base del campo e segni (porta/area/cerchio) senza perdere quanto già disegnato:
+// toglie solo i segni-guida della base precedente (marcati guida:true), riscala
+// proporzionalmente il resto (giocatori, frecce, zone proprie) alla nuova misura, poi
+// aggiunge i segni-guida del nuovo layout scelto.
 async function applySchemaFieldPreset(key){
   const size = SCHEMA_FIELD_PRESET_SIZES[key] || SCHEMA_FIELD_PRESET_SIZES.libero;
-  const data = schemaFieldPresetData(key);
+  const livello = schemaActiveLivello();
+  const oldW = (livello && livello.larghezzaCampo) || 1, oldH = (livello && livello.lunghezzaCampo) || 1;
+  const sx = size.larghezzaCampo / oldW, sy = size.lunghezzaCampo / oldH;
+  const current = livello ? parseSchemaCampo(livello) : { chips: [], arrows: [], zones: [] };
+  const ownChips = current.chips.filter(c=>!c.guida).map(c=>({ ...c, x: c.x*sx, y: c.y*sy }));
+  const ownArrows = current.arrows.filter(a=>!a.guida).map(a=>({
+    ...a, x1: a.x1*sx, y1: a.y1*sy, x2: a.x2*sx, y2: a.y2*sy,
+    points: a.points ? a.points.map(p=>({ x: p.x*sx, y: p.y*sy })) : null,
+  }));
+  const ownZones = current.zones.filter(z=>!z.guida).map(z=>({ ...z, x: z.x*sx, y: z.y*sy, w: z.w*sx, h: z.h*sy }));
+  const preset = schemaFieldPresetData(key);
+  const data = {
+    chips: [...ownChips, ...preset.chips],
+    arrows: [...ownArrows, ...preset.arrows],
+    zones: [...ownZones, ...preset.zones],
+  };
   const livelloId = state.schema.activeLivelloId;
+  const dataStr = JSON.stringify(data);
   const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, {
-    larghezzaCampo: size.larghezzaCampo, lunghezzaCampo: size.lunghezzaCampo, schemaCampo: JSON.stringify(data),
+    larghezzaCampo: size.larghezzaCampo, lunghezzaCampo: size.lunghezzaCampo, schemaCampo: dataStr,
   });
   if(res.livello){
     const idx = state.schema.currentExercise.livelli.findIndex(l=>l.id===livelloId);
     if(idx>=0) state.schema.currentExercise.livelli[idx] = res.livello;
-    schemaInitHistoryForLivello(livelloId);
+    schemaPushHistory(livelloId, dataStr);
     renderView();
   }
 }
@@ -4504,6 +4521,10 @@ function parseSchemaCampo(livello){
     // Solo per tipo 'testo': font più sottile (300) invece del semi-bold di default (600),
     // toggle dal menu contestuale.
     sottile: c.sottile===true,
+    // true solo per gli elementi generati da un layout preimpostato (porta/area/cerchio):
+    // permette di sostituirli quando si cambia base del campo senza toccare quelli
+    // aggiunti a mano dall'allenatore (vedi applySchemaFieldPreset).
+    guida: c.guida===true,
   }));
   d.arrows = d.arrows.map(a=>({
     id: a.id || uid(),
@@ -4520,6 +4541,7 @@ function parseSchemaCampo(livello){
     // Numerazione manuale (click destro → Numera), mai automatica: solo le frecce che
     // l'allenatore sceglie esplicitamente di numerare mostrano il badge.
     numero: a.numero!=null ? a.numero : null,
+    guida: a.guida===true,
   }));
   d.zones = d.zones.map(z=>({
     id: z.id || uid(),
@@ -4531,6 +4553,7 @@ function parseSchemaCampo(livello){
     // "pieno" = tinta colorata (tattico), "contorno" = solo bordo bianco/neutro, per
     // disegnare marcature reali del campo come l'area di rigore.
     stile: z.stile==='contorno' ? 'contorno' : 'pieno',
+    guida: z.guida===true,
     // Forma del bounding box x/y/w/h: 'rect' (default, disegno manuale) o 'cerchio' (solo dai
     // layout preimpostati, per il cerchio di centrocampo — vedi SCHEMA_FIELD_PRESETS).
     shape: z.shape==='cerchio' ? 'cerchio' : 'rect',
@@ -4788,7 +4811,7 @@ function showSchemaGuidaModal(){
   const box = document.getElementById('event-modal-box');
   box.innerHTML =
     '<h3>Guida rapida disegnatore</h3>' +
-    '<p>Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore; su giocatore e testo: cambiare dimensione A-/A+, l\'ultima scelta resta di default per i prossimi giocatori piazzati; sul testo anche sottile/grassetto). Con giocatore/pallone/porta/portina/cono/testo attivo, clicca sul campo per posizionarlo (il testo chiede subito cosa scrivere); con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo. "Layout" sostituisce il disegno con un campo preimpostato (metà campo, campo intero, libero) da cui partire; "Indietro/Avanti" annulla o ripete le ultime modifiche al disegno di questo livello.</p>' +
+    '<p>Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore; su giocatore e testo: cambiare dimensione A-/A+, l\'ultima scelta resta di default per i prossimi giocatori piazzati; sul testo anche sottile/grassetto). Con giocatore/pallone/porta/portina/cono/testo attivo, clicca sul campo per posizionarlo (il testo chiede subito cosa scrivere); con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo. "Layout" imposta la base del campo e i suoi segni (porta/area/cerchio, metà campo/campo intero/libero) senza eliminare giocatori e disegni già aggiunti; "Indietro/Avanti" annulla o ripete le ultime modifiche al disegno di questo livello.</p>' +
     '<div class="modal-actions"><button type="button" class="btn btn-primary" onclick="closeEventModal()">Ho capito</button></div>';
   document.getElementById('event-modal-overlay').style.display = 'flex';
 }
@@ -4825,7 +4848,7 @@ function schemaToolbarHTML(livello){
   const layoutGroup = schemaToolGroupHTML(
     '<span class="hint schema-toolbar-label">Layout</span>' +
     ['meta','intero','libero'].map(key=>
-      '<button type="button" class="btn btn-small" onclick="confirmApplySchemaFieldPreset(\''+key+'\')" title="Sostituisce il disegno con questo layout, punto di partenza per disegnare">'+SCHEMA_FIELD_PRESET_LABELS[key]+'</button>'
+      '<button type="button" class="btn btn-small" onclick="applySchemaFieldPreset(\''+key+'\')" title="Imposta la base del campo e i segni (porta/area/cerchio) di questo layout, senza toccare giocatori e disegni già aggiunti">'+SCHEMA_FIELD_PRESET_LABELS[key]+'</button>'
     ).join('')
   );
   const campoGroup = schemaToolGroupHTML(
