@@ -4099,6 +4099,7 @@ const SCHEMA_ICON_PORTA = '<svg viewBox="0 0 24 24" width="26" height="26" fill=
 const SCHEMA_ICON_PORTINA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="9" width="10" height="6"/><path d="M10 9v6M14 9v6"/></svg>';
 const SCHEMA_ICON_CONO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l5 14H7z"/><path d="M5 18h14"/></svg>';
 const SCHEMA_ICON_ZONA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3,2"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>';
+const SCHEMA_ICON_TESTO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6h14"/><path d="M12 6v13"/></svg>';
 
 /* ---------- navigazione interna (nessun page load: resta nella SPA) ---------- */
 async function ensureSchemaObjectives(){
@@ -4417,12 +4418,15 @@ function parseSchemaCampo(livello){
     id: c.id,
     x: c.x,
     y: c.y,
-    tipo: ['pallone','porta','portina','cono'].includes(c.tipo) ? c.tipo : 'giocatore',
+    tipo: ['pallone','porta','portina','cono','testo'].includes(c.tipo) ? c.tipo : 'giocatore',
     color: c.color || SCHEMA_COLORS[0],
     numero: c.numero!=null ? c.numero : null,
     label: c.label || '',
     ruolo: c.ruolo==='portiere' ? 'portiere' : null,
     rot: typeof c.rot==='number' ? c.rot : 0,
+    // Solo per tipo 'testo': moltiplicatore di dimensione del font (1 = default), regolabile
+    // dal menu contestuale A-/A+. Ignorato per tutti gli altri tipi di chip.
+    size: typeof c.size==='number' && c.size>0 ? c.size : 1,
   }));
   d.arrows = d.arrows.map(a=>({
     id: a.id || uid(),
@@ -4511,6 +4515,16 @@ function schemaConeSVG(c, w){
     (c.label ? '<text text-anchor="middle" dy="'+(s*1.4)+'" font-size="'+(w*0.026)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.01)+'">'+esc(c.label)+'</text>' : '') +
   '</g>';
 }
+// Testo libero disegnabile sul campo (didascalie, istruzioni): niente forma di sfondo,
+// solo il testo colorato con un contorno scuro per restare leggibile su qualunque sfondo,
+// stesso trattamento delle altre etichette del disegnatore. "size" scala il font-size
+// insieme alla larghezza campo (w), cosi il testo resta proporzionato se il campo cambia.
+function schemaTextChipSVG(c, w){
+  const fontSize = w*0.045*(c.size||1);
+  return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
+    '<text text-anchor="middle" dominant-baseline="central" font-size="'+fontSize+'" fill="'+c.color+'" font-family="Inter, sans-serif" font-weight="600" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.012)+'" stroke-linejoin="round">'+esc(c.label||'Testo')+'</text>' +
+  '</g>';
+}
 function schemaChipSVG(c, w, printMode){
   if(c.tipo==='pallone'){
     // Meno della metà del raggio giocatore, cosi si distingue subito dai chip persona.
@@ -4518,6 +4532,7 @@ function schemaChipSVG(c, w, printMode){
   }
   if(c.tipo==='porta' || c.tipo==='portina') return schemaGoalSVG(c, w, printMode);
   if(c.tipo==='cono') return schemaConeSVG(c, w);
+  if(c.tipo==='testo') return schemaTextChipSVG(c, w);
   // Raggio/bordo leggermente più generosi e font Inter SemiBold per il numero, invece
   // dell'Oswald condensato usato altrove: più leggibili e coerenti con la nuova identità.
   const r = w*0.036;
@@ -4679,7 +4694,7 @@ function showSchemaGuidaModal(){
   const box = document.getElementById('event-modal-box');
   box.innerHTML =
     '<h3>Guida rapida disegnatore</h3>' +
-    '<p>Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore). Con giocatore/pallone/porta/portina/cono attivo, clicca sul campo per posizionarlo; con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo.</p>' +
+    '<p>Trascina per spostare qualsiasi elemento, comprese le linee. Click destro per rinominare/numerare/segnare come portiere/cambiare colore (sulle porte: ruotarle; sulle zone: stile pieno/contorno; sulle linee: numerare o cambiare colore; sul testo: cambiare dimensione A-/A+). Con giocatore/pallone/porta/portina/cono/testo attivo, clicca sul campo per posizionarlo (il testo chiede subito cosa scrivere); con la zona attiva, trascina da un angolo all\'altro; con un tipo di linea attivo, disegna sul campo — "Riga bianca del campo" per marcature reali come l\'area di rigore; con la gomma attiva, clicca un elemento per eliminarlo.</p>' +
     '<div class="modal-actions"><button type="button" class="btn btn-primary" onclick="closeEventModal()">Ho capito</button></div>';
   document.getElementById('event-modal-overlay').style.display = 'flex';
 }
@@ -4727,7 +4742,8 @@ function schemaToolbarHTML(exercise){
     schemaToolBtn(s.placeMode==='porta', "setSchemaPlaceMode('porta')", 'Aggiungi porta grande', SCHEMA_ICON_PORTA) +
     schemaToolBtn(s.placeMode==='portina', "setSchemaPlaceMode('portina')", 'Aggiungi portina', SCHEMA_ICON_PORTINA) +
     schemaToolBtn(s.placeMode==='cono', "setSchemaPlaceMode('cono')", 'Aggiungi cono', SCHEMA_ICON_CONO) +
-    schemaToolBtn(s.placeMode==='zona', "setSchemaPlaceMode('zona')", "Disegna una zona: trascina da un angolo all'altro", SCHEMA_ICON_ZONA)
+    schemaToolBtn(s.placeMode==='zona', "setSchemaPlaceMode('zona')", "Disegna una zona: trascina da un angolo all'altro", SCHEMA_ICON_ZONA) +
+    schemaToolBtn(s.placeMode==='testo', "setSchemaPlaceMode('testo')", 'Aggiungi testo', SCHEMA_ICON_TESTO)
   );
   const lineeGroup = schemaToolGroupHTML(lineButtons);
   const cancellaGroup = schemaToolGroupHTML(
@@ -5080,10 +5096,18 @@ function showSchemaChipContextMenu(evt, chipId){
   if(!chip) return;
   const menu = document.getElementById('player-context-menu');
   const isGoal = chip.tipo==='porta' || chip.tipo==='portina';
-  let html = '<div class="context-menu-item" onclick="renameSchemaChip(\''+chipId+'\'); hideContextMenu();">Rinomina</div>';
+  const isTesto = chip.tipo==='testo';
+  let html = '<div class="context-menu-item" onclick="renameSchemaChip(\''+chipId+'\'); hideContextMenu();">'+(isTesto?'Modifica testo':'Rinomina')+'</div>';
   if(chip.tipo==='giocatore'){
     html += '<div class="context-menu-item" onclick="numberSchemaChip(\''+chipId+'\'); hideContextMenu();">Numera</div>';
     html += '<div class="context-menu-item" onclick="toggleSchemaChipPortiere(\''+chipId+'\'); hideContextMenu();">'+(chip.ruolo==='portiere'?'Rimuovi ruolo portiere':'Segna come portiere')+'</div>';
+  }
+  if(isTesto){
+    html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
+      '<span class="hint">Dimensione</span>' +
+      '<button type="button" class="btn btn-small" onclick="resizeSchemaTextChip(\''+chipId+'\',-0.15); hideContextMenu();">A-</button>' +
+      '<button type="button" class="btn btn-small" onclick="resizeSchemaTextChip(\''+chipId+'\',0.15); hideContextMenu();">A+</button>' +
+    '</div>';
   }
   if(isGoal){
     html += '<div class="context-menu-item" onclick="rotateSchemaChip(\''+chipId+'\',-45); hideContextMenu();">Ruota ↺ 45°</div>';
@@ -5134,6 +5158,13 @@ function rotateSchemaChip(chipId, delta){
   const chip = data.chips.find(c=>c.id===chipId);
   if(!chip) return;
   chip.rot = ((chip.rot||0) + delta + 360) % 360;
+  saveSchemaCampo(data);
+}
+function resizeSchemaTextChip(chipId, delta){
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const chip = data.chips.find(c=>c.id===chipId);
+  if(!chip) return;
+  chip.size = Math.max(0.4, Math.min(3, Math.round(((chip.size||1) + delta)*100)/100));
   saveSchemaCampo(data);
 }
 function deleteSchemaChip(chipId){
@@ -5503,6 +5534,17 @@ function attachSchemaFieldInteractions(){
         const p = toPoint(e2);
         const dist = Math.hypot(p.x-start.x, p.y-start.y);
         if(dist > 1.5) return;
+        // Il testo, a differenza degli altri chip, non ha senso piazzato vuoto: si chiede
+        // subito il contenuto e si annulla il piazzamento se l'allenatore non scrive nulla,
+        // invece di lasciare un'etichetta invisibile da dover scoprire col tasto destro.
+        if(s.placeMode==='testo'){
+          const testo = prompt('Testo:', '');
+          if(testo===null || testo.trim()==='') return;
+          const data = parseSchemaCampo(schemaActiveLivello());
+          data.chips.push({ id: uid(), x:p.x, y:p.y, tipo:'testo', color:s.activeColor, numero:null, label:testo.trim(), size:1 });
+          saveSchemaCampo(data);
+          return;
+        }
         const data = parseSchemaCampo(schemaActiveLivello());
         data.chips.push({ id: uid(), x:p.x, y:p.y, tipo:s.placeMode, color:s.activeColor, numero:null, label:'' });
         saveSchemaCampo(data);
