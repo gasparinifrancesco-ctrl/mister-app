@@ -4421,15 +4421,15 @@ function schemaActiveLivello(){
 // browser (comportamento di default di <svg>, overflow implicito sul viewBox), risultando in un
 // mezzo cerchio senza bisogno di disegnare un arco a mano.
 const SCHEMA_FIELD_PRESET_SIZES = {
-  meta:   { larghezzaCampo: 68, lunghezzaCampo: 52.5 },
-  intero: { larghezzaCampo: 68, lunghezzaCampo: 105 },
+  meta:   { larghezzaCampo: 60, lunghezzaCampo: 52.5 },
+  intero: { larghezzaCampo: 60, lunghezzaCampo: 105 },
   libero: { larghezzaCampo: 20, lunghezzaCampo: 28 },
 };
 const SCHEMA_FIELD_PRESET_LABELS = { meta: 'Metà campo', intero: 'Campo intero', libero: 'Libero' };
 function schemaFieldPresetData(key){
   const empty = { chips: [], arrows: [], zones: [] };
   if(key==='meta'){
-    const w = 68, h = 52.5;
+    const w = 60, h = 52.5;
     return {
       chips: [{ id: uid(), x: w/2, y: h, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0 }],
       arrows: [],
@@ -4441,7 +4441,7 @@ function schemaFieldPresetData(key){
     };
   }
   if(key==='intero'){
-    const w = 68, h = 105;
+    const w = 60, h = 105;
     return {
       chips: [
         { id: uid(), x:w/2, y:0, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0 },
@@ -5058,13 +5058,32 @@ async function saveSchemaExerciseField(field, value){
   renderView();
 }
 async function onSchemaFieldSizeOverride(){
+  const livello = schemaActiveLivello();
+  const oldW = (livello && livello.larghezzaCampo) || 1, oldH = (livello && livello.lunghezzaCampo) || 1;
   const larghezzaCampo = Math.round(Number(document.getElementById('schema-ex-larghezza').value)) || 1;
   const lunghezzaCampo = Math.round(Number(document.getElementById('schema-ex-lunghezza').value)) || 1;
   const livelloId = state.schema.activeLivelloId;
-  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, { larghezzaCampo, lunghezzaCampo });
+  const patch = { larghezzaCampo, lunghezzaCampo };
+  // Riscala proporzionalmente giocatori/frecce/zone già disegnati alla nuova base, invece di
+  // lasciarli alle vecchie coordinate assolute (che finirebbero fuori posto o fuori campo).
+  if((larghezzaCampo !== oldW || lunghezzaCampo !== oldH) && livello){
+    const data = parseSchemaCampo(livello);
+    if(data.chips.length || data.arrows.length || data.zones.length){
+      const sx = larghezzaCampo / oldW, sy = lunghezzaCampo / oldH;
+      data.chips.forEach(c=>{ c.x *= sx; c.y *= sy; });
+      data.zones.forEach(z=>{ z.x *= sx; z.y *= sy; z.w *= sx; z.h *= sy; });
+      data.arrows.forEach(a=>{
+        a.x1 *= sx; a.y1 *= sy; a.x2 *= sx; a.y2 *= sy;
+        if(a.points) a.points = a.points.map(p=>({ x: p.x*sx, y: p.y*sy }));
+      });
+      patch.schemaCampo = JSON.stringify(data);
+    }
+  }
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId+'/livelli/'+livelloId, patch);
   if(res.livello){
     const idx = state.schema.currentExercise.livelli.findIndex(l=>l.id===livelloId);
     if(idx>=0) state.schema.currentExercise.livelli[idx] = res.livello;
+    if(patch.schemaCampo) schemaPushHistory(livelloId, patch.schemaCampo);
     renderView();
   }
 }
