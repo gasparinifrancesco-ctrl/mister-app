@@ -4087,11 +4087,12 @@ async function apiGet(url){ const r = await fetch(url); return r.json(); }
 async function apiPost(url, body){ const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); return r.json(); }
 async function apiPatch(url, body){ const r = await fetch(url, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }); return r.json(); }
 async function apiDelete(url){ const r = await fetch(url, { method:'DELETE' }); return r.json(); }
-function starInputHTML(current, readonly){
+function starInputHTML(current, readonly, onclickFn){
   const v = current || 0;
+  const fn = onclickFn || 'setSchemaVotoPreferenza';
   let out = '<span class="star-input'+(readonly?' star-input-readonly':'')+'">';
   for(let i=1;i<=5;i++){
-    out += '<button type="button" class="star-input-btn" '+(readonly?'disabled':'onclick="setSchemaVotoPreferenza('+i+')"')+' aria-label="'+i+' stelle">' + starIconSVG(i<=v ? 'var(--yellow)' : 'var(--border)', 20) + '</button>';
+    out += '<button type="button" class="star-input-btn" '+(readonly?'disabled':'onclick="'+fn+'('+i+')"')+' aria-label="'+i+' stelle">' + starIconSVG(i<=v ? 'var(--yellow)' : 'var(--border)', 20) + '</button>';
   }
   out += '</span>';
   return out;
@@ -4363,7 +4364,7 @@ function schemaExerciseCardHTML(e, onclickAttr, compact){
       '<div class="schema-exercise-card-head"><strong>'+esc(primoLivello ? primoLivello.titolo : '')+'</strong>'+badge+'</div>' +
       '<div class="schema-exercise-card-meta">' +
         (cat ? '<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>' : '<span class="hint">Non categorizzato</span>') +
-        '<span class="hint">'+(primoLivello ? primoLivello.numeroGiocatoriBase : '—')+' giocatori</span>' +
+        '<span class="hint" title="Movimento + portieri">'+(primoLivello ? primoLivello.numeroGiocatoriBase+(primoLivello.numeroPortieri ? '+'+primoLivello.numeroPortieri : '') : '—')+' giocatori</span>' +
         (durata!=null ? '<span class="hint" title="Tempo totale, recuperi tra le serie inclusi">'+durata+' min tot.</span>' : '') +
       '</div>' +
       '<div class="hint">'+(tags.length ? esc(tags.join(', ')) : 'Nessun focus')+'</div>' +
@@ -4391,7 +4392,8 @@ function renderSchemaNewExerciseForm(){
       '<div class="card-header-row"><h2>Nuovo esercizio</h2><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button></div>' +
       '<div class="form-row">' +
         '<div class="field field-grow"><label>Titolo</label><input id="schema-new-ex-titolo" type="text"></div>' +
-        '<div class="field"><label>N. giocatori</label><input id="schema-new-ex-numgiocatori" type="number" min="1" value="8"></div>' +
+        '<div class="field"><label title="Giocatori di movimento">Mov.</label><input id="schema-new-ex-numgiocatori" type="number" min="1" value="8" style="width:64px;"></div>' +
+        '<div class="field"><label title="Portieri">Por.</label><input id="schema-new-ex-numportieri" type="number" min="0" value="0" style="width:64px;"></div>' +
         '<div class="field"><label>Fase di allenamento</label><select id="schema-new-ex-categoria">'+schemaCategoriaOptionsHTML('')+'</select></div>' +
       '</div>' +
       '<div class="field"><label>Descrizione generale</label><textarea id="schema-new-ex-descrizione" rows="3"></textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa insieme allo svolgimento, che si scrive dopo, nel livello.</span></div>' +
@@ -4405,6 +4407,7 @@ async function createSchemaExercise(){
     titolo,
     descrizione: document.getElementById('schema-new-ex-descrizione').value,
     numeroGiocatoriBase: document.getElementById('schema-new-ex-numgiocatori').value,
+    numeroPortieri: document.getElementById('schema-new-ex-numportieri').value,
     categoria: document.getElementById('schema-new-ex-categoria').value,
   });
   if(res.exercise) openSchemaExercise(res.exercise.id);
@@ -5109,7 +5112,8 @@ function renderSchemaExerciseSheet(){
       '<p class="hint">Titolo, N. giocatori e misure campo sono indipendenti per ogni livello: cambiarli qui non tocca gli altri livelli di progressione.</p>' +
       '<div class="form-row">' +
         '<div class="field field-grow"><label>Titolo</label><input value="'+esc(livello.titolo)+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'titolo\', this.value)"></div>' +
-        '<div class="field"><label>N. giocatori</label><input type="number" min="1" value="'+livello.numeroGiocatoriBase+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'numeroGiocatoriBase\', this.value)"></div>' +
+        '<div class="field"><label title="Giocatori di movimento">Mov.</label><input type="number" min="1" value="'+livello.numeroGiocatoriBase+'" style="width:64px;" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'numeroGiocatoriBase\', this.value)"></div>' +
+        '<div class="field"><label title="Portieri">Por.</label><input type="number" min="0" value="'+(livello.numeroPortieri||0)+'" style="width:64px;" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'numeroPortieri\', this.value)"></div>' +
       '</div>' +
       '<div class="field"><label>Svolgimento di questo livello</label><textarea id="schema-livello-descrizione" class="schema-rich-text" rows="2" '+(canEdit?'title="Seleziona del testo e clicca col destro per grassetto/dimensione" onchange="saveSchemaLivelloField(\'descrizione\', this.value)"':'disabled')+'>'+esc(livello.descrizione)+'</textarea><span class="hint">L\'unica descrizione che compare in anteprima/stampa: come si svolge questo livello.</span></div>' +
       '<div class="form-row">' +
@@ -5133,6 +5137,11 @@ function renderSchemaExerciseSheet(){
       (altreNote.length ? '<details class="schema-note-history"><summary>Storico note ('+altreNote.length+')</summary>' + altreNote.map(n=>'<div class="schema-note-item"><strong>'+formatDate(n.data.slice(0,10))+'</strong><p>'+esc(n.testo)+'</p></div>').join('') + '</details>' : '') +
     '</div>' +
     '<div class="card">' +
+      '<h3>Difficoltà</h3>' +
+      '<p class="hint">Quanto è impegnativo questo esercizio per la squadra — un giudizio SEPARATO da "quanto lo reputi efficace" qui sotto, mai la stessa valutazione riletta due volte. Clicca di nuovo la stessa stella per azzerare.</p>' +
+      starInputHTML(e.difficolta, !canEdit, 'setSchemaDifficolta') +
+    '</div>' +
+    '<div class="card">' +
       '<h3>Quanto lo reputi efficace</h3>' +
       '<p class="hint">Una sola valutazione, tua: quanto ti piace/lo reputi efficace questo esercizio. Non è una media delle sedute — dipenderebbe da troppi fattori estranei all\'esercizio in sé. Clicca di nuovo la stessa stella per azzerare.</p>' +
       '<div class="form-row" style="align-items:center;">' +
@@ -5144,6 +5153,10 @@ function renderSchemaExerciseSheet(){
 async function setSchemaVotoPreferenza(voto){
   const current = state.schema.currentExercise.votoPreferenza;
   await saveSchemaExerciseField('votoPreferenza', current===voto ? null : voto);
+}
+async function setSchemaDifficolta(voto){
+  const current = state.schema.currentExercise.difficolta;
+  await saveSchemaExerciseField('difficolta', current===voto ? null : voto);
 }
 async function saveSchemaExerciseField(field, value){
   const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { [field]: value });
@@ -5249,7 +5262,7 @@ async function addSchemaLivello(){
   // in seguito senza incidere sul livello di origine.
   const attuale = schemaActiveLivello();
   const res = await apiPost('/api/schema/exercises/'+state.schema.exerciseId+'/livelli', attuale ? {
-    titolo: attuale.titolo, numeroGiocatoriBase: attuale.numeroGiocatoriBase,
+    titolo: attuale.titolo, numeroGiocatoriBase: attuale.numeroGiocatoriBase, numeroPortieri: attuale.numeroPortieri,
     larghezzaCampo: attuale.larghezzaCampo, lunghezzaCampo: attuale.lunghezzaCampo,
   } : {});
   if(res.livello){

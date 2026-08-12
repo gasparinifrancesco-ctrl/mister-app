@@ -164,6 +164,10 @@ model Exercise {
   // percepita in una singola seduta dipenderebbe da troppi fattori estranei all'esercizio
   // in sé (avversario, condizione dei giocatori, meteo...).
   votoPreferenza      Int?
+  // Difficoltà percepita dell'esercizio (1-5): campo NUOVO e SEPARATO da votoPreferenza —
+  // "quanto è difficile" e "quanto lo reputo efficace" sono giudizi indipendenti, mai lo
+  // stesso numero riletto due volte. Riusa lo stesso componente grafico a stelle.
+  difficolta          Int?
   creatoIl            DateTime @default(now())
 
   user    User      @relation(fields: [userId], references: [id])
@@ -188,7 +192,11 @@ model Livello {
   // dello stesso esercizio — solo tags/categoria/votoPreferenza restano condivisi a livello
   // di Exercise (metadati di famiglia, non della singola progressione).
   titolo              String @default("")
+  // Giocatori di movimento; i portieri sono un conteggio separato (numeroPortieri) invece
+  // di essere sommati qui dentro, cosi la scheda esercizio può mostrare "8+1" invece di un
+  // solo "9" che non distingue i ruoli.
   numeroGiocatoriBase Int    @default(8)
+  numeroPortieri      Int    @default(0)
   larghezzaCampo      Float  @default(20)
   lunghezzaCampo      Float  @default(28)
 

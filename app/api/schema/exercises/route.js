@@ -28,7 +28,7 @@ export async function GET(request) {
       // in miniatura del disegno, invece di una lista "cieca" di soli titoli. titolo/
       // numeroGiocatoriBase/larghezzaCampo/lunghezzaCampo sono per-livello (indipendenti
       // tra loro): la card mostra sempre quelli del primo livello come rappresentativi.
-      livelli: { select: { id: true, nome: true, titolo: true, numeroGiocatoriBase: true, larghezzaCampo: true, lunghezzaCampo: true, ripetizioni: true, durataRipetizione: true, recuperoSecondi: true, schemaCampo: true }, orderBy: { ordine: 'asc' } },
+      livelli: { select: { id: true, nome: true, titolo: true, numeroGiocatoriBase: true, numeroPortieri: true, larghezzaCampo: true, lunghezzaCampo: true, ripetizioni: true, durataRipetizione: true, recuperoSecondi: true, schemaCampo: true }, orderBy: { ordine: 'asc' } },
     },
     orderBy: { creatoIl: 'desc' },
   });
@@ -66,7 +66,7 @@ export async function POST(request) {
     return Response.json({ error: 'invalid json body' }, { status: 400 });
   }
 
-  const { titolo, descrizione, numeroGiocatoriBase, larghezzaCampo, lunghezzaCampo, tags, categoria } = body;
+  const { titolo, descrizione, numeroGiocatoriBase, numeroPortieri, larghezzaCampo, lunghezzaCampo, tags, categoria } = body;
   if (!titolo || !numeroGiocatoriBase) {
     return Response.json({ error: 'titolo e numeroGiocatoriBase sono obbligatori' }, { status: 400 });
   }
@@ -91,6 +91,7 @@ export async function POST(request) {
           nome: 'A', ordine: 0, descrizione: '',
           titolo,
           numeroGiocatoriBase: Number(numeroGiocatoriBase),
+          numeroPortieri: numeroPortieri ? Number(numeroPortieri) : 0,
           larghezzaCampo: larghezzaCampo ? Number(larghezzaCampo) : 20,
           lunghezzaCampo: lunghezzaCampo ? Number(lunghezzaCampo) : 28,
         }],

@@ -36,6 +36,7 @@ export async function PATCH(request, { params }) {
   if (typeof body.durataRipetizione !== 'undefined') data.durataRipetizione = Number(body.durataRipetizione);
   if (typeof body.recuperoSecondi !== 'undefined') data.recuperoSecondi = Number(body.recuperoSecondi);
   if (typeof body.numeroGiocatoriBase !== 'undefined') data.numeroGiocatoriBase = Number(body.numeroGiocatoriBase);
+  if (typeof body.numeroPortieri !== 'undefined') data.numeroPortieri = Number(body.numeroPortieri);
   if (typeof body.larghezzaCampo !== 'undefined') data.larghezzaCampo = Number(body.larghezzaCampo);
   if (typeof body.lunghezzaCampo !== 'undefined') data.lunghezzaCampo = Number(body.lunghezzaCampo);
 

@@ -49,6 +49,7 @@ export async function POST(request, { params }) {
       recuperoSecondi: base ? base.recuperoSecondi : undefined,
       titolo: base ? base.titolo : (typeof body.titolo === 'string' && body.titolo.trim() ? body.titolo.trim() : ''),
       numeroGiocatoriBase: base ? base.numeroGiocatoriBase : (body.numeroGiocatoriBase ? Number(body.numeroGiocatoriBase) : 8),
+      numeroPortieri: base ? base.numeroPortieri : (body.numeroPortieri ? Number(body.numeroPortieri) : 0),
       larghezzaCampo: base ? base.larghezzaCampo : (body.larghezzaCampo ? Number(body.larghezzaCampo) : 20),
       lunghezzaCampo: base ? base.lunghezzaCampo : (body.lunghezzaCampo ? Number(body.lunghezzaCampo) : 28),
     },

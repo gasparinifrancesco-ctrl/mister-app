@@ -87,6 +87,13 @@ export async function PATCH(request, { params }) {
     }
     data.votoPreferenza = voto;
   }
+  if (typeof body.difficolta !== 'undefined') {
+    const difficolta = body.difficolta === null || body.difficolta === '' ? null : Number(body.difficolta);
+    if (difficolta !== null && (!Number.isInteger(difficolta) || difficolta < 1 || difficolta > 5)) {
+      return Response.json({ error: 'difficolta deve essere un intero 1-5' }, { status: 400 });
+    }
+    data.difficolta = difficolta;
+  }
 
   await prisma.exercise.update({ where: { id }, data });
   const pastAllenamentoIds = await getPastAllenamentoIds(session.userId);

@@ -34,6 +34,7 @@ export async function POST(request, { params }) {
           recuperoSecondi: l.recuperoSecondi,
           titolo: l.ordine === 0 ? l.titolo + ' (copia)' : l.titolo,
           numeroGiocatoriBase: l.numeroGiocatoriBase,
+          numeroPortieri: l.numeroPortieri,
           larghezzaCampo: l.larghezzaCampo,
           lunghezzaCampo: l.lunghezzaCampo,
         })),
