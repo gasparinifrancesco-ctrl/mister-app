@@ -5385,28 +5385,32 @@ function showSchemaChipContextMenu(evt, chipId){
   const menu = document.getElementById('player-context-menu');
   const isGoal = chip.tipo==='porta' || chip.tipo==='portina';
   const isTesto = chip.tipo==='testo';
-  let html = '<div class="context-menu-item" onclick="renameSchemaChip(\''+chipId+'\'); hideContextMenu();">'+(isTesto?'Modifica testo':'Rinomina')+'</div>';
+  // Niente hideContextMenu() sulle azioni di modifica qui sotto: restano nel menu finché non
+  // si clicca fuori (vedi il listener globale su document), cosi A-/A+, colore o rotazione si
+  // possono ripetere senza dover riaprire il menu col tasto destro ogni volta. Solo "Elimina"
+  // lo chiude, perché l'elemento a cui si riferisce non esiste più.
+  let html = '<div class="context-menu-item" onclick="renameSchemaChip(\''+chipId+'\');">'+(isTesto?'Modifica testo':'Rinomina')+'</div>';
   if(chip.tipo==='giocatore'){
-    html += '<div class="context-menu-item" onclick="numberSchemaChip(\''+chipId+'\'); hideContextMenu();">Numera</div>';
-    html += '<div class="context-menu-item" onclick="toggleSchemaChipPortiere(\''+chipId+'\'); hideContextMenu();">'+(chip.ruolo==='portiere'?'Rimuovi ruolo portiere':'Segna come portiere')+'</div>';
+    html += '<div class="context-menu-item" onclick="numberSchemaChip(\''+chipId+'\');">Numera</div>';
+    html += '<div class="context-menu-item" onclick="toggleSchemaChipPortiere(\''+chipId+'\');">'+(chip.ruolo==='portiere'?'Rimuovi ruolo portiere':'Segna come portiere')+'</div>';
   }
   const isResizable = isTesto || ['giocatore','cono','paletto','cinesino'].includes(chip.tipo);
   if(isResizable){
     html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
       '<span class="hint">Dimensione</span>' +
-      '<button type="button" class="btn btn-small" onclick="resizeSchemaChip(\''+chipId+'\',-0.15); hideContextMenu();">A-</button>' +
-      '<button type="button" class="btn btn-small" onclick="resizeSchemaChip(\''+chipId+'\',0.15); hideContextMenu();">A+</button>' +
+      '<button type="button" class="btn btn-small" onclick="resizeSchemaChip(\''+chipId+'\',-0.15);">A-</button>' +
+      '<button type="button" class="btn btn-small" onclick="resizeSchemaChip(\''+chipId+'\',0.15);">A+</button>' +
     '</div>';
   }
   if(isTesto){
-    html += '<div class="context-menu-item" onclick="toggleSchemaTextChipSottile(\''+chipId+'\'); hideContextMenu();">'+(chip.sottile?'Grassetto':'Sottile')+'</div>';
+    html += '<div class="context-menu-item" onclick="toggleSchemaTextChipSottile(\''+chipId+'\');">'+(chip.sottile?'Grassetto':'Sottile')+'</div>';
   }
   if(isGoal){
-    html += '<div class="context-menu-item" onclick="rotateSchemaChip(\''+chipId+'\',-45); hideContextMenu();">Ruota ↺ 45°</div>';
-    html += '<div class="context-menu-item" onclick="rotateSchemaChip(\''+chipId+'\',45); hideContextMenu();">Ruota ↻ 45°</div>';
+    html += '<div class="context-menu-item" onclick="rotateSchemaChip(\''+chipId+'\',-45);">Ruota ↺ 45°</div>';
+    html += '<div class="context-menu-item" onclick="rotateSchemaChip(\''+chipId+'\',45);">Ruota ↻ 45°</div>';
   } else {
     html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
-      SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaChip(\''+chipId+'\',\''+c+'\'); hideContextMenu();" style="width:16px;height:16px;border-radius:50%;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
+      SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaChip(\''+chipId+'\',\''+c+'\');" style="width:16px;height:16px;border-radius:50%;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
     '</div>';
   }
   html += '<div class="context-menu-item" onclick="deleteSchemaChip(\''+chipId+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
@@ -5487,10 +5491,10 @@ function showSchemaZoneContextMenu(evt, zoneId){
   const zone = data.zones.find(z=>z.id===zoneId);
   if(!zone) return;
   const menu = document.getElementById('player-context-menu');
-  let html = '<div class="context-menu-item" onclick="toggleSchemaZoneStile(\''+zoneId+'\'); hideContextMenu();">'+(zone.stile==='contorno'?'Stile: tinta piena':'Stile: solo contorno (es. area di rigore)')+'</div>';
+  let html = '<div class="context-menu-item" onclick="toggleSchemaZoneStile(\''+zoneId+'\');">'+(zone.stile==='contorno'?'Stile: tinta piena':'Stile: solo contorno (es. area di rigore)')+'</div>';
   if(zone.stile!=='contorno'){
     html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
-      SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaZone(\''+zoneId+'\',\''+c+'\'); hideContextMenu();" style="width:16px;height:16px;border-radius:4px;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
+      SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaZone(\''+zoneId+'\',\''+c+'\');" style="width:16px;height:16px;border-radius:4px;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
     '</div>';
   }
   html += '<div class="context-menu-item" onclick="deleteSchemaZone(\''+zoneId+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
@@ -5527,13 +5531,13 @@ function showSchemaArrowContextMenu(evt, arrowId){
   const arrow = data.arrows.find(a=>a.id===arrowId);
   if(!arrow) return;
   const menu = document.getElementById('player-context-menu');
-  let html = '<div class="context-menu-item" onclick="numberSchemaArrow(\''+arrowId+'\'); hideContextMenu();">'+(arrow.numero!=null?'Cambia numero':'Numera')+'</div>';
+  let html = '<div class="context-menu-item" onclick="numberSchemaArrow(\''+arrowId+'\');">'+(arrow.numero!=null?'Cambia numero':'Numera')+'</div>';
   if(arrow.numero!=null){
-    html += '<div class="context-menu-item" onclick="numberSchemaArrow(\''+arrowId+'\', true); hideContextMenu();">Rimuovi numero</div>';
+    html += '<div class="context-menu-item" onclick="numberSchemaArrow(\''+arrowId+'\', true);">Rimuovi numero</div>';
   }
   if(arrow.tipo!=='divisore' && arrow.tipo!=='campo-linea'){
     html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
-      SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaArrow(\''+arrowId+'\',\''+c+'\'); hideContextMenu();" style="width:16px;height:16px;border-radius:50%;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
+      SCHEMA_COLORS.map(c=>'<span onclick="recolorSchemaArrow(\''+arrowId+'\',\''+c+'\');" style="width:16px;height:16px;border-radius:50%;background:'+c+';display:inline-block;cursor:pointer;border:1px solid var(--border);"></span>').join('') +
     '</div>';
   }
   html += '<div class="context-menu-item" onclick="deleteSchemaArrow(\''+arrowId+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
@@ -5569,6 +5573,69 @@ function isCoarsePointer(){
 function confirmEraserDelete(){
   return !isCoarsePointer() || confirm('Eliminare questo elemento dal disegno?');
 }
+// Raggio approssimativo (in user-space SVG, relativo a w) da usare come anello di
+// evidenziazione attorno a un chip in selezione multipla: una stima per-tipo che copre
+// la forma reale, non serve essere pixel-perfect, solo visibilmente centrata sull'elemento.
+function schemaSelectionChipRadius(c, w){
+  const sz = c.size||1;
+  if(c.tipo==='pallone') return w*0.013*1.9;
+  if(c.tipo==='porta') return w*0.097;
+  if(c.tipo==='portina') return w*0.055;
+  if(c.tipo==='cono') return w*0.035*sz*1.55;
+  if(c.tipo==='paletto') return w*0.07*sz*1.1;
+  if(c.tipo==='cinesino') return w*0.026*sz*1.9;
+  return w*0.036*sz*1.45; // giocatore/portiere
+}
+// Evidenziazione della selezione multipla (lazo su area libera): overlay di forme SVG
+// vere disegnate in coordinate campo (scala relativa a w, come il resto del disegnatore),
+// NON un CSS filter — i drop-shadow CSS su elementi SVG dentro un viewBox scalato (il campo
+// può essere largo solo 20 unità) si sono rivelati inaffidabili tra browser. Un doppio
+// anello bianco+azzurro per leggibilità su qualunque sfondo/colore dell'elemento sotto.
+function schemaSelectionHighlightSVG(){
+  if(!state.schema.selection.length) return '';
+  const livello = schemaActiveLivello();
+  if(!livello) return '';
+  const w = livello.larghezzaCampo || 20;
+  const data = parseSchemaCampo(livello);
+  const outerW = w*0.013, innerW = w*0.006;
+  let out = '';
+  function ring(shapeAttrs, tag){
+    out += '<'+tag+' '+shapeAttrs+' fill="none" stroke="#FFFFFF" stroke-width="'+outerW+'" opacity="0.55" stroke-linecap="round"/>';
+    out += '<'+tag+' '+shapeAttrs+' fill="none" stroke="#4DA3FF" stroke-width="'+innerW+'" opacity="0.95" stroke-linecap="round"/>';
+  }
+  state.schema.selection.forEach(function(s){
+    if(s.type==='chip'){
+      const c = data.chips.find(function(x){ return x.id===s.id; });
+      if(!c) return;
+      if(c.tipo==='testo'){
+        const fontSize = w*(c.size||1)*0.045;
+        const label = c.label || 'Testo';
+        const hw = fontSize*0.32*label.length + w*0.015, hh = fontSize*0.75;
+        ring('x="'+(c.x-hw)+'" y="'+(c.y-hh)+'" width="'+(hw*2)+'" height="'+(hh*2)+'" rx="'+(w*0.01)+'"', 'rect');
+        return;
+      }
+      const r = schemaSelectionChipRadius(c, w);
+      const cy = c.tipo==='paletto' ? c.y - r*0.3 : c.y;
+      ring('cx="'+c.x+'" cy="'+cy+'" r="'+r+'"', 'circle');
+    } else if(s.type==='arrow'){
+      const a = data.arrows.find(function(x){ return x.id===s.id; });
+      if(!a) return;
+      const geo = schemaArrowGeometry(a);
+      const shapeAttrs = geo.tag==='path' ? 'd="'+geo.d+'"' : 'x1="'+geo.x1+'" y1="'+geo.y1+'" x2="'+geo.x2+'" y2="'+geo.y2+'"';
+      ring(shapeAttrs, geo.tag);
+    } else if(s.type==='zone'){
+      const z = data.zones.find(function(x){ return x.id===s.id; });
+      if(!z) return;
+      const pad = w*0.012;
+      if(z.shape==='cerchio'){
+        ring('cx="'+(z.x+z.w/2)+'" cy="'+(z.y+z.h/2)+'" rx="'+(z.w/2+pad)+'" ry="'+(z.h/2+pad)+'"', 'ellipse');
+      } else {
+        ring('x="'+(z.x-pad)+'" y="'+(z.y-pad)+'" width="'+(z.w+pad*2)+'" height="'+(z.h+pad*2)+'"', 'rect');
+      }
+    }
+  });
+  return out ? '<g class="schema-selection-overlay" pointer-events="none">'+out+'</g>' : '';
+}
 function attachSchemaFieldInteractions(){
   const svg = document.getElementById('schema-field-svg');
   if(!svg) return;
@@ -5582,13 +5649,13 @@ function attachSchemaFieldInteractions(){
     return pt.matrixTransform(svg.getScreenCTM().inverse());
   }
   // Evidenzia visivamente gli elementi in selezione multipla (lazo su area libera, vedi il
-  // gestore di sfondo più sotto): un bagliore bianco/azzurro via CSS filter, non uno stile
-  // diverso per ogni tipo di elemento.
+  // gestore di sfondo più sotto): overlay SVG vero disegnato sopra il campo, vedi
+  // schemaSelectionHighlightSVG (sostituisce un precedente approccio a CSS filter che non
+  // si vedeva in modo affidabile sugli elementi SVG).
+  const prevOverlay = svg.querySelector('.schema-selection-overlay');
+  if(prevOverlay) prevOverlay.remove();
   if(state.schema.selection.length){
-    const selKeys = new Set(state.schema.selection.map(function(s){ return s.type+':'+s.id; }));
-    svg.querySelectorAll('.schema-chip').forEach(function(el){ if(selKeys.has('chip:'+el.getAttribute('data-id'))) el.classList.add('schema-el-selected'); });
-    svg.querySelectorAll('.schema-arrow').forEach(function(el){ if(selKeys.has('arrow:'+el.getAttribute('data-id'))) el.classList.add('schema-el-selected'); });
-    svg.querySelectorAll('.schema-zone').forEach(function(el){ if(selKeys.has('zone:'+el.getAttribute('data-id'))) el.classList.add('schema-el-selected'); });
+    svg.insertAdjacentHTML('beforeend', schemaSelectionHighlightSVG());
   }
   // Se l'elemento su cui si inizia un trascinamento fa parte di una selezione multipla
   // (>1 elemento), ritorna i riferimenti dati+DOM di TUTTI gli elementi selezionati con le
@@ -7293,7 +7360,13 @@ async function submitProfile(){
 }
 
 /* ---------- init ---------- */
-document.addEventListener('click', hideContextMenu);
+// Chiude il menu contestuale solo per un click FUORI dal menu: un click su un'azione al suo
+// interno (es. A-/A+ ripetuti, colore, rotazione) non deve farlo sparire, altrimenti ogni
+// piccola modifica costringe a riaprirlo col tasto destro da capo.
+document.addEventListener('click', function(e){
+  if(e.target.closest('#player-context-menu')) return;
+  hideContextMenu();
+});
 document.addEventListener('input', function(e){
   if(e.target.tagName==='TEXTAREA') autosizeTextarea(e.target);
 });

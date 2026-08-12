@@ -445,10 +445,8 @@
   /* Campo a sinistra, barra strumenti a destra come colonna: su schermi stretti la barra
      va sotto invece di schiacciarsi illeggibile (il disegnatore resta comunque un'attività
      da desktop, ma niente vieta di aprirlo con una finestra ridotta). */
-  /* Bagliore bianco/azzurro sugli elementi in selezione multipla (lazo): un filter, non un
-     bordo, cosi funziona identico su chip (cerchi/rettangoli), frecce (linee/curve) e zone
-     (rettangoli/ellissi) senza dover adattare lo stile per ogni forma. */
-  .schema-el-selected{ filter: drop-shadow(0 0 2px #FFFFFF) drop-shadow(0 0 5px #4DA3FF); }
+  /* L'evidenziazione della selezione multipla (lazo) non è più CSS: è un overlay SVG vero
+     disegnato in coordinate campo, vedi schemaSelectionHighlightSVG in app.js. */
   .schema-selection-bar{
     display:flex; align-items:center; gap:10px; margin-top:12px; padding:8px 12px;
     background:rgba(77,163,255,0.12); border:1px solid #4DA3FF; border-radius:8px; font-size:0.88rem;
@@ -477,11 +475,11 @@
   .schema-toolbar{ display:flex; flex-direction:column; gap:10px; margin-top:12px; padding:12px; background:var(--panel); border:1px solid var(--border); border-radius:10px; }
   .schema-toolbar-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-height:36px; }
   .schema-toolbar-label{ margin-right:2px; white-space:nowrap; }
-  /* Gruppi di strumenti separati da una sottile linea verticale, cosi la toolbar si legge
-     come Campo | Giocatori | Oggetti | Linee | Cancella invece di una fila indistinta di
-     icone. */
-  .schema-tool-group{ display:flex; align-items:center; gap:4px; padding-right:10px; margin-right:6px; border-right:1px solid rgba(255,255,255,0.08); }
-  .schema-tool-group:last-child{ border-right:none; padding-right:0; margin-right:0; }
+  /* Gruppi di strumenti: la barra è verticale (sidebar stretta 240px), quindi ogni gruppo deve
+     poter andare a capo internamente (flex-wrap) invece di traboccare fuori dal contenitore.
+     Niente più divisore verticale tra gruppi (pensato per una barra orizzontale a riga unica):
+     lo spazio tra i gruppi lo dà il gap della riga che li contiene. */
+  .schema-tool-group{ display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
   .schema-tool-btn{
     display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px;
     background:transparent; border:none; border-radius:8px; color:var(--text-dim); cursor:pointer; padding:0;
