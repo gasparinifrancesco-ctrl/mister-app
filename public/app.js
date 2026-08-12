@@ -181,7 +181,11 @@ let state = {
     placeMode: null,
     eraserMode: false,
     activeColor: SCHEMA_COLORS[0],
-    activeGiocatoreSize: 1,
+    // Ultima dimensione scelta (A-/A+ dal menu contestuale) per ciascun tipo di elemento
+    // ridimensionabile: il prossimo elemento piazzato di quel tipo nasce con quella misura
+    // invece di ripartire sempre da 1, cosi non tocca reimpostarla ogni volta componendo
+    // una formazione o un set di paletti/cinesini/coni tutti della stessa taglia.
+    activeChipSizeByType: { giocatore: 1, cono: 1, paletto: 1, cinesino: 1 },
     // Cronologia indietro/avanti del disegno (chip/frecce/zone) del livello attualmente
     // aperto: si azzera cambiando livello, vedi schemaInitHistoryForLivello.
     drawHistory: { livelloId: null, stack: [], index: -1 },
@@ -4435,6 +4439,18 @@ const SCHEMA_FIELD_PRESET_SIZES = {
   libero: { larghezzaCampo: 20, lunghezzaCampo: 28 },
 };
 const SCHEMA_FIELD_PRESET_LABELS = { meta: 'Metà campo', intero: 'Campo intero', libero: 'Libero' };
+// Quale preset è attivo ORA per un livello, dedotto dalle sue misure attuali (non c'è un
+// campo dedicato salvato: le misure stesse sono la fonte di verità). "Metà campo"/"Campo
+// intero" hanno misure fisse e non modificabili a mano — solo "Libero" permette larghezza/
+// lunghezza personalizzate — cosi il layout scelto resta coerente con le righe/aree del
+// preset invece di poterle disallineare inserendo misure arbitrarie.
+function schemaCurrentFieldPreset(livello){
+  if(!livello) return 'libero';
+  const w = livello.larghezzaCampo, h = livello.lunghezzaCampo;
+  if(w===SCHEMA_FIELD_PRESET_SIZES.meta.larghezzaCampo && h===SCHEMA_FIELD_PRESET_SIZES.meta.lunghezzaCampo) return 'meta';
+  if(w===SCHEMA_FIELD_PRESET_SIZES.intero.larghezzaCampo && h===SCHEMA_FIELD_PRESET_SIZES.intero.lunghezzaCampo) return 'intero';
+  return 'libero';
+}
 // Ogni elemento generato da un preset porta guida:true, cosi riapplicare un layout (o
 // passarne a un altro) sostituisce SOLO i segni del campo generati dal preset precedente,
 // senza toccare giocatori/frecce/zone aggiunti a mano dall'allenatore.
@@ -4881,17 +4897,22 @@ function schemaToolbarHTML(livello){
   const lineButtons = lineTypes.map(([key,icon,title])=>
     schemaToolBtn(s.drawMode && s.activeLineType===key, "setSchemaLineTypeAndDraw('"+key+"')", title, icon)
   ).join('');
+  const currentFieldPreset = schemaCurrentFieldPreset(livello);
   const layoutGroup = schemaToolGroupHTML(
     '<span class="hint schema-toolbar-label">Layout</span>' +
     ['meta','intero','libero'].map(key=>
-      '<button type="button" class="btn btn-small" onclick="applySchemaFieldPreset(\''+key+'\')" title="Imposta la base del campo e i segni (porta/area/cerchio) di questo layout, senza toccare giocatori e disegni già aggiunti">'+SCHEMA_FIELD_PRESET_LABELS[key]+'</button>'
+      '<button type="button" class="btn btn-small'+(currentFieldPreset===key?' btn-active':'')+'" onclick="applySchemaFieldPreset(\''+key+'\')" title="Imposta la base del campo e i segni (porta/area/cerchio) di questo layout, senza toccare giocatori e disegni già aggiunti">'+SCHEMA_FIELD_PRESET_LABELS[key]+'</button>'
     ).join('')
   );
+  // Con "Metà campo"/"Campo intero" le misure sono fisse (coerenti con righe/aree del
+  // preset): gli input restano disabilitati finché non si passa a "Libero".
+  const campoDimsEditable = currentFieldPreset==='libero';
+  const campoDimsTitle = campoDimsEditable ? '' : ' title="Fissata dal layout \''+SCHEMA_FIELD_PRESET_LABELS[currentFieldPreset]+'\' — scegli \'Libero\' per personalizzarla"';
   const campoGroup = schemaToolGroupHTML(
     '<span class="hint schema-toolbar-label">Campo (m)</span>' +
-    '<input id="schema-ex-larghezza" type="number" step="1" min="1" value="'+Math.round(livello.larghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input schema-property-input" title="Larghezza campo">' +
+    '<input id="schema-ex-larghezza" type="number" step="1" min="1" value="'+Math.round(livello.larghezzaCampo)+'" '+(campoDimsEditable?'onchange="onSchemaFieldSizeOverride()"':'disabled')+' class="schema-dim-input schema-property-input"'+campoDimsTitle+'>' +
     '<span class="hint">×</span>' +
-    '<input id="schema-ex-lunghezza" type="number" step="1" min="1" value="'+Math.round(livello.lunghezzaCampo)+'" onchange="onSchemaFieldSizeOverride()" class="schema-dim-input schema-property-input" title="Lunghezza campo">'
+    '<input id="schema-ex-lunghezza" type="number" step="1" min="1" value="'+Math.round(livello.lunghezzaCampo)+'" '+(campoDimsEditable?'onchange="onSchemaFieldSizeOverride()"':'disabled')+' class="schema-dim-input schema-property-input"'+campoDimsTitle+'>'
   );
   const giocatoriGroup = schemaToolGroupHTML(
     schemaToolBtn(s.placeMode==='giocatore', "setSchemaPlaceMode('giocatore')", 'Aggiungi giocatore', SCHEMA_ICON_GIOCATORE) +
@@ -5462,9 +5483,10 @@ function resizeSchemaChip(chipId, delta){
   if(!chip) return;
   const newSize = Math.max(0.4, Math.min(3, Math.round(((chip.size||1) + delta)*100)/100));
   chip.size = newSize;
-  // La dimensione scelta resta quella di default per i prossimi giocatori piazzati in
-  // questo disegno (stessa logica del colore attivo): non tocca reimpostarla ogni volta.
-  if(chip.tipo==='giocatore') state.schema.activeGiocatoreSize = newSize;
+  // La dimensione scelta resta quella di default per i prossimi elementi dello stesso tipo
+  // piazzati in questo disegno (stessa logica del colore attivo): non tocca reimpostarla
+  // ogni volta componendo una formazione o un set di paletti/cinesini/coni della stessa taglia.
+  if(state.schema.activeChipSizeByType.hasOwnProperty(chip.tipo)) state.schema.activeChipSizeByType[chip.tipo] = newSize;
   saveSchemaCampo(data);
 }
 function toggleSchemaTextChipSottile(chipId){
@@ -5993,10 +6015,11 @@ function attachSchemaFieldInteractions(){
           return;
         }
         const data = parseSchemaCampo(schemaActiveLivello());
-        // I nuovi giocatori nascono con l'ultima dimensione scelta (A-/A+ dal menu
-        // contestuale), non sempre 1: cosi non tocca reimpostarla per ognuno mentre si
-        // compone una formazione con giocatori volutamente più grandi/piccoli.
-        const size = s.placeMode==='giocatore' ? (s.activeGiocatoreSize||1) : 1;
+        // I nuovi elementi ridimensionabili (giocatori, coni, paletti, cinesini) nascono con
+        // l'ultima dimensione scelta per quel tipo (A-/A+ dal menu contestuale), non sempre 1:
+        // cosi non tocca reimpostarla per ognuno componendo una formazione o un set di
+        // materiale tutto della stessa taglia.
+        const size = s.activeChipSizeByType.hasOwnProperty(s.placeMode) ? (s.activeChipSizeByType[s.placeMode]||1) : 1;
         data.chips.push({ id: uid(), x:p.x, y:p.y, tipo:s.placeMode, color:s.activeColor, numero:null, label:'', size:size });
         saveSchemaCampo(data);
       }
