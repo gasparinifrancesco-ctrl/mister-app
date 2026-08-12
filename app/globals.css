@@ -411,6 +411,10 @@
   .pill-muted{ color: var(--text-dim); background: var(--panel-2); }
   .pill-yellow{ color: var(--yellow); background: rgba(228,193,59,0.14); border-color: transparent; }
   .pill-red{ color: var(--chalk); background: var(--danger); border-color: var(--danger); }
+  /* Avviso infortunio accanto al nome: mai un motivo per bloccare la selezione, solo un
+     segnale visivo — vedi injuryBadgeHTML in app.js. */
+  .injury-dot{ display:inline-flex; align-items:center; flex-shrink:0; margin-right:2px; }
+  .injury-dot svg{ display:block; }
   .pill-win{ background: rgba(62,142,99,0.16); border-color: transparent; color: var(--success); }
   .pill-draw{ background: rgba(228,193,59,0.16); border-color: transparent; color: var(--yellow); }
   .pill-loss{ background: rgba(193,68,60,0.16); border-color: transparent; color: #E8756D; }

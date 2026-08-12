@@ -6,7 +6,7 @@ import { getActiveStagione } from '@/lib/stagioni';
 // Stesso elenco di public/app.js (PRESENZA_STATI): duplicato qui come già avviene per
 // altre piccole costanti condivise client/server in questo progetto (es. la palette
 // colori delle fasi di allenamento).
-const PRESENZA_STATI = new Set(['Disponibile', 'Non disponibile']);
+const PRESENZA_STATI = new Set(['Disponibile', 'Non disponibile', 'Lavoro differenziato']);
 
 // Endpoint mirato: legge il blob "allenamenti", cambia SOLO presenze[playerId] di UN
 // allenamento, riscrive. Mai fidarsi di un blob intero inviato dal client per questo ruolo

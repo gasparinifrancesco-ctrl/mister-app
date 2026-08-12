@@ -35,7 +35,7 @@ const ROLE_ORDER = { 'Por':0, 'DC':1, 'TD':2, 'TS':2, 'CDC':3, 'CC':4, 'COC':4, 
 const FOOT_OPTIONS = ['', 'Destro','Sinistro','Ambidestro'];
 const GOAL_TYPES_FATTI = ['Azione','Rigore','Punizione diretta','Punizione indiretta',"Calcio d'angolo",'Autogol avversario'];
 const GOAL_TYPES_SUBITI = ['Azione','Rigore','Punizione diretta','Punizione indiretta',"Calcio d'angolo",'Autogol nostro'];
-const PRESENZA_STATI = ['Disponibile','Non disponibile'];
+const PRESENZA_STATI = ['Disponibile','Non disponibile','Lavoro differenziato'];
 /* numerazione classica per posizione (rif. 4-3-3: 1 Por, 2 TD, 3 TS, 4 mediano, 5-6 centrali, 7-11 esterni, 8-10 mezzali, 9 punta) */
 const FORMATIONS = {
   '4-4-2': [
@@ -352,8 +352,33 @@ function matchOutcome(match){
   if(gf<gs) return 'loss';
   return 'draw';
 }
-function defaultPresenzaFor(player){
+// Vero se il giocatore risulta infortunato nel giorno indicato (data inizio inclusa, data
+// rientro inclusa se impostata — nessuna data rientro = infortunio ancora in corso).
+function isPlayerInfortunatoOn(player, dateStr){
+  if(!player || !player.infortunato || !player.infortunioDataInizio || !dateStr) return false;
+  if(dateStr < player.infortunioDataInizio) return false;
+  if(player.infortunioDataRientro && dateStr > player.infortunioDataRientro) return false;
+  return true;
+}
+// dateStr (facoltativo, "YYYY-MM-DD" del giorno di allenamento): se il giocatore risulta
+// infortunato quel giorno, la presenza si precompila su "Lavoro differenziato" invece del
+// solito Disponibile/Non disponibile — resta comunque un default, non un vincolo: l'allenatore
+// può sempre cambiarlo a mano dal menu a tendina.
+function defaultPresenzaFor(player, dateStr){
+  if(isPlayerInfortunatoOn(player, dateStr)) return 'Lavoro differenziato';
   return (player && player.aggregatoPrimaSquadra) ? 'Non disponibile' : 'Disponibile';
+}
+// Icona a croce (materiale sanitario), non un'emoji: coerente con le altre icone SVG disegnate
+// a mano nel codebase invece di caratteri unicode che rendono in modo incoerente tra piattaforme.
+const INJURY_ICON_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="3.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+// Selezionabile-ma-segnalato: mai un motivo per bloccare la scelta in formazione, solo un
+// avviso visivo — l'allenatore può sempre convocare/schierare un giocatore infortunato
+// (es. per una convocazione precauzionale) sapendo però qual è la sua situazione.
+function injuryBadgeHTML(player){
+  if(!player || !player.infortunato) return '';
+  let title = 'Infortunato dal ' + formatDate(player.infortunioDataInizio||'');
+  if(player.infortunioDataRientro) title += ' — rientro previsto ' + formatDate(player.infortunioDataRientro);
+  return '<span class="injury-dot" title="'+esc(title)+'">'+INJURY_ICON_SVG+'</span>';
 }
 
 /* ---------- storage ---------- */
@@ -398,6 +423,9 @@ function migratePlayer(p){
   if(typeof p.aggregatoPrimaSquadra !== 'boolean') p.aggregatoPrimaSquadra = false;
   if(typeof p.valutazione !== 'number') p.valutazione = 0;
   if(typeof p.note !== 'string') p.note = '';
+  if(typeof p.infortunato !== 'boolean') p.infortunato = false;
+  if(p.infortunioDataInizio===undefined) p.infortunioDataInizio = null;
+  if(p.infortunioDataRientro===undefined) p.infortunioDataRientro = null;
   // MD (mediano) è stato rinominato CDC: chi ha già un giocatore o un modulo salvato con
   // il vecchio codice lo ritrova qui, senza dover riassegnare a mano il ruolo.
   if(p.ruolo==='MD') p.ruolo = 'CDC';
@@ -753,11 +781,12 @@ function computePresenzaPercent(playerId){
   const total = pastAllenamenti.length;
   if(total===0) return null;
   const player = state.players.find(p=>p.id===playerId);
-  const defaultStato = defaultPresenzaFor(player);
   let presenti = 0;
   pastAllenamenti.forEach(a=>{
-    const v = (a.presenze && a.presenze[playerId]) || defaultStato;
-    if(v==='Disponibile') presenti++;
+    const v = (a.presenze && a.presenze[playerId]) || defaultPresenzaFor(player, a.data);
+    // "Lavoro differenziato" conta come presente ai fini della percentuale: il giocatore
+    // si è comunque presentato all'allenamento, solo con un carico di lavoro diverso.
+    if(v==='Disponibile' || v==='Lavoro differenziato') presenti++;
   });
   return Math.round(presenti/total*100);
 }
@@ -798,7 +827,7 @@ function rosaColsForMode(mode){
   }
   return [
     ['nome','Nome'], ['ruolo','Ruolo'], ['secondoRuolo','2° ruolo'], ['eta','Età'], ['piede','Piede'],
-    ['altezza','Altezza'], ['valutazione','Valutazione'], ['aggregatoPrimaSquadra','Aggregato'], ['note','Note'],
+    ['altezza','Altezza'], ['valutazione','Valutazione'], ['aggregatoPrimaSquadra','Aggregato'], ['infortunato','Infortunio'], ['note','Note'],
   ];
 }
 function renderRosaRow(r, mode, idx){
@@ -818,8 +847,9 @@ function renderRosaRow(r, mode, idx){
     const footOpts = FOOT_OPTIONS.map(f=>'<option value="'+f+'" '+(r.piede===f?'selected':'')+'>'+(f||'—')+'</option>').join('');
     const starOptions = [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>'<option value="'+v+'" '+(Number(r.valutazione||0)===v?'selected':'')+'>'+v.toFixed(1)+'</option>').join('');
     // Stesso ordine delle colonne di "Info generali" (nome, ruolo, 2° ruolo, età←anno
-    // nascita, piede, altezza, valutazione, aggregato, note), cosi ogni campo modificabile
-    // resta sotto l'intestazione giusta invece di richiedere celle vuote di riempimento.
+    // nascita, piede, altezza, valutazione, aggregato, infortunio, note), cosi ogni campo
+    // modificabile resta sotto l'intestazione giusta invece di richiedere celle vuote di
+    // riempimento.
     return '<tr style="background:rgba(var(--accent-rgb),0.07);">' +
       numCell +
       '<td data-label="Nome"><input type="text" style="width:150px;" value="'+esc(r.nome)+'" onchange="updatePlayerField(\''+r.id+'\',\'nome\',this.value)"></td>' +
@@ -830,6 +860,13 @@ function renderRosaRow(r, mode, idx){
       '<td data-label="Altezza"><input type="number" min="100" max="220" style="width:70px;" value="'+esc(r.altezza||'')+'" placeholder="cm" onchange="updatePlayerField(\''+r.id+'\',\'altezza\',this.value)"></td>' +
       '<td data-label="Valutazione"><select onchange="updatePlayerField(\''+r.id+'\',\'valutazione\',this.value)">'+starOptions+'</select></td>' +
       '<td data-label="Aggregato"><label style="display:flex;align-items:center;gap:4px;font-size:0.68rem;white-space:nowrap;"><input type="checkbox" '+(r.aggregatoPrimaSquadra?'checked':'')+' style="width:auto;" onchange="updatePlayerCheckboxField(\''+r.id+'\',\'aggregatoPrimaSquadra\',this.checked)" title="Aggregato: non disponibile di default per gli allenamenti"> Aggregato</label></td>' +
+      '<td data-label="Infortunio">' +
+        '<label style="display:flex;align-items:center;gap:4px;font-size:0.68rem;white-space:nowrap;"><input type="checkbox" '+(r.infortunato?'checked':'')+' style="width:auto;" onchange="toggleInfortunato(\''+r.id+'\',this.checked)" title="Infortunato: resta selezionabile ma segnalato in formazione, precompila lavoro differenziato in presenze"> Infortunato</label>' +
+        (r.infortunato ? '<div style="display:flex; gap:4px; margin-top:4px;">' +
+          '<input type="date" style="width:120px;" value="'+esc(r.infortunioDataInizio||'')+'" onchange="updateInfortunioData(\''+r.id+'\',\'infortunioDataInizio\',this.value)" title="Data inizio infortunio">' +
+          '<input type="date" style="width:120px;" value="'+esc(r.infortunioDataRientro||'')+'" onchange="updateInfortunioData(\''+r.id+'\',\'infortunioDataRientro\',this.value)" title="Data rientro prevista (facoltativa)">' +
+        '</div>' : '') +
+      '</td>' +
       '<td data-label="Note"><input type="text" class="input-note" placeholder="note libere" value="'+esc(r.note||'')+'" onchange="updatePlayerField(\''+r.id+'\',\'note\',this.value)"></td>' +
       '<td data-label="" style="white-space:nowrap; text-align:right;"><button class="btn btn-small btn-primary" onclick="stopEditPlayer()">OK</button> <button class="btn-icon" onclick="confirmRemovePlayer(\''+r.id+'\')" aria-label="Rimuovi">×</button></td>' +
     '</tr>';
@@ -852,6 +889,7 @@ function renderRosaRow(r, mode, idx){
   cells.votoMedio = '<td>'+(r.votoMedio!=null?r.votoMedio.toFixed(1):'-')+'</td>';
   cells.percentPresenza = '<td>'+(r.percentPresenza!=null?r.percentPresenza+'%':'-')+'</td>';
   cells.aggregatoPrimaSquadra = '<td>'+(r.aggregatoPrimaSquadra ? '<span class="pill pill-muted">Aggregato</span>' : '—')+'</td>';
+  cells.infortunato = '<td>'+(r.infortunato ? '<span class="pill pill-red" title="'+esc('Dal '+formatDate(r.infortunioDataInizio||'')+(r.infortunioDataRientro?' al '+formatDate(r.infortunioDataRientro):' — nessuna data di rientro'))+'">Infortunato</span>' : '—')+'</td>';
   cells.valutazione = '<td>'+starRatingHTML(r.valutazione)+'</td>';
   cells.note = '<td class="roster-note-cell">'+(r.note?esc(r.note):'—')+'</td>';
   const cols = rosaColsForMode(mode);
@@ -898,6 +936,26 @@ function updatePlayerCheckboxField(playerId, field, checked){
   savePlayers();
   renderView();
 }
+// A differenza di updatePlayerCheckboxField (un semplice flag), attivare l'infortunio ha un
+// effetto collaterale utile (precompila la data inizio a oggi, cosi non tocca sempre aprirla
+// a mano) e disattivarlo pulisce entrambe le date invece di lasciarle appese e fuorvianti la
+// prossima volta che si riattiva il flag.
+function toggleInfortunato(playerId, checked){
+  const p = state.players.find(pl=>pl.id===playerId);
+  if(!p) return;
+  p.infortunato = checked;
+  if(checked && !p.infortunioDataInizio) p.infortunioDataInizio = new Date().toISOString().slice(0,10);
+  if(!checked){ p.infortunioDataInizio = null; p.infortunioDataRientro = null; }
+  savePlayers();
+  renderView();
+}
+function updateInfortunioData(playerId, field, value){
+  const p = state.players.find(pl=>pl.id===playerId);
+  if(!p) return;
+  p[field] = value || null;
+  savePlayers();
+  renderView();
+}
 function computePlayerStatsRow(playerId, stats){
   const p = state.players.find(pl=>pl.id===playerId);
   if(!p) return null;
@@ -907,6 +965,7 @@ function computePlayerStatsRow(playerId, stats){
     id: p.id, nome: p.nome, ruolo: p.ruolo, secondoRuolo: p.secondoRuolo||'', piede: p.piede||'', annoNascita: p.annoNascita||null,
     altezza: p.altezza||null,
     aggregatoPrimaSquadra: !!p.aggregatoPrimaSquadra,
+    infortunato: !!p.infortunato, infortunioDataInizio: p.infortunioDataInizio||null, infortunioDataRientro: p.infortunioDataRientro||null,
     eta: computeAge(p.annoNascita), valutazione: p.valutazione||0, note: p.note||'',
     convocazioni: st.convocazioni||0, titolare: st.titolare||0, subentrato: st.subentrato||0,
     minuti: st.minutiTot||0, gol: st.gol||0, golSubiti: st.golSubiti||0, assist: st.assist||0,
@@ -1030,7 +1089,10 @@ function addPlayer(){
     altezza: altezzaEl.value ? parseInt(altezzaEl.value,10) : null,
     aggregatoPrimaSquadra: aggregatoEl.checked,
     valutazione: 0,
-    note: ''
+    note: '',
+    infortunato: false,
+    infortunioDataInizio: null,
+    infortunioDataRientro: null,
   });
   savePlayers();
   renderView();
@@ -1510,7 +1572,7 @@ function renderRosterSideList(match){
       'onclick="toggleConvocato(\''+match.id+'\',\''+p.id+'\')" ' +
       'oncontextmenu="showPlayerContextMenu(event,\''+match.id+'\',\''+p.id+'\')">' +
       '<span class="roster-side-num">' + (on?esc(num):'') + '</span>' +
-      '<span class="roster-side-name">' + esc(displayName(p.nome)) + '</span>' +
+      '<span class="roster-side-name">' + injuryBadgeHTML(p) + esc(displayName(p.nome)) + '</span>' +
       '<span class="roster-side-role">' + esc(p.ruolo) + '</span>' +
       '<span class="roster-side-dot ' + dotClass + '"></span>' +
     '</div>';
@@ -2027,6 +2089,7 @@ function attachAvversariaPitchInteractions(matchId){
 // che apre la tendina) invece di un elemento SVG difficile da dimensionare bene ovunque.
 function pitchCardNameRowHTML(p, playerId){
   return '<span class="pitch-card-namerow">' +
+    injuryBadgeHTML(p) +
     '<span class="pitch-card-name">'+esc(shortDisplayName(p))+'</span>' +
     '<button type="button" class="pitch-card-triangle" onclick="event.stopPropagation(); openDefaultAssignMenu(event, \''+playerId+'\')" aria-label="Cambia posizione">▾</button>' +
   '</span>';
@@ -3097,16 +3160,16 @@ function renderAllenamentoView(){
   '</div>' +
   (can('view_allenamenti') ? schemaSessionsCardForAllenamento(a) : '') +
   '<div class="card"><h2>Presenze</h2>' +
-    '<p class="hint">Di default disponibili, tranne i giocatori aggregati alla prima squadra (non disponibili di default). Seleziona per cambiare lo stato di un giocatore.</p>' +
+    '<p class="hint">Di default disponibili, tranne i giocatori aggregati alla prima squadra (non disponibili di default) e quelli segnati infortunati in Rosa quel giorno (precompilati su lavoro differenziato). Seleziona per cambiare lo stato di un giocatore.</p>' +
     '<div class="pitch-actions" style="margin-bottom:8px;">' +
       '<button class="btn btn-small ' + (sortMode==='cognome'?'btn-active':'') + '" onclick="setAllenamentoSort(\'cognome\')">Ordina per cognome</button>' +
       '<button class="btn btn-small ' + (sortMode==='ruolo'?'btn-active':'') + '" onclick="setAllenamentoSort(\'ruolo\')">Ordina per ruolo</button>' +
     '</div>' +
     (players.length===0 ? '<p class="hint">Nessun giocatore in rosa.</p>' :
       players.map(p=>{
-        const v = (a.presenze && a.presenze[p.id]) || defaultPresenzaFor(p);
+        const v = (a.presenze && a.presenze[p.id]) || defaultPresenzaFor(p, a.data);
         return '<div class="presenza-row">' +
-          '<span class="roster-name">' + esc(displayName(p.nome)) + '</span>' +
+          '<span class="roster-name">' + injuryBadgeHTML(p) + esc(displayName(p.nome)) + '</span>' +
           '<span class="roster-role">' + esc(p.ruolo) + '</span>' +
           '<select '+(can('edit_presenze')?'':'disabled')+' onchange="updatePresenza(\''+a.id+'\',\''+p.id+'\',this.value)">' +
             PRESENZA_STATI.map(st=>'<option value="'+st+'" '+(v===st?'selected':'')+'>'+st+'</option>').join('') +
@@ -6533,7 +6596,7 @@ function schemaAvailablePlayersForSession(sess){
   const allenamento = sess.allenamentoId ? state.allenamenti.find(a=>a.id===sess.allenamentoId) : null;
   if(!allenamento) return state.players.slice();
   return state.players.filter(p=>{
-    const v = (allenamento.presenze && allenamento.presenze[p.id]) || defaultPresenzaFor(p);
+    const v = (allenamento.presenze && allenamento.presenze[p.id]) || defaultPresenzaFor(p, allenamento.data);
     return v === 'Disponibile';
   });
 }
