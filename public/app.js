@@ -185,6 +185,9 @@ let state = {
     // Cronologia indietro/avanti del disegno (chip/frecce/zone) del livello attualmente
     // aperto: si azzera cambiando livello, vedi schemaInitHistoryForLivello.
     drawHistory: { livelloId: null, stack: [], index: -1 },
+    // Selezione multipla (lazo su area libera del campo): {type:'chip'|'arrow'|'zone', id}.
+    // Vuota = nessuna selezione attiva. Si azzera ad ogni cambio di livello/vista.
+    selection: [],
     colorPickerOpen: false,
     activeLineType: 'passaggio',
     livelloPicker: null,
@@ -4103,6 +4106,8 @@ const SCHEMA_ICON_GOMMA = '<svg viewBox="0 0 24 24" width="26" height="26" fill=
 const SCHEMA_ICON_PORTA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="10"/><path d="M8 6v10M12 6v10M16 6v10"/></svg>';
 const SCHEMA_ICON_PORTINA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="9" width="10" height="6"/><path d="M10 9v6M14 9v6"/></svg>';
 const SCHEMA_ICON_CONO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l5 14H7z"/><path d="M5 18h14"/></svg>';
+const SCHEMA_ICON_PALETTO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="18"/><ellipse cx="12" cy="19.5" rx="5" ry="1.8"/></svg>';
+const SCHEMA_ICON_CINESINO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="12" rx="9" ry="4.5"/></svg>';
 const SCHEMA_ICON_ZONA = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3,2"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>';
 const SCHEMA_ICON_TESTO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 6h14"/><path d="M12 6v13"/></svg>';
 
@@ -4319,10 +4324,10 @@ function renderSchemaLibrary(){
       '</div>' +
       (canEditLibrary && !canCreateExercise ? '<p class="hint">Per creare un nuovo esercizio (serve il disegnatore tattico) usa un computer. Da qui puoi comunque sfogliare la libreria e comporre una seduta.</p>' : '') +
       '<div class="form-row">' +
-        '<div class="field field-grow"><label>Cerca</label><input id="schema-filter-search" type="text" placeholder="titolo o etichetta" value="'+esc(s.filterSearch)+'" oninput="onSchemaFilterChange()"></div>' +
+        '<div class="field field-grow"><label>Cerca</label><input id="schema-filter-search" type="text" placeholder="titolo o focus" value="'+esc(s.filterSearch)+'" oninput="onSchemaFilterChange()"></div>' +
       '</div>' +
       '<div class="field"><label>Fase di allenamento</label><div class="schema-tag-chip-row">'+categoriaChips+'</div></div>' +
-      (s.availableTags.length ? '<div class="field"><label>Etichette</label><div class="schema-tag-chip-row">'+tagChips+'</div></div>' : '') +
+      (s.availableTags.length ? '<div class="field"><label>Focus</label><div class="schema-tag-chip-row">'+tagChips+'</div></div>' : '') +
       '<div class="schema-exercise-grid">' + renderSchemaExerciseCards() + '</div>' +
     '</div>';
 }
@@ -4344,7 +4349,11 @@ function schemaExerciseCardHTML(e, onclickAttr, compact){
   const durata = schemaExerciseDurataStimata(e);
   const primoLivello = e.livelli[0];
   const cls = 'schema-exercise-card' + (compact ? ' schema-exercise-card-compact' : '');
-  return '<div class="'+cls+'" style="'+(cat?'border-left-color:'+cat.color+';':'')+'" onclick="'+onclickAttr+'">' +
+  // Il menu contestuale (modifica/duplica/elimina) ha senso solo dalla libreria vera e
+  // propria: nel costruttore seduta (compact=true) la card serve solo a scegliere
+  // l'esercizio da aggiungere, non a gestirlo.
+  const contextMenuAttr = (!compact && can('edit_esercizi')) ? ' oncontextmenu="showSchemaExerciseCardContextMenu(event,\''+e.id+'\')"' : '';
+  return '<div class="'+cls+'" style="'+(cat?'border-left-color:'+cat.color+';':'')+'" onclick="'+onclickAttr+'"'+contextMenuAttr+'>' +
     '<div class="schema-exercise-card-thumb">' + (primoLivello ? renderSchemaFieldSVG(primoLivello, false) : '') + '</div>' +
     '<div class="schema-exercise-card-body">' +
       '<div class="schema-exercise-card-head"><strong>'+esc(primoLivello ? primoLivello.titolo : '')+'</strong>'+badge+'</div>' +
@@ -4353,7 +4362,7 @@ function schemaExerciseCardHTML(e, onclickAttr, compact){
         '<span class="hint">'+(primoLivello ? primoLivello.numeroGiocatoriBase : '—')+' giocatori</span>' +
         (durata!=null ? '<span class="hint" title="Tempo totale, recuperi tra le serie inclusi">'+durata+' min tot.</span>' : '') +
       '</div>' +
-      '<div class="hint">'+(tags.length ? esc(tags.join(', ')) : 'Nessuna etichetta')+'</div>' +
+      '<div class="hint">'+(tags.length ? esc(tags.join(', ')) : 'Nessun focus')+'</div>' +
       (compact ? '' : '<div class="schema-exercise-card-foot">' + (e.votoPreferenza!=null ? starRatingHTML(e.votoPreferenza, 12) : '<span class="hint">Non valutato</span>') + '</div>') +
     '</div>' +
   '</div>';
@@ -4434,12 +4443,15 @@ function schemaFieldPresetData(key){
   if(key==='meta'){
     const w = 60, h = 52.5;
     return {
-      chips: [{ id: uid(), x: w/2, y: h, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0, guida:true }],
+      // Porta in alto (y=0): il resto del disegno (giocatori, sviluppo dell'azione) si
+      // costruisce quindi "scendendo" verso il cerchio di centrocampo in fondo, invece che
+      // salendo verso la porta.
+      chips: [{ id: uid(), x: w/2, y: 0, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0, guida:true }],
       arrows: [],
       zones: [
-        { id: uid(), x:(w-40)/2, y:h-16, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
-        { id: uid(), x:(w-18)/2, y:h-5.5, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
-        { id: uid(), x:w/2-9.15, y:-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio', guida:true },
+        { id: uid(), x:(w-40)/2, y:0, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:(w-18)/2, y:0, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:w/2-9.15, y:h-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio', guida:true },
       ],
     };
   }
@@ -4509,7 +4521,7 @@ function parseSchemaCampo(livello){
     id: c.id,
     x: c.x,
     y: c.y,
-    tipo: ['pallone','porta','portina','cono','testo'].includes(c.tipo) ? c.tipo : 'giocatore',
+    tipo: ['pallone','porta','portina','cono','paletto','cinesino','testo'].includes(c.tipo) ? c.tipo : 'giocatore',
     color: c.color || SCHEMA_COLORS[0],
     numero: c.numero!=null ? c.numero : null,
     label: c.label || '',
@@ -4611,11 +4623,33 @@ function schemaGoalSVG(c, w, printMode){
   '</g>';
 }
 function schemaConeSVG(c, w){
-  const s = w*0.035;
+  const sz = c.size||1;
+  const s = w*0.035*sz;
   return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
-    '<path d="M0,'+(-s)+' L'+(s*0.75)+','+(s*0.8)+' L'+(-s*0.75)+','+(s*0.8)+' Z" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
-    '<rect x="'+(-s*0.95)+'" y="'+(s*0.7)+'" width="'+(s*1.9)+'" height="'+(s*0.28)+'" rx="'+(s*0.08)+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
-    (c.label ? '<text text-anchor="middle" dy="'+(s*1.4)+'" font-size="'+(w*0.026)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.01)+'">'+esc(c.label)+'</text>' : '') +
+    '<path d="M0,'+(-s)+' L'+(s*0.75)+','+(s*0.8)+' L'+(-s*0.75)+','+(s*0.8)+' Z" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.003*sz)+'"/>' +
+    '<rect x="'+(-s*0.95)+'" y="'+(s*0.7)+'" width="'+(s*1.9)+'" height="'+(s*0.28)+'" rx="'+(s*0.08)+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.003*sz)+'"/>' +
+    (c.label ? '<text text-anchor="middle" dy="'+(s*1.4)+'" font-size="'+(w*0.026*sz)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.01)+'">'+esc(c.label)+'</text>' : '') +
+  '</g>';
+}
+// Paletto da allenamento (asta verticale con base): vista di prospetto, non dall'alto come
+// gli altri elementi campo, perché è così che si riconosce a colpo d'occhio.
+function schemaPaletSVG(c, w){
+  const sz = c.size||1;
+  const h = w*0.07*sz, baseR = w*0.012*sz;
+  return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
+    '<line x1="0" y1="'+(baseR*0.6)+'" x2="0" y2="'+(-h)+'" stroke="'+c.color+'" stroke-width="'+(w*0.006*sz)+'" stroke-linecap="round"/>' +
+    '<ellipse cx="0" cy="'+(baseR*0.6)+'" rx="'+(baseR*1.6)+'" ry="'+baseR+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
+    (c.label ? '<text text-anchor="middle" dy="'+(baseR*2.4)+'" font-size="'+(w*0.026*sz)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.01)+'">'+esc(c.label)+'</text>' : '') +
+  '</g>';
+}
+// Cinesino (disco piatto da terra, "saucer cone"): un'ellisse piatta vista dall'alto,
+// distinta a colpo d'occhio dal cono (che invece si vede di prospetto).
+function schemaCinesinoSVG(c, w){
+  const sz = c.size||1;
+  const rx = w*0.026*sz, ry = rx*0.5;
+  return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' +
+    '<ellipse rx="'+rx+'" ry="'+ry+'" fill="'+c.color+'" stroke="#0B141C" stroke-width="'+(w*0.004*sz)+'"/>' +
+    (c.label ? '<text text-anchor="middle" dy="'+(ry+w*0.03)+'" font-size="'+(w*0.026*sz)+'" fill="#F4F1EA" font-family="Inter, sans-serif" paint-order="stroke" stroke="#0B141C" stroke-width="'+(w*0.01)+'">'+esc(c.label)+'</text>' : '') +
   '</g>';
 }
 // Testo libero disegnabile sul campo (didascalie, istruzioni): niente forma di sfondo,
@@ -4640,6 +4674,8 @@ function schemaChipSVG(c, w, printMode){
   }
   if(c.tipo==='porta' || c.tipo==='portina') return schemaGoalSVG(c, w, printMode);
   if(c.tipo==='cono') return schemaConeSVG(c, w);
+  if(c.tipo==='paletto') return schemaPaletSVG(c, w);
+  if(c.tipo==='cinesino') return schemaCinesinoSVG(c, w);
   if(c.tipo==='testo') return schemaTextChipSVG(c, w);
   // Raggio/bordo leggermente più generosi e font Inter SemiBold per il numero, invece
   // dell'Oswald condensato usato altrove: più leggibili e coerenti con la nuova identità.
@@ -4865,6 +4901,8 @@ function schemaToolbarHTML(livello){
     schemaToolBtn(s.placeMode==='porta', "setSchemaPlaceMode('porta')", 'Aggiungi porta grande', SCHEMA_ICON_PORTA) +
     schemaToolBtn(s.placeMode==='portina', "setSchemaPlaceMode('portina')", 'Aggiungi portina', SCHEMA_ICON_PORTINA) +
     schemaToolBtn(s.placeMode==='cono', "setSchemaPlaceMode('cono')", 'Aggiungi cono', SCHEMA_ICON_CONO) +
+    schemaToolBtn(s.placeMode==='paletto', "setSchemaPlaceMode('paletto')", 'Aggiungi paletto', SCHEMA_ICON_PALETTO) +
+    schemaToolBtn(s.placeMode==='cinesino', "setSchemaPlaceMode('cinesino')", 'Aggiungi cinesino', SCHEMA_ICON_CINESINO) +
     schemaToolBtn(s.placeMode==='zona', "setSchemaPlaceMode('zona')", "Disegna una zona: trascina da un angolo all'altro", SCHEMA_ICON_ZONA) +
     schemaToolBtn(s.placeMode==='testo', "setSchemaPlaceMode('testo')", 'Aggiungi testo', SCHEMA_ICON_TESTO)
   );
@@ -4884,11 +4922,19 @@ function schemaToolbarHTML(livello){
       '<button type="button" class="schema-color-swatch schema-color-swatch-custom" onclick="toggleSchemaColorPicker()" title="Altri colori">+</button>' +
       (s.colorPickerOpen ? schemaColorPickerPanelHTML() : '') +
     '</span>';
-  return '<div class="schema-toolbar">' +
-    '<div class="schema-toolbar-row">' +
-      layoutGroup + campoGroup + giocatoriGroup + oggettiGroup + lineeGroup + cancellaGroup + historyGroup +
-    '</div>' +
+  // Ordine per frequenza d'uso, non per l'ordine storico dei gruppi: indietro/avanti in
+  // cima (si usano in qualunque momento, non legati a uno strumento), poi gli strumenti di
+  // disegno attivo con il colore subito accanto (quelli che si toccano in continuazione),
+  // poi la gomma (stessa "famiglia" di azioni sul campo), infine Layout e dimensioni campo
+  // in fondo perché si impostano una volta sola a inizio esercizio e si ritoccano di rado.
+  return '<div class="schema-toolbar schema-toolbar-vertical">' +
+    '<div class="schema-toolbar-row">'+historyGroup+'</div>' +
+    '<div class="schema-toolbar-row">'+giocatoriGroup+oggettiGroup+'</div>' +
+    '<div class="schema-toolbar-row">'+lineeGroup+'</div>' +
     '<div class="schema-toolbar-row schema-toolbar-row-colors">'+colorGroup+'</div>' +
+    '<div class="schema-toolbar-row">'+cancellaGroup+'</div>' +
+    '<div class="schema-toolbar-row schema-toolbar-row-setup">'+layoutGroup+'</div>' +
+    '<div class="schema-toolbar-row schema-toolbar-row-setup">'+campoGroup+'</div>' +
   '</div>';
 }
 function schemaExerciseTags(e){
@@ -4974,7 +5020,7 @@ function showSchemaTagContextMenu(evt, tag){
   menu.style.display = 'block';
 }
 async function renameSchemaTagGlobal(tag){
-  const nome = prompt('Nuovo nome per l\'etichetta "'+tag+'" (verrà rinominata su tutti gli esercizi che la usano):', tag);
+  const nome = prompt('Nuovo nome per il focus "'+tag+'" (verrà rinominato su tutti gli esercizi che lo usano):', tag);
   if(nome===null) return;
   const trimmed = nome.trim();
   if(!trimmed || trimmed===tag) return;
@@ -4987,7 +5033,7 @@ async function renameSchemaTagGlobal(tag){
   }
 }
 function deleteSchemaTagGlobal(tag){
-  showConfirmModal('Eliminare l\'etichetta "'+tag+'" da tutti gli esercizi che la usano? Non è annullabile.', async function(){
+  showConfirmModal('Eliminare il focus "'+tag+'" da tutti gli esercizi che lo usano? Non è annullabile.', async function(){
     const res = await apiPatch('/api/schema/tags', { from: tag, to: '' });
     if(res.ok){
       state.schema.filterTags = state.schema.filterTags.filter(t=>t!==tag);
@@ -5026,10 +5072,10 @@ function renderSchemaExerciseSheet(){
       '</div>' +
       '<div class="field"><label>Descrizione generale</label><textarea rows="2" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa, insieme allo svolgimento del livello scelto.</span></div>' +
       '<div class="field field-grow">' +
-        '<label>Etichette</label>' +
+        '<label>Focus</label>' +
         '<div class="schema-tag-chip-row">' + tagChipsHtml + '</div>' +
         (canEdit ? '<div style="display:flex; gap:6px; margin-top:6px;">' +
-          '<input id="schema-tag-input" list="schema-tag-suggestions" type="text" placeholder="aggiungi etichetta e premi Invio" onkeydown="onSchemaTagInputKeydown(event)" style="flex:1;">' +
+          '<input id="schema-tag-input" list="schema-tag-suggestions" type="text" placeholder="aggiungi focus e premi Invio" onkeydown="onSchemaTagInputKeydown(event)" style="flex:1;">' +
           '<button type="button" class="btn btn-small" onclick="addSchemaTagFromInput()">Aggiungi</button>' +
         '</div>' : '') +
         tagDatalist +
@@ -5050,8 +5096,11 @@ function renderSchemaExerciseSheet(){
         '<div class="field"><label>Durata di ciascuna (min)</label><input class="schema-property-input" type="number" min="1" value="'+livello.durataRipetizione+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
         '<div class="field"><label>Recupero (sec)</label><input class="schema-property-input" type="number" min="0" value="'+livello.recuperoSecondi+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
       '</div>' +
-      (canEdit ? schemaToolbarHTML(livello) : '') +
-      '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(livello) + '</div>' +
+      (canEdit ? schemaSelectionBarHTML() : '') +
+      '<div class="schema-editor-row">' +
+        '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(livello) + '</div>' +
+        (canEdit ? schemaToolbarHTML(livello) : '') +
+      '</div>' +
       (canEdit ? '<p class="hint">Trascina per spostare qualsiasi elemento, comprese le linee.<br>Click destro su un elemento per le opzioni (rinomina, colore, numerazione...). ' +
         '<button type="button" class="btn-link" onclick="showSchemaGuidaModal()">ⓘ Guida rapida</button></p>'
         : '<p class="hint">Sola lettura: non hai il permesso di modificare gli esercizi.</p>') +
@@ -5125,6 +5174,35 @@ function confirmDeleteSchemaExercise(){
     openSchemaLibrary();
   });
 }
+/* ---------- menu contestuale sulla card in libreria (modifica/duplica/elimina) ---------- */
+function showSchemaExerciseCardContextMenu(evt, exerciseId){
+  evt.preventDefault();
+  evt.stopPropagation();
+  const menu = document.getElementById('player-context-menu');
+  menu.innerHTML =
+    '<div class="context-menu-item" onclick="openSchemaExercise(\''+exerciseId+'\'); hideContextMenu();">Modifica</div>' +
+    '<div class="context-menu-item" onclick="duplicateSchemaExerciseFromLibrary(\''+exerciseId+'\'); hideContextMenu();">Duplica</div>' +
+    '<div class="context-menu-item" onclick="confirmDeleteSchemaExerciseFromLibrary(\''+exerciseId+'\'); hideContextMenu();" style="color:var(--danger);">Elimina</div>';
+  const x = Math.min(evt.clientX, window.innerWidth-190);
+  const y = Math.min(evt.clientY, window.innerHeight-120);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+async function duplicateSchemaExerciseFromLibrary(exerciseId){
+  const res = await apiPost('/api/schema/exercises/'+exerciseId+'/duplicate', {});
+  if(res.exercise) openSchemaExercise(res.exercise.id);
+  else alert('Errore: '+(res.error||'sconosciuto'));
+}
+function confirmDeleteSchemaExerciseFromLibrary(exerciseId){
+  const ex = state.schema.exercises.find(function(e){ return e.id===exerciseId; });
+  const titolo = ex && ex.livelli[0] ? ex.livelli[0].titolo : 'questo esercizio';
+  showConfirmModal('Eliminare "'+titolo+'"? Elimina anche i livelli, le note e lo storico collegati.', async function(){
+    await apiDelete('/api/schema/exercises/'+exerciseId);
+    await loadSchemaLibrary();
+    renderView();
+  });
+}
 
 /* ---------- livelli di progressione (stesso esercizio, non un esercizio nuovo) ---------- */
 function switchSchemaLivello(livelloId){
@@ -5140,6 +5218,9 @@ function schemaInitHistoryForLivello(livelloId){
   const e = state.schema.currentExercise;
   const livello = e ? e.livelli.find(l=>l.id===livelloId) : null;
   state.schema.drawHistory = { livelloId: livelloId, stack: [livello ? livello.schemaCampo : '{}'], index: 0 };
+  // La selezione multipla è per-livello: cambiando livello (o riaprendo l'esercizio) gli id
+  // selezionati apparterrebbero a un disegno diverso, quindi si azzera.
+  state.schema.selection = [];
 }
 async function addSchemaLivello(){
   // Titolo/N.giocatori/misure precompilati dal livello attualmente aperto (invece di
@@ -5309,7 +5390,8 @@ function showSchemaChipContextMenu(evt, chipId){
     html += '<div class="context-menu-item" onclick="numberSchemaChip(\''+chipId+'\'); hideContextMenu();">Numera</div>';
     html += '<div class="context-menu-item" onclick="toggleSchemaChipPortiere(\''+chipId+'\'); hideContextMenu();">'+(chip.ruolo==='portiere'?'Rimuovi ruolo portiere':'Segna come portiere')+'</div>';
   }
-  if(isTesto || chip.tipo==='giocatore'){
+  const isResizable = isTesto || ['giocatore','cono','paletto','cinesino'].includes(chip.tipo);
+  if(isResizable){
     html += '<div class="context-menu-item" style="display:flex; gap:6px; align-items:center;">' +
       '<span class="hint">Dimensione</span>' +
       '<button type="button" class="btn btn-small" onclick="resizeSchemaChip(\''+chipId+'\',-0.15); hideContextMenu();">A-</button>' +
@@ -5499,6 +5581,61 @@ function attachSchemaFieldInteractions(){
     pt.x = evt.clientX; pt.y = evt.clientY;
     return pt.matrixTransform(svg.getScreenCTM().inverse());
   }
+  // Evidenzia visivamente gli elementi in selezione multipla (lazo su area libera, vedi il
+  // gestore di sfondo più sotto): un bagliore bianco/azzurro via CSS filter, non uno stile
+  // diverso per ogni tipo di elemento.
+  if(state.schema.selection.length){
+    const selKeys = new Set(state.schema.selection.map(function(s){ return s.type+':'+s.id; }));
+    svg.querySelectorAll('.schema-chip').forEach(function(el){ if(selKeys.has('chip:'+el.getAttribute('data-id'))) el.classList.add('schema-el-selected'); });
+    svg.querySelectorAll('.schema-arrow').forEach(function(el){ if(selKeys.has('arrow:'+el.getAttribute('data-id'))) el.classList.add('schema-el-selected'); });
+    svg.querySelectorAll('.schema-zone').forEach(function(el){ if(selKeys.has('zone:'+el.getAttribute('data-id'))) el.classList.add('schema-el-selected'); });
+  }
+  // Se l'elemento su cui si inizia un trascinamento fa parte di una selezione multipla
+  // (>1 elemento), ritorna i riferimenti dati+DOM di TUTTI gli elementi selezionati con le
+  // loro coordinate di partenza: cosi si spostano insieme mantenendo le distanze reciproche
+  // invece che uno alla volta. Altrimenti (nessuna selezione o un solo elemento) ritorna
+  // null e il drag resta quello di sempre, sul solo elemento toccato.
+  function schemaBuildMoveGroup(data){
+    const sel = state.schema.selection;
+    if(sel.length<=1) return null;
+    const group = [];
+    sel.forEach(function(s){
+      if(s.type==='chip'){
+        const c = data.chips.find(function(x){ return x.id===s.id; });
+        const el = svg.querySelector('.schema-chip[data-id="'+s.id+'"]');
+        if(c && el) group.push({ type:'chip', ref:c, el:el, orig:{ x:c.x, y:c.y } });
+      } else if(s.type==='arrow'){
+        const a = data.arrows.find(function(x){ return x.id===s.id; });
+        const el = svg.querySelector('.schema-arrow[data-id="'+s.id+'"]');
+        if(a && el) group.push({ type:'arrow', ref:a, el:el, orig:{ x1:a.x1, y1:a.y1, x2:a.x2, y2:a.y2, points: a.points ? a.points.map(function(p){ return { x:p.x, y:p.y }; }) : null } });
+      } else if(s.type==='zone'){
+        const z = data.zones.find(function(x){ return x.id===s.id; });
+        const el = svg.querySelector('.schema-zone[data-id="'+s.id+'"]');
+        if(z && el) group.push({ type:'zone', ref:z, el:el, orig:{ x:z.x, y:z.y } });
+      }
+    });
+    return group.length>1 ? group : null;
+  }
+  function schemaApplyMoveGroupDelta(group, dx, dy){
+    group.forEach(function(item){
+      if(item.type==='chip'){
+        item.ref.x = item.orig.x+dx; item.ref.y = item.orig.y+dy;
+        item.el.setAttribute('transform', 'translate('+item.ref.x+','+item.ref.y+')');
+      } else if(item.type==='arrow'){
+        item.ref.x1 = item.orig.x1+dx; item.ref.y1 = item.orig.y1+dy;
+        item.ref.x2 = item.orig.x2+dx; item.ref.y2 = item.orig.y2+dy;
+        if(item.orig.points) item.ref.points = item.orig.points.map(function(p){ return { x: p.x+dx, y: p.y+dy }; });
+        updateSchemaArrowDOM(item.el, item.ref);
+      } else if(item.type==='zone'){
+        item.ref.x = item.orig.x+dx; item.ref.y = item.orig.y+dy;
+        if(item.ref.shape==='cerchio'){
+          item.el.setAttribute('cx', item.ref.x+item.ref.w/2); item.el.setAttribute('cy', item.ref.y+item.ref.h/2);
+        } else {
+          item.el.setAttribute('x', item.ref.x); item.el.setAttribute('y', item.ref.y);
+        }
+      }
+    });
+  }
   svg.querySelectorAll('.schema-chip').forEach(function(chipEl){
     chipEl.style.cursor = 'grab';
     chipEl.addEventListener('contextmenu', function(e){
@@ -5515,11 +5652,17 @@ function attachSchemaFieldInteractions(){
       const data = parseSchemaCampo(schemaActiveLivello());
       const chipData = data.chips.find(function(c){ return c.id===id; });
       if(!chipData) return;
+      const isSelected = state.schema.selection.some(function(s){ return s.type==='chip' && s.id===id; });
+      const moveGroup = isSelected ? schemaBuildMoveGroup(data) : null;
       function onMove(e2){
         const p = toPoint(e2);
         if(Math.abs(p.x-startPt.x) > 0.3 || Math.abs(p.y-startPt.y) > 0.3) moved = true;
-        chipData.x = p.x; chipData.y = p.y;
-        chipEl.setAttribute('transform', 'translate('+chipData.x+','+chipData.y+')');
+        if(moveGroup){
+          schemaApplyMoveGroupDelta(moveGroup, p.x-startPt.x, p.y-startPt.y);
+        } else {
+          chipData.x = p.x; chipData.y = p.y;
+          chipEl.setAttribute('transform', 'translate('+chipData.x+','+chipData.y+')');
+        }
       }
       function onUp(){
         svg.removeEventListener('pointermove', onMove);
@@ -5595,10 +5738,16 @@ function attachSchemaFieldInteractions(){
         x1: arrowData.x1, y1: arrowData.y1, x2: arrowData.x2, y2: arrowData.y2,
         points: arrowData.points ? arrowData.points.map(function(p){ return { x:p.x, y:p.y }; }) : null,
       };
+      const isSelected = state.schema.selection.some(function(s){ return s.type==='arrow' && s.id===id; });
+      const moveGroup = isSelected ? schemaBuildMoveGroup(data) : null;
       function onMove(e2){
         const p = toPoint(e2);
         const dx = p.x-startPt.x, dy = p.y-startPt.y;
         if(Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) moved = true;
+        if(moveGroup){
+          schemaApplyMoveGroupDelta(moveGroup, dx, dy);
+          return;
+        }
         arrowData.x1 = orig.x1+dx; arrowData.y1 = orig.y1+dy;
         arrowData.x2 = orig.x2+dx; arrowData.y2 = orig.y2+dy;
         if(orig.points) arrowData.points = orig.points.map(function(pt){ return { x: pt.x+dx, y: pt.y+dy }; });
@@ -5631,10 +5780,16 @@ function attachSchemaFieldInteractions(){
       const zoneData = data.zones.find(function(z){ return z.id===id; });
       if(!zoneData) return;
       const origX = zoneData.x, origY = zoneData.y;
+      const isSelected = state.schema.selection.some(function(s){ return s.type==='zone' && s.id===id; });
+      const moveGroup = isSelected ? schemaBuildMoveGroup(data) : null;
       function onMove(e2){
         const p = toPoint(e2);
         const dx = p.x-startPt.x, dy = p.y-startPt.y;
         if(Math.abs(dx) > 0.3 || Math.abs(dy) > 0.3) moved = true;
+        if(moveGroup){
+          schemaApplyMoveGroupDelta(moveGroup, dx, dy);
+          return;
+        }
         zoneData.x = origX+dx; zoneData.y = origY+dy;
         if(zoneData.shape==='cerchio'){
           zoneEl.setAttribute('cx', zoneData.x+zoneData.w/2); zoneEl.setAttribute('cy', zoneData.y+zoneData.h/2);
@@ -5779,8 +5934,102 @@ function attachSchemaFieldInteractions(){
         saveSchemaCampo(data);
       }
       svg.addEventListener('pointerup', onUp);
+    } else {
+      // Nessuno strumento attivo: tenere premuto e trascinare su un'area libera del campo
+      // disegna un rettangolo di selezione — al rilascio si selezionano tutti gli elementi
+      // toccati (chip, frecce, zone), modificabili o eliminabili tutti insieme. Un click
+      // senza trascinamento (nessun movimento reale) deseleziona invece di non fare nulla.
+      const start = toPoint(e);
+      const tempRect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      tempRect.setAttribute('fill','rgba(77,163,255,0.15)');
+      tempRect.setAttribute('stroke','#4DA3FF');
+      tempRect.setAttribute('stroke-width','0.15');
+      tempRect.setAttribute('stroke-dasharray','0.3,0.3');
+      tempRect.setAttribute('x', start.x); tempRect.setAttribute('y', start.y);
+      tempRect.setAttribute('width','0'); tempRect.setAttribute('height','0');
+      svg.appendChild(tempRect);
+      let moved = false;
+      function onMove(e2){
+        const p = toPoint(e2);
+        if(Math.abs(p.x-start.x) > 0.3 || Math.abs(p.y-start.y) > 0.3) moved = true;
+        const x = Math.min(start.x, p.x), y = Math.min(start.y, p.y);
+        const rw = Math.abs(p.x-start.x), rh = Math.abs(p.y-start.y);
+        tempRect.setAttribute('x', x); tempRect.setAttribute('y', y);
+        tempRect.setAttribute('width', rw); tempRect.setAttribute('height', rh);
+      }
+      function onUp(e2){
+        svg.removeEventListener('pointermove', onMove);
+        svg.removeEventListener('pointerup', onUp);
+        tempRect.remove();
+        if(!moved){
+          if(state.schema.selection.length){ state.schema.selection = []; renderView(); }
+          return;
+        }
+        const p = toPoint(e2);
+        const x0 = Math.min(start.x, p.x), y0 = Math.min(start.y, p.y);
+        const x1 = Math.max(start.x, p.x), y1 = Math.max(start.y, p.y);
+        const data = parseSchemaCampo(schemaActiveLivello());
+        const sel = [];
+        data.chips.forEach(function(c){
+          if(c.x>=x0 && c.x<=x1 && c.y>=y0 && c.y<=y1) sel.push({ type:'chip', id:c.id });
+        });
+        data.arrows.forEach(function(a){
+          const in1 = a.x1>=x0 && a.x1<=x1 && a.y1>=y0 && a.y1<=y1;
+          const in2 = a.x2>=x0 && a.x2<=x1 && a.y2>=y0 && a.y2<=y1;
+          if(in1 || in2) sel.push({ type:'arrow', id:a.id });
+        });
+        data.zones.forEach(function(z){
+          const overlap = z.x<=x1 && (z.x+z.w)>=x0 && z.y<=y1 && (z.y+z.h)>=y0;
+          if(overlap) sel.push({ type:'zone', id:z.id });
+        });
+        state.schema.selection = sel;
+        renderView();
+      }
+      svg.addEventListener('pointermove', onMove);
+      svg.addEventListener('pointerup', onUp);
     }
   });
+}
+/* ---------- selezione multipla: azioni bulk (colore/elimina/annulla) ---------- */
+function schemaSelectionBarHTML(){
+  const n = state.schema.selection.length;
+  if(!n) return '';
+  return '<div class="schema-selection-bar">' +
+    '<span>'+n+' element'+(n===1?'o':'i')+' selezionat'+(n===1?'o':'i')+'</span>' +
+    '<button type="button" class="btn btn-small" onclick="recolorSchemaSelection()">Colore</button>' +
+    '<button type="button" class="btn btn-small btn-danger" onclick="deleteSchemaSelection()">Elimina</button>' +
+    '<button type="button" class="btn btn-small" onclick="clearSchemaSelectionAndRender()">Annulla selezione</button>' +
+  '</div>';
+}
+function clearSchemaSelectionAndRender(){
+  state.schema.selection = [];
+  renderView();
+}
+async function deleteSchemaSelection(){
+  const sel = state.schema.selection;
+  if(!sel.length) return;
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const chipIds = new Set(sel.filter(function(s){ return s.type==='chip'; }).map(function(s){ return s.id; }));
+  const arrowIds = new Set(sel.filter(function(s){ return s.type==='arrow'; }).map(function(s){ return s.id; }));
+  const zoneIds = new Set(sel.filter(function(s){ return s.type==='zone'; }).map(function(s){ return s.id; }));
+  data.chips = data.chips.filter(function(c){ return !chipIds.has(c.id); });
+  data.arrows = data.arrows.filter(function(a){ return !arrowIds.has(a.id); });
+  data.zones = data.zones.filter(function(z){ return !zoneIds.has(z.id); });
+  state.schema.selection = [];
+  await saveSchemaCampo(data);
+}
+async function recolorSchemaSelection(){
+  const sel = state.schema.selection;
+  if(!sel.length) return;
+  const data = parseSchemaCampo(schemaActiveLivello());
+  const color = state.schema.activeColor;
+  const chipIds = new Set(sel.filter(function(s){ return s.type==='chip'; }).map(function(s){ return s.id; }));
+  const arrowIds = new Set(sel.filter(function(s){ return s.type==='arrow'; }).map(function(s){ return s.id; }));
+  const zoneIds = new Set(sel.filter(function(s){ return s.type==='zone'; }).map(function(s){ return s.id; }));
+  data.chips.forEach(function(c){ if(chipIds.has(c.id)) c.color = color; });
+  data.arrows.forEach(function(a){ if(arrowIds.has(a.id)) a.color = color; });
+  data.zones.forEach(function(z){ if(zoneIds.has(z.id)) z.color = color; });
+  await saveSchemaCampo(data);
 }
 
 /* ---------- picker: scelta livello quando un esercizio ha più progressioni ---------- */
@@ -6542,7 +6791,7 @@ const PERMISSION_LABELS = {
   edit_formazione: 'Modificare la formazione predefinita',
   edit_piano_squadra: 'Modificare il Piano Squadra',
   edit_presenze: 'Segnare le presenze agli allenamenti',
-  edit_esercizi: 'Creare/modificare esercizi, livelli, fasi ed etichette',
+  edit_esercizi: 'Creare/modificare esercizi, livelli, fasi e focus',
   edit_sedute: 'Creare/modificare le sedute di allenamento',
   write_considerazioni: 'Scrivere considerazioni',
   manage_stagioni: 'Gestire le stagioni (chiudere/aprire, importare giocatori)',

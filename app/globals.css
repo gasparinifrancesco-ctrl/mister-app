@@ -442,6 +442,24 @@
   .schema-cat-add-chip:hover{ border-color:var(--accent); color:var(--accent); }
   .schema-field-wrap{ max-width:624px; }
   .schema-field-svg{ background:#1F1F1F; }
+  /* Campo a sinistra, barra strumenti a destra come colonna: su schermi stretti la barra
+     va sotto invece di schiacciarsi illeggibile (il disegnatore resta comunque un'attività
+     da desktop, ma niente vieta di aprirlo con una finestra ridotta). */
+  /* Bagliore bianco/azzurro sugli elementi in selezione multipla (lazo): un filter, non un
+     bordo, cosi funziona identico su chip (cerchi/rettangoli), frecce (linee/curve) e zone
+     (rettangoli/ellissi) senza dover adattare lo stile per ogni forma. */
+  .schema-el-selected{ filter: drop-shadow(0 0 2px #FFFFFF) drop-shadow(0 0 5px #4DA3FF); }
+  .schema-selection-bar{
+    display:flex; align-items:center; gap:10px; margin-top:12px; padding:8px 12px;
+    background:rgba(77,163,255,0.12); border:1px solid #4DA3FF; border-radius:8px; font-size:0.88rem;
+  }
+  .schema-selection-bar span{ font-weight:600; margin-right:auto; }
+  .schema-editor-row{ display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px; margin-top:12px; }
+  .schema-editor-row .schema-field-wrap{ margin-top:0; flex:1 1 480px; }
+  .schema-editor-row .schema-toolbar-vertical{ margin-top:0; flex:0 0 240px; width:240px; }
+  @media (max-width: 900px){
+    .schema-editor-row .schema-toolbar-vertical{ flex:1 1 100%; width:auto; }
+  }
   .schema-note-recent{ background:var(--panel-2); border:1px solid var(--accent-dim); border-radius:8px; padding:10px 12px; margin-bottom:10px; }
   .schema-note-recent p{ margin:4px 0 0; }
   .schema-note-history{ margin-top:8px; }
@@ -474,6 +492,10 @@
   .schema-tool-btn-active{ background:var(--accent); color:#FFFFFF; }
   .schema-tool-btn-active:hover{ background:var(--accent-hover); color:#FFFFFF; }
   .schema-toolbar-row-colors{ align-items:center; }
+  /* Layout preimpostati e dimensioni campo: si impostano una volta a inizio esercizio, non
+     durante il disegno vero e proprio — separati visivamente dal resto con un filo sopra. */
+  .schema-toolbar-row-setup{ border-top:1px solid rgba(255,255,255,0.08); padding-top:10px; }
+  .schema-toolbar-row-setup:first-of-type{ margin-top:2px; }
   .schema-color-swatch{
     width:24px; height:24px; border-radius:50%; border:2px solid rgba(0,0,0,0.25); cursor:pointer; padding:0;
     transition: box-shadow .12s ease-in-out, transform .12s ease-in-out;
