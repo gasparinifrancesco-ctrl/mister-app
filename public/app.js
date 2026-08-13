@@ -4423,6 +4423,7 @@ function renderSchemaView(){
 }
 function attachSchemaInteractions(){
   if(state.schema.view==='sheet') attachSchemaFieldInteractions();
+  else if(state.schema.view==='library') attachSchemaLibraryDrag();
 }
 function schemaSubNavHTML(active){
   return '<div class="pitch-actions" style="margin-bottom:12px;">' +
@@ -4542,15 +4543,72 @@ async function createSchemaCategoria(){
     renderView();
   }
 }
+// Tieni-premuto-e-trascina per riordinare i chip "Fasi di gioco"/"Focus" nel filtro
+// libreria: stesso drag-and-drop nativo (dragstart/dragover/drop) già usato per la sidebar
+// (vedi attachSideNavDrag) — il browser non emette un 'click' spurio dopo un trascinamento
+// nativo davvero avvenuto, quindi convive senza conflitti con l'onclick di selezione/filtro
+// già presente sullo stesso chip.
+let schemaChipDragKey = null;
+function attachSchemaChipDragReorder(chipSelector, dataAttr, getOrder, onReorder){
+  document.querySelectorAll(chipSelector).forEach(function(chipEl){
+    chipEl.addEventListener('dragstart', function(e){
+      schemaChipDragKey = chipEl.getAttribute(dataAttr);
+      e.dataTransfer.effectAllowed = 'move';
+      chipEl.classList.add('schema-chip-dragging');
+    });
+    chipEl.addEventListener('dragend', function(){
+      chipEl.classList.remove('schema-chip-dragging');
+      schemaChipDragKey = null;
+    });
+    chipEl.addEventListener('dragover', function(e){
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    chipEl.addEventListener('drop', function(e){
+      e.preventDefault();
+      const targetKey = chipEl.getAttribute(dataAttr);
+      if(!schemaChipDragKey || schemaChipDragKey===targetKey) return;
+      const order = getOrder().slice();
+      const fromIdx = order.indexOf(schemaChipDragKey);
+      const toIdx = order.indexOf(targetKey);
+      if(fromIdx===-1 || toIdx===-1) return;
+      order.splice(fromIdx,1);
+      order.splice(toIdx,0,schemaChipDragKey);
+      onReorder(order);
+    });
+  });
+}
+async function reorderSchemaCategorie(ids){
+  const res = await apiPatch('/api/schema/categorie/reorder', { ids });
+  if(res.categorie){
+    state.schema.categorie = res.categorie.map(c=>({ id:c.id, key:c.chiave, label:c.label, color:c.color }));
+    renderView();
+  }
+}
+async function reorderSchemaTags(order){
+  const res = await apiPatch('/api/schema/tags', { order });
+  if(res.ok){
+    state.schema.availableTags = order;
+    renderView();
+  }
+}
+function attachSchemaLibraryDrag(){
+  if(!can('edit_esercizi')) return;
+  attachSchemaChipDragReorder('.schema-cat-filter-chip[data-cat-id]', 'data-cat-id', ()=>state.schema.categorie.map(c=>c.id), reorderSchemaCategorie);
+  attachSchemaChipDragReorder('.schema-tag-chip[data-tag]', 'data-tag', ()=>state.schema.availableTags.slice(), reorderSchemaTags);
+}
 function renderSchemaLibrary(){
   const s = state.schema;
   // Senza edit_esercizi la libreria è in sola lettura: niente pulsanti di creazione.
   const canEditLibrary = can('edit_esercizi');
+  // Tieni-premuto-e-trascina per riordinare (vedi attachSchemaChipDragReorder, stesso
+  // meccanismo drag-and-drop nativo già usato per la sidebar): solo con edit_esercizi,
+  // stesso permesso già richiesto per rinominare/eliminare una fase o un'etichetta.
   const tagChips = s.availableTags.map(t=>
-    '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" onclick="toggleSchemaFilterTag(\''+esc(t)+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaTagContextMenu(event,\''+esc(t).replace(/'/g,"\\'")+'\')" title="Clic destro per rinominare o eliminare"':'')+'>'+esc(t)+'</button>'
+    '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" data-tag="'+esc(t)+'" '+(canEditLibrary?'draggable="true"':'')+' onclick="toggleSchemaFilterTag(\''+esc(t)+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaTagContextMenu(event,\''+esc(t).replace(/'/g,"\\'")+'\')" title="Trascina per riordinare, clic destro per rinominare o eliminare"':'')+'>'+esc(t)+'</button>'
   ).join('');
   const categoriaChips = s.categorie.map(c=>
-    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategorie.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="setSchemaFilterCategoria(\''+c.key+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaCategoriaContextMenu(event,\''+c.key+'\')" title="Clic destro per rinominare, cambiare colore o eliminare"':'')+'>'+esc(c.label)+'</button>'
+    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategorie.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" data-cat-id="'+c.id+'" '+(canEditLibrary?'draggable="true"':'')+' onclick="setSchemaFilterCategoria(\''+c.key+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaCategoriaContextMenu(event,\''+c.key+'\')" title="Trascina per riordinare, clic destro per rinominare, cambiare colore o eliminare"':'')+'>'+esc(c.label)+'</button>'
   ).join('') + (canEditLibrary ? '<button type="button" class="schema-cat-chip schema-cat-add-chip" onclick="createSchemaCategoria()">+ Nuova fase</button>' : '');
   // Il disegnatore tattico (per creare un esercizio nuovo) serve spazio e precisione che uno
   // schermo da telefono non offre: da mobile resta raggiungibile solo da computer, mentre

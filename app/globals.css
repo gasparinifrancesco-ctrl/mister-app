@@ -541,6 +541,9 @@
   .schema-tag-chip-active{ background:var(--accent); border-color:var(--accent); color:var(--bg); }
   .schema-tag-chip-removable{ cursor:default; color:var(--text); }
   .schema-tag-chip-removable button{ background:none; border:none; color:inherit; cursor:pointer; font-size:0.9rem; line-height:1; padding:0; }
+  /* Tieni-premuto-e-trascina per riordinare i chip fasi di gioco/focus nel filtro libreria. */
+  .schema-cat-filter-chip[draggable="true"], .schema-tag-chip[draggable="true"]{ cursor:grab; }
+  .schema-chip-dragging{ opacity:0.4; }
 
   /* campanella promemoria */
   .notif-bell-wrap{ position:relative; }
