@@ -472,6 +472,7 @@
   .schema-consid-row{ background:var(--panel-2); border-left:3px solid var(--border); border-radius:0 7px 7px 0; padding:8px 10px; }
   .schema-consid-head{ display:flex; align-items:center; justify-content:space-between; }
   .schema-consid-author{ font-family:'Inter',sans-serif; font-weight:700; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.03em; }
+  .schema-consid-date{ margin-right:auto; margin-left:8px; font-size:0.74rem; }
   .schema-consid-testo{ margin:4px 0 0; color:var(--text); font-size:0.88rem; }
   .schema-load-pill{ font-family:'Inter',sans-serif; }
   .star-input{ display:inline-flex; gap:2px; }

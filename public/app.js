@@ -4430,7 +4430,7 @@ function schemaSubNavHTML(active){
   return '<div class="pitch-actions" style="margin-bottom:12px;">' +
     '<button class="btn btn-small '+(active==='library'?'btn-active':'')+'" onclick="openSchemaLibrary()">Libreria esercizi</button>' +
     '<button class="btn btn-small '+(active==='sessions'?'btn-active':'')+'" onclick="openSchemaSessions()">Sedute</button>' +
-    '<button class="btn btn-small '+(active==='considerazioni'?'btn-active':'')+'" onclick="openSchemaConsiderazioni()">Considerazioni</button>' +
+    '<button class="btn btn-small '+(active==='considerazioni'?'btn-active':'')+'" onclick="openSchemaConsiderazioni()">Messaggi</button>' +
   '</div>';
 }
 // Considerazioni "aperte", non legate a nessuna seduta specifica — a differenza di quelle
@@ -4456,8 +4456,8 @@ async function addSchemaConsiderazioneGenerica(){
 function renderSchemaConsiderazioniView(){
   return schemaSubNavHTML('considerazioni') +
     '<div class="card">' +
-      '<h2>Considerazioni</h2>' +
-      '<p class="hint">Pensieri aperti, non legati a una seduta specifica — per quelle di una seduta, vai nella seduta stessa.</p>' +
+      '<h2>Messaggi</h2>' +
+      '<p class="hint">Comunicazioni libere tra te e i collaboratori, non legate a una seduta specifica — le considerazioni pre/post di una seduta restano dentro la seduta stessa.</p>' +
       schemaConsiderazioniListHTML(state.team.considerazioniGeneriche) +
       (can('write_considerazioni') ? (
         '<div class="form-row" style="margin-top:10px;">' +
@@ -7211,6 +7211,7 @@ function schemaConsiderazioneRowHTML(c){
   const canDelete = mine || getAppUser().isOwner;
   return '<div class="schema-consid-row" style="border-left-color:'+color+';">' +
     '<div class="schema-consid-head"><span class="schema-consid-author" style="color:'+color+';">'+esc(schemaAutoreShortName(c.autoreNome))+'</span>' +
+    '<span class="hint schema-consid-date">'+formatDate(c.creataIl.slice(0,10))+'</span>' +
     (canDelete ? '<button class="btn-icon" onclick="deleteSchemaConsiderazione(\''+c.id+'\')" aria-label="Elimina">×</button>' : '') +
     '</div>' +
     '<p class="schema-consid-testo">'+esc(c.testo).replace(/\n/g,'<br>')+'</p>' +
