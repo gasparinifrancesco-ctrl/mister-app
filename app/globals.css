@@ -856,6 +856,18 @@
   .stat-row-body{ padding: 12px; display:flex; flex-direction:column; gap:8px; }
   .gol-row{ display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap; }
   .gol-row select{ flex:1; min-width:110px; }
+  .gol-zona-btn{ font-size:0.95rem; color:var(--text-dim); }
+  .gol-zona-btn-set{ color:var(--accent); }
+  /* Griglia 3x3 del picker zona (dentro #player-context-menu): righe = vicino→lontano
+     dalla porta, colonne = lato. Vedi showGolZonaPicker in app.js. */
+  .gol-zona-grid{ display:grid; grid-template-columns:repeat(3,28px); grid-template-rows:repeat(3,28px); gap:3px; padding:6px 12px 10px; }
+  .gol-zona-cell{ background:var(--panel-2); border:1px solid var(--border); border-radius:4px; cursor:pointer; padding:0; }
+  .gol-zona-cell:hover{ border-color:var(--accent); }
+  .gol-zona-cell-active{ background:var(--accent); border-color:var(--accent); }
+  /* Heatmap 3x3 in Statistiche: stessa griglia del picker ma celle più grandi con il
+     conteggio in sovraimpressione, colorate a intensità (vedi golZoneHeatmapHTML). */
+  .gol-zone-heatmap{ display:grid; grid-template-columns:repeat(3,64px); grid-template-rows:repeat(3,64px); gap:4px; }
+  .gol-zone-heat-cell{ display:flex; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:6px; font-family:'Roboto Condensed','Arial Narrow',sans-serif; font-weight:700; font-size:1.1rem; color:var(--chalk); }
   .input-min{ width: 64px; }
 
   /* valutazioni */

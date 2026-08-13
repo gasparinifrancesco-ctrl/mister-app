@@ -155,10 +155,10 @@ model Exercise {
   userId              String
   descrizione         String   @default("")
   tags                String   @default("[]")
-  // Fase di allenamento a scelta vincolata (non una etichetta libera): riscaldamento,
-  // tecnica-individuale, tecnica-collettiva, tattica, finalizzazione, partita-tema, portieri.
-  // '' = non ancora categorizzato.
-  categoria           String   @default("")
+  // Fasi di gioco a scelta vincolata (non un'etichetta libera): JSON array di "chiave" di
+  // Categoria, stesso pattern di tags — un esercizio può appartenere a più fasi insieme
+  // (es. sia "Costruzione dal basso" sia "Transizioni positive"). "[]" = non categorizzato.
+  categorie           String   @default("[]")
   // Preferenza personale dell'allenatore su quanto reputa efficace l'esercizio (1-5): un
   // singolo valore che si sovrascrive, non una media di più voti nel tempo — l'efficacia
   // percepita in una singola seduta dipenderebbe da troppi fattori estranei all'esercizio
@@ -189,7 +189,7 @@ model Livello {
   recuperoSecondi   Int    @default(0)
   // Spostati qui da Exercise: ogni livello di progressione ha il proprio titolo e la propria
   // messa in campo (giocatori, dimensioni), modificabili senza incidere sugli altri livelli
-  // dello stesso esercizio — solo tags/categoria/votoPreferenza restano condivisi a livello
+  // dello stesso esercizio — solo tags/categorie/votoPreferenza restano condivisi a livello
   // di Exercise (metadati di famiglia, non della singola progressione).
   titolo              String @default("")
   // Giocatori di movimento; i portieri sono un conteggio separato (numeroPortieri) invece

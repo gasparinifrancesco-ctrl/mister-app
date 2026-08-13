@@ -22,7 +22,7 @@ export async function POST(request, { params }) {
       userId: session.userId,
       descrizione: source.descrizione,
       tags: source.tags,
-      categoria: source.categoria,
+      categorie: source.categorie,
       livelli: {
         create: source.livelli.map((l) => ({
           nome: l.nome,

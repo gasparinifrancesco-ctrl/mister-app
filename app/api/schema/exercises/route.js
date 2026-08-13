@@ -2,12 +2,12 @@ import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
 import { hasPermission } from '@/lib/permissions';
 
-// Fase di allenamento a scelta vincolata, ma non più una lista fissa: deve corrispondere a
-// una Categoria dell'account (o essere '' = non categorizzato).
-async function isValidCategoria(userId, categoria) {
-  if (!categoria) return true;
-  const found = await prisma.categoria.findFirst({ where: { userId, chiave: categoria } });
-  return !!found;
+// Fasi di gioco a scelta vincolata, ma non più una lista fissa: ogni chiave deve corrispondere
+// a una Categoria dell'account. Array vuoto = non categorizzato.
+async function isValidCategorie(userId, chiavi) {
+  if (!chiavi.length) return true;
+  const found = await prisma.categoria.findMany({ where: { userId, chiave: { in: chiavi } } });
+  return found.length === chiavi.length;
 }
 
 export async function GET(request) {
@@ -19,10 +19,11 @@ export async function GET(request) {
   const search = searchParams.get('search') || '';
   const tagsParam = searchParams.get('tags') || '';
   const wantedTags = tagsParam.split(',').map((t) => t.trim()).filter(Boolean);
-  const categoriaParam = searchParams.get('categoria') || '';
+  const categorieParam = searchParams.get('categoria') || '';
+  const wantedCategorie = categorieParam.split(',').map((c) => c.trim()).filter(Boolean);
 
   const exercises = await prisma.exercise.findMany({
-    where: { userId: session.userId, ...(categoriaParam ? { categoria: categoriaParam } : {}) },
+    where: { userId: session.userId },
     include: {
       // schemaCampo del primo livello serve alla card libreria per mostrare l'anteprima
       // in miniatura del disegno, invece di una lista "cieca" di soli titoli. titolo/
@@ -51,6 +52,15 @@ export async function GET(request) {
     });
   }
 
+  // Filtro fasi di gioco: stessa logica ANY-match delle etichette, un esercizio compare se
+  // ha ALMENO UNA delle fasi selezionate (un esercizio può appartenere a più fasi insieme).
+  if (wantedCategorie.length) {
+    filtered = filtered.filter((e) => {
+      const categorie = JSON.parse(e.categorie || '[]');
+      return wantedCategorie.some((wc) => categorie.includes(wc));
+    });
+  }
+
   return Response.json({ exercises: filtered });
 }
 
@@ -66,12 +76,13 @@ export async function POST(request) {
     return Response.json({ error: 'invalid json body' }, { status: 400 });
   }
 
-  const { titolo, descrizione, numeroGiocatoriBase, numeroPortieri, larghezzaCampo, lunghezzaCampo, tags, categoria } = body;
+  const { titolo, descrizione, numeroGiocatoriBase, numeroPortieri, larghezzaCampo, lunghezzaCampo, tags, categorie } = body;
   if (!titolo || !numeroGiocatoriBase) {
     return Response.json({ error: 'titolo e numeroGiocatoriBase sono obbligatori' }, { status: 400 });
   }
-  if (typeof categoria !== 'undefined' && !(await isValidCategoria(session.userId, categoria))) {
-    return Response.json({ error: 'categoria non valida' }, { status: 400 });
+  const categorieArr = Array.isArray(categorie) ? categorie : [];
+  if (!(await isValidCategorie(session.userId, categorieArr))) {
+    return Response.json({ error: 'fase di gioco non valida' }, { status: 400 });
   }
 
   // Nessun calcolo automatico dalle dimensioni: un default ragionevole, sempre modificabile.
@@ -82,7 +93,7 @@ export async function POST(request) {
       userId: session.userId,
       descrizione: descrizione || '',
       tags: JSON.stringify(Array.isArray(tags) ? tags : []),
-      categoria: categoria || '',
+      categorie: JSON.stringify(categorieArr),
       // Il livello nasce con lo svolgimento vuoto: la descrizione generale (perché/a cosa
       // serve) e lo svolgimento del livello (come si fa, l'unico stampato) sono due campi
       // con scopi diversi, non uno la copia dell'altro.

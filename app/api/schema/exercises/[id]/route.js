@@ -3,10 +3,10 @@ import { getSchemaSessionOrNull } from '@/lib/dal';
 import { hasPermission } from '@/lib/permissions';
 import { getPastAllenamentoIds } from '@/lib/schemaAllenamenti';
 
-async function isValidCategoria(userId, categoria) {
-  if (!categoria) return true;
-  const found = await prisma.categoria.findFirst({ where: { userId, chiave: categoria } });
-  return !!found;
+async function isValidCategorie(userId, chiavi) {
+  if (!chiavi.length) return true;
+  const found = await prisma.categoria.findMany({ where: { userId, chiave: { in: chiavi } } });
+  return found.length === chiavi.length;
 }
 
 async function loadExercise(id, userId, pastAllenamentoIds) {
@@ -74,11 +74,11 @@ export async function PATCH(request, { params }) {
   const data = {};
   if (typeof body.descrizione === 'string') data.descrizione = body.descrizione;
   if (Array.isArray(body.tags)) data.tags = JSON.stringify(body.tags);
-  if (typeof body.categoria === 'string') {
-    if (!(await isValidCategoria(session.userId, body.categoria))) {
-      return Response.json({ error: 'categoria non valida' }, { status: 400 });
+  if (Array.isArray(body.categorie)) {
+    if (!(await isValidCategorie(session.userId, body.categorie))) {
+      return Response.json({ error: 'fase di gioco non valida' }, { status: 400 });
     }
-    data.categoria = body.categoria;
+    data.categorie = JSON.stringify(body.categorie);
   }
   if (typeof body.votoPreferenza !== 'undefined') {
     const voto = body.votoPreferenza === null || body.votoPreferenza === '' ? null : Number(body.votoPreferenza);

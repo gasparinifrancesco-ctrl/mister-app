@@ -94,9 +94,18 @@ const SCHEMA_CATEGORIA_COLORI = ['#F2C94C', '#4FA8E0', '#6FCF7A', '#B591DE', '#E
 function schemaCategoriaInfo(key){
   return state.schema.categorie.find(c=>c.key===key) || null;
 }
-function schemaCategoriaOptionsHTML(selected){
-  return '<option value="" '+(!selected?'selected':'')+'>Non categorizzato</option>' +
-    state.schema.categorie.map(c=>'<option value="'+c.key+'" '+(c.key===selected?'selected':'')+'>'+esc(c.label)+'</option>').join('');
+// Un esercizio può appartenere a più fasi di gioco insieme (vedi Exercise.categorie, JSON
+// array): stessa UI a chip cliccabili già in uso per il filtro libreria, riproposta qui per
+// la selezione vera e propria — un clic aggiunge/rimuove la fase dall'insieme selezionato.
+function schemaCategoriaMultiSelectHTML(selectedKeys, toggleFnName, readonly){
+  if(!state.schema.categorie.length) return '<p class="hint">Nessuna fase di gioco disponibile.</p>';
+  if(readonly){
+    const selected = state.schema.categorie.filter(c=>selectedKeys.includes(c.key));
+    return selected.length ? '<div class="schema-tag-chip-row">' + selected.map(c=>'<span class="schema-cat-chip" style="background:'+c.color+';">'+esc(c.label)+'</span>').join('') + '</div>' : '<p class="hint">Non categorizzato</p>';
+  }
+  return '<div class="schema-tag-chip-row">' + state.schema.categorie.map(c=>
+    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(selectedKeys.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="'+toggleFnName+'(\''+c.key+'\')">'+esc(c.label)+'</button>'
+  ).join('') + '</div>';
 }
 const STAGIONE_LIVELLI = {
   'Prima Squadra': ['Terza Categoria','Seconda Categoria','Prima Categoria','Promozione','Eccellenza','Serie D','Serie C','Serie B','Serie A','Altro'],
@@ -173,7 +182,12 @@ let state = {
     categorieLoaded: false,
     filterSearch: '',
     filterTags: [],
-    filterCategoria: '',
+    filterCategorie: [],
+    newExerciseTitolo: '',
+    newExerciseNumGiocatori: 8,
+    newExerciseNumPortieri: 0,
+    newExerciseDescrizione: '',
+    newExerciseCategorie: [],
     currentExercise: null,
     activeLivelloId: null,
     currentSession: null,
@@ -2972,6 +2986,42 @@ function updateCartellinoTipo(matchId, playerId, value){
   saveMatches();
   renderMatchTab();
 }
+// Mappa gol/assist a zone: griglia 3x3 volutamente semplice (non coordinate precise x/y)
+// per restare un tap veloce durante/dopo la partita invece di richiedere un tocco preciso
+// su un campo intero. Righe = distanza dalla porta (vicino → lontano), colonne = lato.
+const GOL_ZONE_GRID = [ ['r1c1','r1c2','r1c3'], ['r2c1','r2c2','r2c3'], ['r3c1','r3c2','r3c3'] ];
+const GOL_ZONE_LABELS = {
+  r1c1:'Area piccola sinistra', r1c2:'Area piccola centro', r1c3:'Area piccola destra',
+  r2c1:'Area di rigore sinistra', r2c2:'Area di rigore centro', r2c3:'Area di rigore destra',
+  r3c1:'Fuori area sinistra', r3c2:'Fuori area centro', r3c3:'Fuori area destra',
+};
+// Riusa il div globale #player-context-menu (persistente in AppShell) invece di un nuovo
+// popover: stessa infrastruttura già usata per i menu contestuali del disegnatore/rosa.
+function showGolZonaPicker(evt, matchId, idx){
+  evt.preventDefault();
+  evt.stopPropagation();
+  const match = getMatch(matchId);
+  const g = match.golFatti[idx];
+  const menu = document.getElementById('player-context-menu');
+  const cellsHtml = GOL_ZONE_GRID.map(row => row.map(key=>
+    '<button type="button" class="gol-zona-cell'+(g.zona===key?' gol-zona-cell-active':'')+'" onclick="setGolZona(\''+matchId+'\','+idx+',\''+key+'\'); hideContextMenu();" title="'+GOL_ZONE_LABELS[key]+'"></button>'
+  ).join('')).join('');
+  menu.innerHTML =
+    '<div class="context-menu-item" style="font-weight:600; cursor:default;">Zona del campo</div>' +
+    '<div class="gol-zona-grid">'+cellsHtml+'</div>' +
+    (g.zona ? '<div class="context-menu-item" onclick="setGolZona(\''+matchId+'\','+idx+',null); hideContextMenu();">Rimuovi zona</div>' : '');
+  const x = Math.min(evt.clientX, window.innerWidth-150);
+  const y = Math.min(evt.clientY, window.innerHeight-190);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+function setGolZona(matchId, idx, zona){
+  const match = getMatch(matchId);
+  match.golFatti[idx].zona = zona;
+  saveMatches();
+  renderMatchTab();
+}
 function renderGolFattoRow(match, g, i){
   const marcatori = match.convocati.map(id=>state.players.find(p=>p.id===id)).filter(Boolean);
   const isAutogol = g.tipo === 'Autogol avversario';
@@ -2990,13 +3040,14 @@ function renderGolFattoRow(match, g, i){
         '<option value="">Nessun assist</option>' +
         marcatori.filter(p=>p.id!==g.marcatoreId).map(p=>'<option value="'+p.id+'" '+(g.assistId===p.id?'selected':'')+'>'+esc(displayName(p.nome))+'</option>').join('') +
       '</select>' : '') +
+    '<button type="button" class="btn-icon gol-zona-btn'+(g.zona?' gol-zona-btn-set':'')+'" onclick="showGolZonaPicker(event,\'' + match.id + '\',' + i + ')" title="'+(g.zona?esc(GOL_ZONE_LABELS[g.zona]):'Zona del campo (facoltativo)')+'">▧</button>' +
     '<button class="btn-icon" onclick="removeGolFatto(\'' + match.id + '\',' + i + ')" aria-label="Rimuovi">×</button>' +
   '</div>';
 }
 function addGolFatto(matchId){
   const match = getMatch(matchId);
   if(!match.golFatti) match.golFatti = [];
-  match.golFatti.push({ id: uid(), minuto:'', tipo:'Azione', marcatoreId:'', assistId:'' });
+  match.golFatti.push({ id: uid(), minuto:'', tipo:'Azione', marcatoreId:'', assistId:'', zona:null });
   saveMatches();
   renderMatchTab();
 }
@@ -3741,6 +3792,9 @@ function computeSeasonStats(filter){
   // partite dove quell'asse è stato compilato (non tutte hanno una valutazione post-partita).
   const assiSum = { atletico:0, tecnico:0, tattico:0, personalita:0 };
   const assiCount = { atletico:0, tecnico:0, tattico:0, personalita:0 };
+  // Mappa gol a zone: conteggio per cella della griglia 3x3 (vedi GOL_ZONE_GRID), solo sui
+  // gol dove la zona è stata segnata (tap facoltativo, non tutti i gol la avranno).
+  const zoneCounts = {};
   playedMatches.forEach(m=>{
     const sede = (m.sede==='Trasferta') ? 'Trasferta' : 'Casa';
     perSede[sede].partite++;
@@ -3764,6 +3818,7 @@ function computeSeasonStats(filter){
       tipologiaFatti[g.tipo] = (tipologiaFatti[g.tipo]||0)+1;
       if(g.marcatoreId && perPlayer[g.marcatoreId]) perPlayer[g.marcatoreId].gol++;
       if(g.assistId && perPlayer[g.assistId]) perPlayer[g.assistId].assist++;
+      if(g.zona) zoneCounts[g.zona] = (zoneCounts[g.zona]||0)+1;
     });
     (m.golSubiti||[]).forEach(g=>{
       golSubitiTot++;
@@ -3799,7 +3854,7 @@ function computeSeasonStats(filter){
 
   return {
     golFattiTot, golSubitiTot, tipologiaFatti, tipologiaSubiti, perPlayer, perSede, partiteGiocate: playedMatches.length,
-    vpn, perTipo, risultati, cartelliniTot: { gialli: gialliTot, rossi: rossiTot }, valutazioneSquadra,
+    vpn, perTipo, risultati, cartelliniTot: { gialli: gialliTot, rossi: rossiTot }, valutazioneSquadra, zoneCounts,
   };
 }
 // Ultimi voti di un giocatore in ordine cronologico (dal più vecchio al più recente), solo
@@ -3926,6 +3981,21 @@ function valutazioneSquadraHTML(v){
   const data = assi.map(([k,label])=>({ label, value: v[k]!=null ? Math.round(v[k]*10)/10 : 0, color: v[k]!=null ? '#4FA8E0' : '#223243' }));
   return barChartSVG(data, { width:320, height:180 });
 }
+// Heatmap 3x3 delle zone di gol segnate col picker ▧ sulla riga gol (tap facoltativo, non
+// tutti i gol avranno una zona): intensità proporzionale al conteggio della cella più
+// frequente, cosi la cella "calda" salta all'occhio anche senza leggere i numeri.
+function golZoneHeatmapHTML(zoneCounts, golFattiTot){
+  const total = Object.keys(zoneCounts).reduce((s,k)=>s+zoneCounts[k],0);
+  if(total===0) return '<p class="hint">Nessun gol con zona segnata nel periodo selezionato: tocca l\'icona ▧ su un gol fatto (tab Tabellino di una partita) per segnare da dove è arrivato.</p>';
+  const max = Math.max(...GOL_ZONE_GRID.flat().map(k=>zoneCounts[k]||0));
+  const cells = GOL_ZONE_GRID.map(row => row.map(key=>{
+    const n = zoneCounts[key]||0;
+    const alpha = n ? (0.12 + 0.68*(n/max)) : 0;
+    return '<div class="gol-zone-heat-cell" style="background:rgba(var(--accent-rgb),'+alpha+');" title="'+esc(GOL_ZONE_LABELS[key])+': '+n+' gol">'+(n||'')+'</div>';
+  }).join('')).join('');
+  return '<div class="gol-zone-heatmap">'+cells+'</div>' +
+    '<p class="hint" style="margin-top:6px;">'+total+' gol con zona segnata su '+golFattiTot+' totali nel periodo.</p>';
+}
 function renderStatisticheView(){
   const s = computeSeasonStats();
   const barFattiSubiti = barChartSVG([
@@ -3977,7 +4047,8 @@ function renderStatisticheView(){
   '<div class="grid-2">' +
     '<div class="card"><h3>Tipologia gol fatti</h3><div class="donut-row">' + donutFatti + legendHTML(typeColorList(s.tipologiaFatti)) + '</div></div>' +
     '<div class="card"><h3>Tipologia gol subiti</h3><div class="donut-row">' + donutSubiti + legendHTML(typeColorList(s.tipologiaSubiti)) + '</div></div>' +
-  '</div>';
+  '</div>' +
+  '<div class="card"><h3>Mappa gol</h3><p class="hint">Zona del campo da cui è arrivato il gol, segnata a mano sul tabellino della partita.</p>' + golZoneHeatmapHTML(s.zoneCounts, s.golFattiTot) + '</div>';
 }
 
 /* ---------- export: stampa / PDF ---------- */
@@ -4305,6 +4376,11 @@ async function openSchemaLibrary(){
 async function openSchemaNewExercise(){
   state.currentView = 'schema';
   state.schema.view = 'new';
+  state.schema.newExerciseTitolo = '';
+  state.schema.newExerciseNumGiocatori = 8;
+  state.schema.newExerciseNumPortieri = 0;
+  state.schema.newExerciseDescrizione = '';
+  state.schema.newExerciseCategorie = [];
   renderView();
 }
 async function openSchemaExercise(id){
@@ -4396,7 +4472,7 @@ async function loadSchemaLibrary(){
   const params = new URLSearchParams();
   if(s.filterSearch) params.set('search', s.filterSearch);
   if(s.filterTags.length) params.set('tags', s.filterTags.join(','));
-  if(s.filterCategoria) params.set('categoria', s.filterCategoria);
+  if(s.filterCategorie.length) params.set('categoria', s.filterCategorie.join(','));
   const res = await apiGet('/api/schema/exercises?'+params.toString());
   s.exercises = res.exercises || [];
 }
@@ -4406,7 +4482,8 @@ function toggleSchemaFilterTag(tag){
   loadSchemaLibrary().then(renderView);
 }
 function setSchemaFilterCategoria(key){
-  state.schema.filterCategoria = state.schema.filterCategoria===key ? '' : key;
+  const s = state.schema;
+  s.filterCategorie = s.filterCategorie.includes(key) ? s.filterCategorie.filter(k=>k!==key) : s.filterCategorie.concat(key);
   loadSchemaLibrary().then(renderView);
 }
 function showSchemaCategoriaContextMenu(evt, key){
@@ -4448,7 +4525,7 @@ function deleteSchemaCategoria(key){
     const res = await apiDelete('/api/schema/categorie/'+c.id);
     if(res.ok){
       state.schema.categorie = state.schema.categorie.filter(x=>x.key!==key);
-      if(state.schema.filterCategoria===key) state.schema.filterCategoria = '';
+      state.schema.filterCategorie = state.schema.filterCategorie.filter(k=>k!==key);
       await loadSchemaLibrary();
       renderView();
     }
@@ -4473,7 +4550,7 @@ function renderSchemaLibrary(){
     '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" onclick="toggleSchemaFilterTag(\''+esc(t)+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaTagContextMenu(event,\''+esc(t).replace(/'/g,"\\'")+'\')" title="Clic destro per rinominare o eliminare"':'')+'>'+esc(t)+'</button>'
   ).join('');
   const categoriaChips = s.categorie.map(c=>
-    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategoria===c.key?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="setSchemaFilterCategoria(\''+c.key+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaCategoriaContextMenu(event,\''+c.key+'\')" title="Clic destro per rinominare, cambiare colore o eliminare"':'')+'>'+esc(c.label)+'</button>'
+    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategorie.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="setSchemaFilterCategoria(\''+c.key+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaCategoriaContextMenu(event,\''+c.key+'\')" title="Clic destro per rinominare, cambiare colore o eliminare"':'')+'>'+esc(c.label)+'</button>'
   ).join('') + (canEditLibrary ? '<button type="button" class="schema-cat-chip schema-cat-add-chip" onclick="createSchemaCategoria()">+ Nuova fase</button>' : '');
   // Il disegnatore tattico (per creare un esercizio nuovo) serve spazio e precisione che uno
   // schermo da telefono non offre: da mobile resta raggiungibile solo da computer, mentre
@@ -4508,7 +4585,7 @@ function schemaExerciseDurataStimata(e){
 function schemaExerciseCardHTML(e, onclickAttr, compact){
   const tags = schemaExerciseTags(e);
   const badge = e.livelli.length>1 ? '<span class="pill">'+e.livelli.length+' livelli</span>' : '';
-  const cat = schemaCategoriaInfo(e.categoria);
+  const cats = schemaExerciseCategorie(e).map(schemaCategoriaInfo).filter(Boolean);
   const durata = schemaExerciseDurataStimata(e);
   const primoLivello = e.livelli[0];
   const cls = 'schema-exercise-card' + (compact ? ' schema-exercise-card-compact' : '');
@@ -4516,12 +4593,12 @@ function schemaExerciseCardHTML(e, onclickAttr, compact){
   // propria: nel costruttore seduta (compact=true) la card serve solo a scegliere
   // l'esercizio da aggiungere, non a gestirlo.
   const contextMenuAttr = (!compact && can('edit_esercizi')) ? ' oncontextmenu="showSchemaExerciseCardContextMenu(event,\''+e.id+'\')"' : '';
-  return '<div class="'+cls+'" style="'+(cat?'border-left-color:'+cat.color+';':'')+'" onclick="'+onclickAttr+'"'+contextMenuAttr+'>' +
+  return '<div class="'+cls+'" style="'+(cats[0]?'border-left-color:'+cats[0].color+';':'')+'" onclick="'+onclickAttr+'"'+contextMenuAttr+'>' +
     '<div class="schema-exercise-card-thumb">' + (primoLivello ? renderSchemaFieldSVG(primoLivello, false) : '') + '</div>' +
     '<div class="schema-exercise-card-body">' +
       '<div class="schema-exercise-card-head"><strong>'+esc(primoLivello ? primoLivello.titolo : '')+'</strong>'+badge+'</div>' +
       '<div class="schema-exercise-card-meta">' +
-        (cat ? '<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>' : '<span class="hint">Non categorizzato</span>') +
+        (cats.length ? cats.map(cat=>'<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>').join('') : '<span class="hint">Non categorizzato</span>') +
         '<span class="hint" title="Movimento + portieri">'+(primoLivello ? primoLivello.numeroGiocatoriBase+(primoLivello.numeroPortieri ? '+'+primoLivello.numeroPortieri : '') : '—')+' giocatori</span>' +
         (durata!=null ? '<span class="hint" title="Tempo totale, recuperi tra le serie inclusi">'+durata+' min tot.</span>' : '') +
       '</div>' +
@@ -4544,29 +4621,40 @@ function onSchemaFilterChange(){
 }
 
 /* ---------- nuovo esercizio ---------- */
+// I campi testo sono rispecchiati in state.schema (newExerciseTitolo/...) invece di restare
+// solo nel DOM: la selezione fasi di gioco richiede un renderView() a ogni clic (per
+// aggiornare lo stato attivo dei chip), che rigenera l'intero form — senza salvare il testo
+// già digitato in stato, quel renderView lo cancellerebbe.
 function renderSchemaNewExerciseForm(){
+  const s = state.schema;
   return schemaSubNavHTML('library') +
     '<div class="card">' +
       '<div class="card-header-row"><h2>Nuovo esercizio</h2><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button></div>' +
       '<div class="form-row">' +
-        '<div class="field field-grow"><label>Titolo</label><input id="schema-new-ex-titolo" type="text"></div>' +
-        '<div class="field"><label title="Giocatori di movimento">Mov.</label><input id="schema-new-ex-numgiocatori" type="number" min="1" value="8" style="width:64px;"></div>' +
-        '<div class="field"><label title="Portieri">Por.</label><input id="schema-new-ex-numportieri" type="number" min="0" value="0" style="width:64px;"></div>' +
-        '<div class="field"><label>Fasi di gioco</label><select id="schema-new-ex-categoria">'+schemaCategoriaOptionsHTML('')+'</select></div>' +
+        '<div class="field field-grow"><label>Titolo</label><input id="schema-new-ex-titolo" type="text" value="'+esc(s.newExerciseTitolo)+'" oninput="state.schema.newExerciseTitolo=this.value"></div>' +
+        '<div class="field"><label title="Giocatori di movimento">Mov.</label><input id="schema-new-ex-numgiocatori" type="number" min="1" value="'+esc(s.newExerciseNumGiocatori)+'" style="width:64px;" oninput="state.schema.newExerciseNumGiocatori=this.value"></div>' +
+        '<div class="field"><label title="Portieri">Por.</label><input id="schema-new-ex-numportieri" type="number" min="0" value="'+esc(s.newExerciseNumPortieri)+'" style="width:64px;" oninput="state.schema.newExerciseNumPortieri=this.value"></div>' +
       '</div>' +
-      '<div class="field"><label>Descrizione generale</label><textarea id="schema-new-ex-descrizione" rows="3"></textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa insieme allo svolgimento, che si scrive dopo, nel livello.</span></div>' +
+      '<div class="field field-grow"><label>Fasi di gioco</label>'+schemaCategoriaMultiSelectHTML(s.newExerciseCategorie, 'toggleNewExerciseCategoria')+'</div>' +
+      '<div class="field"><label>Descrizione generale</label><textarea id="schema-new-ex-descrizione" rows="3" oninput="state.schema.newExerciseDescrizione=this.value">'+esc(s.newExerciseDescrizione)+'</textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa insieme allo svolgimento, che si scrive dopo, nel livello.</span></div>' +
       '<button class="btn btn-primary" onclick="createSchemaExercise()">Crea esercizio</button>' +
     '</div>';
 }
+function toggleNewExerciseCategoria(key){
+  const s = state.schema;
+  s.newExerciseCategorie = s.newExerciseCategorie.includes(key) ? s.newExerciseCategorie.filter(k=>k!==key) : s.newExerciseCategorie.concat(key);
+  renderView();
+}
 async function createSchemaExercise(){
-  const titolo = document.getElementById('schema-new-ex-titolo').value.trim();
+  const s = state.schema;
+  const titolo = s.newExerciseTitolo.trim();
   if(!titolo){ alert('Il titolo è obbligatorio.'); return; }
   const res = await apiPost('/api/schema/exercises', {
     titolo,
-    descrizione: document.getElementById('schema-new-ex-descrizione').value,
-    numeroGiocatoriBase: document.getElementById('schema-new-ex-numgiocatori').value,
-    numeroPortieri: document.getElementById('schema-new-ex-numportieri').value,
-    categoria: document.getElementById('schema-new-ex-categoria').value,
+    descrizione: s.newExerciseDescrizione,
+    numeroGiocatoriBase: s.newExerciseNumGiocatori,
+    numeroPortieri: s.newExerciseNumPortieri,
+    categorie: s.newExerciseCategorie,
   });
   if(res.exercise) openSchemaExercise(res.exercise.id);
   else alert('Errore: '+(res.error||'sconosciuto'));
@@ -5123,6 +5211,10 @@ function schemaExerciseTags(e){
   try { const t = JSON.parse((e && e.tags) || '[]'); return Array.isArray(t) ? t : []; }
   catch { return []; }
 }
+function schemaExerciseCategorie(e){
+  try { const c = JSON.parse((e && e.categorie) || '[]'); return Array.isArray(c) ? c : []; }
+  catch { return []; }
+}
 // Formattazione minima delle descrizioni: memorizzata come TESTO SEMPLICE con marcatori
 // (**grassetto**, ++più grande++), mai come HTML — cosi non c'è alcun rischio che un
 // input dell'utente venga interpretato come markup arbitrario quando lo mostriamo con
@@ -5249,9 +5341,7 @@ function renderSchemaExerciseSheet(){
       '<div class="card-header-row"><h2 class="content-title">'+esc(livello.titolo)+'</h2>' +
         '<div class="pitch-actions"><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button>'+(canEdit ? '<button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaExercise()">Elimina</button>' : '')+'</div>' +
       '</div>' +
-      '<div class="form-row">' +
-        '<div class="field"><label>Fasi di gioco</label><select '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'categoria\', this.value)">'+schemaCategoriaOptionsHTML(e.categoria)+'</select></div>' +
-      '</div>' +
+      '<div class="field field-grow"><label>Fasi di gioco</label>'+schemaCategoriaMultiSelectHTML(schemaExerciseCategorie(e), 'toggleSchemaExerciseCategoria', !canEdit)+'</div>' +
       '<div class="field"><label>Descrizione generale</label><textarea rows="2" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa, insieme allo svolgimento del livello scelto.</span></div>' +
       '<div class="field field-grow">' +
         '<label>Focus</label>' +
@@ -5318,6 +5408,13 @@ async function setSchemaDifficolta(voto){
 }
 async function saveSchemaExerciseField(field, value){
   const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { [field]: value });
+  if(res.exercise) state.schema.currentExercise = res.exercise;
+  renderView();
+}
+async function toggleSchemaExerciseCategoria(key){
+  const current = schemaExerciseCategorie(state.schema.currentExercise);
+  const updated = current.includes(key) ? current.filter(k=>k!==key) : current.concat(key);
+  const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { categorie: updated });
   if(res.exercise) state.schema.currentExercise = res.exercise;
   renderView();
 }
@@ -6728,7 +6825,7 @@ function schemaFormationLineupHTML(sess, availablePlayers, printMode){
 function schemaSessionExportItemHTML(item, idx){
   if(!item.livello) return '<div class="schema-export-item"><h3>'+(idx+1)+'. '+esc(item.titoloSnapshot)+'</h3><p class="hint">Esercizio non più in libreria.</p></div>';
   const ex = item.livello.esercizio;
-  const cat = schemaCategoriaInfo(ex.categoria);
+  const cats = schemaExerciseCategorie(ex).map(schemaCategoriaInfo).filter(Boolean);
   const tags = schemaExerciseTags(ex);
   const lv = item.livello;
   const totaleCalcolato = Math.round(lv.ripetizioni*lv.durataRipetizione + Math.max(lv.ripetizioni-1,0)*(lv.recuperoSecondi||0)/60);
@@ -6745,7 +6842,7 @@ function schemaSessionExportItemHTML(item, idx){
       '<p>Tempo totale: '+tempoTotale+' min · '+lv.ripetizioni+'×'+lv.durataRipetizione+' min · recupero '+lv.recuperoSecondi+'s tra le serie</p>' +
       '<p class="hint">Campo: '+(lv.lunghezzaCampo||'—')+'×'+(lv.larghezzaCampo||'—')+' m</p>' +
       '<p class="hint">Obiettivo: ' +
-        (cat ? '<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>' : 'Non categorizzato') +
+        (cats.length ? cats.map(cat=>'<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>').join(' ') : 'Non categorizzato') +
         (tags.length ? ' · '+esc(tags.join(', ')) : '') +
       '</p>' +
       (ex.descrizione ? '<p>'+schemaRichTextToHTML(ex.descrizione)+'</p>' : '') +
@@ -6763,7 +6860,7 @@ function schemaSessionExportBlockHTML(slot, idx){
   const columns = slot.items.map(function(item){
     if(!item.livello) return '<div class="schema-export-block-col"><h4>Gruppo '+(item.gruppo||'?')+'</h4><p class="hint">Esercizio non più in libreria.</p></div>';
     const ex = item.livello.esercizio;
-    const cat = schemaCategoriaInfo(ex.categoria);
+    const cats = schemaExerciseCategorie(ex).map(schemaCategoriaInfo).filter(Boolean);
     const lv = item.livello;
     const totaleCalcolato = Math.round(lv.ripetizioni*lv.durataRipetizione + Math.max(lv.ripetizioni-1,0)*(lv.recuperoSecondi||0)/60);
     const tempoTotale = item.durataMinuti!=null ? item.durataMinuti : totaleCalcolato;
@@ -6771,7 +6868,7 @@ function schemaSessionExportBlockHTML(slot, idx){
       '<h4>Gruppo '+(item.gruppo||'?')+' — '+esc(lv.titolo)+'</h4>' +
       '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(lv, false, true) + '</div>' +
       '<p class="hint">'+tempoTotale+' min · '+lv.ripetizioni+'×'+lv.durataRipetizione+' min · recupero '+lv.recuperoSecondi+'s</p>' +
-      (cat ? '<p class="hint">'+esc(cat.label)+'</p>' : '') +
+      (cats.length ? '<p class="hint">'+esc(cats.map(c=>c.label).join(', '))+'</p>' : '') +
       (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
     '</div>';
   }).join('');
