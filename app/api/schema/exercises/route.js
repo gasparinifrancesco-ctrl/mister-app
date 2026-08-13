@@ -3,11 +3,13 @@ import { getSchemaSessionOrNull } from '@/lib/dal';
 import { hasPermission } from '@/lib/permissions';
 
 // Fasi di gioco a scelta vincolata, ma non più una lista fissa: ogni chiave deve corrispondere
-// a una Categoria dell'account. Array vuoto = non categorizzato.
-async function isValidCategorie(userId, chiavi) {
-  if (!chiavi.length) return true;
-  const found = await prisma.categoria.findMany({ where: { userId, chiave: { in: chiavi } } });
-  return found.length === chiavi.length;
+// a una Categoria dell'account. Filtra le chiavi ignote invece di respingere l'intera
+// richiesta — stesso ragionamento del PATCH sul singolo esercizio (vedi [id]/route.js).
+async function sanitizeCategorie(userId, chiavi) {
+  if (!chiavi.length) return [];
+  const found = await prisma.categoria.findMany({ where: { userId, chiave: { in: chiavi } }, select: { chiave: true } });
+  const valid = new Set(found.map((c) => c.chiave));
+  return chiavi.filter((c) => valid.has(c));
 }
 
 export async function GET(request) {
@@ -80,10 +82,7 @@ export async function POST(request) {
   if (!titolo || !numeroGiocatoriBase) {
     return Response.json({ error: 'titolo e numeroGiocatoriBase sono obbligatori' }, { status: 400 });
   }
-  const categorieArr = Array.isArray(categorie) ? categorie : [];
-  if (!(await isValidCategorie(session.userId, categorieArr))) {
-    return Response.json({ error: 'fase di gioco non valida' }, { status: 400 });
-  }
+  const categorieArr = await sanitizeCategorie(session.userId, Array.isArray(categorie) ? categorie : []);
 
   // Nessun calcolo automatico dalle dimensioni: un default ragionevole, sempre modificabile.
   // Titolo/N.giocatori/misure campo vivono sul primo livello (indipendenti da eventuali

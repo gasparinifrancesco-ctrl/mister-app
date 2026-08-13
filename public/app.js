@@ -5450,6 +5450,7 @@ async function toggleSchemaExerciseCategoria(key){
   const updated = current.includes(key) ? current.filter(k=>k!==key) : current.concat(key);
   const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { categorie: updated });
   if(res.exercise) state.schema.currentExercise = res.exercise;
+  else alert('Errore: '+(res.error||'sconosciuto'));
   renderView();
 }
 async function onSchemaFieldSizeOverride(){

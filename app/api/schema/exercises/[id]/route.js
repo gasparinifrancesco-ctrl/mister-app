@@ -3,10 +3,16 @@ import { getSchemaSessionOrNull } from '@/lib/dal';
 import { hasPermission } from '@/lib/permissions';
 import { getPastAllenamentoIds } from '@/lib/schemaAllenamenti';
 
-async function isValidCategorie(userId, chiavi) {
-  if (!chiavi.length) return true;
-  const found = await prisma.categoria.findMany({ where: { userId, chiave: { in: chiavi } } });
-  return found.length === chiavi.length;
+// Filtra invece di rifiutare in blocco: un esercizio può portarsi dietro una chiave ormai
+// orfana (fase rinominata/eliminata altrove, o backfill da una vecchia migrazione) — se la
+// intera modifica venisse respinta per quella, l'allenatore non riuscirebbe più ad
+// aggiungere NESSUNA fase valida finché non ripulisce a mano quella vecchia. Il filtro la
+// fa sparire da sola al primo salvataggio, senza bisogno di intervento.
+async function sanitizeCategorie(userId, chiavi) {
+  if (!chiavi.length) return [];
+  const found = await prisma.categoria.findMany({ where: { userId, chiave: { in: chiavi } }, select: { chiave: true } });
+  const valid = new Set(found.map((c) => c.chiave));
+  return chiavi.filter((c) => valid.has(c));
 }
 
 async function loadExercise(id, userId, pastAllenamentoIds) {
@@ -75,10 +81,7 @@ export async function PATCH(request, { params }) {
   if (typeof body.descrizione === 'string') data.descrizione = body.descrizione;
   if (Array.isArray(body.tags)) data.tags = JSON.stringify(body.tags);
   if (Array.isArray(body.categorie)) {
-    if (!(await isValidCategorie(session.userId, body.categorie))) {
-      return Response.json({ error: 'fase di gioco non valida' }, { status: 400 });
-    }
-    data.categorie = JSON.stringify(body.categorie);
+    data.categorie = JSON.stringify(await sanitizeCategorie(session.userId, body.categorie));
   }
   if (typeof body.votoPreferenza !== 'undefined') {
     const voto = body.votoPreferenza === null || body.votoPreferenza === '' ? null : Number(body.votoPreferenza);
