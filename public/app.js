@@ -394,7 +394,16 @@ function migrateMatch(m){
   if(!m.formazioneNostra.chips) m.formazioneNostra.chips = [];
   if(m.formazioneNostra.chips.some(c=>c.numero==null)) m.formazioneNostra.chips = [];
   if(!m.formazioneAvversaria) m.formazioneAvversaria = { modulo:'', chips:[], arrows:[], noteCaratteristiche:'', notePiano:'' };
-  if(!m.valutazioni) m.valutazioni = { nostraSquadra:{voto:null,note:''}, nostriGiocatori:{}, avversariSquadra:{voto:null,note:''}, avversariGiocatori:[] };
+  if(!m.valutazioni) m.valutazioni = { nostraSquadra:{voto:null,note:'',atletico:null,tecnico:null,tattico:null,personalita:null}, nostriGiocatori:{}, avversariSquadra:{voto:null,note:''}, avversariGiocatori:[] };
+  // Le 4 valutazioni per asse sono nuove: le partite già registrate hanno già un
+  // valutazioni.nostraSquadra (con solo voto/note), quindi il ramo sopra non basta a
+  // backfillarle — vanno aggiunte qui a chi manca.
+  if(m.valutazioni.nostraSquadra && m.valutazioni.nostraSquadra.atletico===undefined){
+    m.valutazioni.nostraSquadra.atletico = null;
+    m.valutazioni.nostraSquadra.tecnico = null;
+    m.valutazioni.nostraSquadra.tattico = null;
+    m.valutazioni.nostraSquadra.personalita = null;
+  }
   if(!m.convocati) m.convocati = [];
   // Finché la formazione non è fissata (pulsante "Salva formazione" nel tabellino), il campo
   // di questa partita è uno specchio live della formazione predefinita, non dati propri.
@@ -3040,6 +3049,13 @@ function renderValutazioniTab(match){
   '<div class="card"><h2>Squadra nostra</h2><div class="valutazione-block">' +
     '<div class="field field-voto"><label>Voto (1-10)</label><input type="number" min="1" max="10" value="' + esc(match.valutazioni.nostraSquadra.voto) + '" onchange="updateValSquadra(\'' + match.id + '\',\'nostraSquadra\',\'voto\',this.value)"></div>' +
     '<div class="field field-grow"><label>Note</label><textarea rows="2" onchange="updateValSquadra(\'' + match.id + '\',\'nostraSquadra\',\'note\',this.value)">' + esc(match.valutazioni.nostraSquadra.note) + '</textarea></div>' +
+  '</div>' +
+  '<p class="hint" style="margin-top:10px;">Valutazione a 4 assi (1-10), una sola volta per l\'intera squadra — non per singolo giocatore.</p>' +
+  '<div class="valutazione-assi-row">' +
+    ['atletico:Atletico','tecnico:Tecnico','tattico:Tattico','personalita:Personalità'].map(pair=>{
+      const [key,label] = pair.split(':');
+      return '<div class="field field-voto"><label>'+label+'</label><input type="number" min="1" max="10" value="' + esc(match.valutazioni.nostraSquadra[key]) + '" onchange="updateValSquadra(\'' + match.id + '\',\'nostraSquadra\',\'' + key + '\',this.value)"></div>';
+    }).join('') +
   '</div></div>' +
   '<div class="card"><h2>Giocatori — nostri</h2>' +
     (players.length===0 ? '<p class="hint">Nessun convocato.</p>' : players.map(p=>{
@@ -3068,9 +3084,10 @@ function renderValutazioniTab(match){
     '<button class="btn btn-small" onclick="addValAvvGiocatore(\'' + match.id + '\')">+ Aggiungi giocatore avversario</button>' +
   '</div>';
 }
+const VAL_SQUADRA_NUMERIC_FIELDS = new Set(['voto','atletico','tecnico','tattico','personalita']);
 function updateValSquadra(matchId, who, field, value){
   const match = getMatch(matchId);
-  match.valutazioni[who][field] = (field==='voto') ? (value?parseInt(value,10):null) : value;
+  match.valutazioni[who][field] = VAL_SQUADRA_NUMERIC_FIELDS.has(field) ? (value?parseInt(value,10):null) : value;
   saveMatches();
 }
 function updateValGiocatore(matchId, playerId, field, value){
@@ -3288,7 +3305,7 @@ function confirmAddMatchFromCalendar(){
     statistiche: {},
     golFatti: [],
     golSubiti: [],
-    valutazioni: { nostraSquadra:{voto:null,note:''}, nostriGiocatori:{}, avversariSquadra:{voto:null,note:''}, avversariGiocatori:[] }
+    valutazioni: { nostraSquadra:{voto:null,note:'',atletico:null,tecnico:null,tattico:null,personalita:null}, nostriGiocatori:{}, avversariSquadra:{voto:null,note:''}, avversariGiocatori:[] }
   };
   state.matches.push(match);
   saveMatches();
@@ -3607,7 +3624,7 @@ function handleCalendarioImportFile(evt){
             formazioneNostra: defaultFormazioneNostraForNewMatch(),
             formazioneAvversaria: { modulo:'', chips:[], arrows:[], noteCaratteristiche:'', notePiano:'' },
             statistiche: {}, golFatti: [], golSubiti: [],
-            valutazioni: { nostraSquadra:{voto:null,note:''}, nostriGiocatori:{}, avversariSquadra:{voto:null,note:''}, avversariGiocatori:[] }
+            valutazioni: { nostraSquadra:{voto:null,note:'',atletico:null,tecnico:null,tattico:null,personalita:null}, nostriGiocatori:{}, avversariSquadra:{voto:null,note:''}, avversariGiocatori:[] }
           });
           result.matchesAdded++;
         } else {
@@ -3720,6 +3737,10 @@ function computeSeasonStats(filter){
   STATS_FILTER_TIPI.forEach(t=>{ perTipo[t] = { partite:0, vittorie:0, pareggi:0, sconfitte:0, golFatti:0, golSubiti:0 }; });
   const risultati = [];
   let gialliTot = 0, rossiTot = 0;
+  // Valutazione di squadra a 4 assi: media stagionale di ciascun asse, calcolata solo sulle
+  // partite dove quell'asse è stato compilato (non tutte hanno una valutazione post-partita).
+  const assiSum = { atletico:0, tecnico:0, tattico:0, personalita:0 };
+  const assiCount = { atletico:0, tecnico:0, tattico:0, personalita:0 };
   playedMatches.forEach(m=>{
     const sede = (m.sede==='Trasferta') ? 'Trasferta' : 'Casa';
     perSede[sede].partite++;
@@ -3765,12 +3786,20 @@ function computeSeasonStats(filter){
       if(esito==='win') perTipo[tipo].vittorie++; else if(esito==='draw') perTipo[tipo].pareggi++; else if(esito==='loss') perTipo[tipo].sconfitte++;
     }
     risultati.push({ id:m.id, data:m.data, tipo, sede:m.sede, avversario:m.avversario, esito, golFatti:gf, golSubiti:gs });
+    const ns = (m.valutazioni && m.valutazioni.nostraSquadra) || {};
+    ['atletico','tecnico','tattico','personalita'].forEach(k=>{
+      if(ns[k]!=null){ assiSum[k] += Number(ns[k]); assiCount[k]++; }
+    });
   });
   risultati.sort((a,b)=>(a.data||'').localeCompare(b.data||''));
+  const valutazioneSquadra = {};
+  ['atletico','tecnico','tattico','personalita'].forEach(k=>{
+    valutazioneSquadra[k] = assiCount[k] ? assiSum[k]/assiCount[k] : null;
+  });
 
   return {
     golFattiTot, golSubitiTot, tipologiaFatti, tipologiaSubiti, perPlayer, perSede, partiteGiocate: playedMatches.length,
-    vpn, perTipo, risultati, cartelliniTot: { gialli: gialliTot, rossi: rossiTot },
+    vpn, perTipo, risultati, cartelliniTot: { gialli: gialliTot, rossi: rossiTot }, valutazioneSquadra,
   };
 }
 // Ultimi voti di un giocatore in ordine cronologico (dal più vecchio al più recente), solo
@@ -3888,6 +3917,15 @@ function risultatiTimelineHTML(risultati){
     return '<span class="risultato-block" style="background:'+colori[r.esito]+';" title="'+esc(title)+'">'+lettere[r.esito]+'</span>';
   }).join('') + '</div>';
 }
+// Barre invece di un radar: nessun primitivo radar nel codebase e un 4° asse non
+// giustifica introdurne uno nuovo — stesso barChartSVG già usato per fatti/subiti.
+function valutazioneSquadraHTML(v){
+  const assi = [['atletico','Atletico'],['tecnico','Tecnico'],['tattico','Tattico'],['personalita','Personalità']];
+  const compilati = assi.filter(([k])=>v[k]!=null);
+  if(compilati.length===0) return '<p class="hint">Nessuna valutazione di squadra compilata nel periodo selezionato (tab Valutazioni di una partita giocata).</p>';
+  const data = assi.map(([k,label])=>({ label, value: v[k]!=null ? Math.round(v[k]*10)/10 : 0, color: v[k]!=null ? '#4FA8E0' : '#223243' }));
+  return barChartSVG(data, { width:320, height:180 });
+}
 function renderStatisticheView(){
   const s = computeSeasonStats();
   const barFattiSubiti = barChartSVG([
@@ -3920,6 +3958,7 @@ function renderStatisticheView(){
     '<p class="hint" style="margin-top:10px;">Le statistiche per singolo giocatore sono nella tab "Rosa".</p>' +
   '</div>' +
   '<div class="card"><h3>Andamento risultati</h3>' + risultatiTimelineHTML(s.risultati) + '</div>' +
+  '<div class="card"><h3>Valutazione di squadra</h3><p class="hint">Media stagionale dei 4 assi (1-10), una valutazione a partita per l\'intera squadra.</p>' + valutazioneSquadraHTML(s.valutazioneSquadra) + '</div>' +
   '<div class="card"><h3>Fatti vs subiti</h3>' + barFattiSubiti + '</div>' +
   '<div class="card"><h3>Casa vs trasferta</h3>' +
     '<table class="stats-table"><thead><tr><th>Sede</th><th>Partite</th><th>Gol fatti</th><th>Gol subiti</th><th>Differenza</th></tr></thead><tbody>' +

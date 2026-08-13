@@ -860,6 +860,7 @@
 
   /* valutazioni */
   .valutazione-block{ display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-top:8px; }
+  .valutazione-assi-row{ display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-top:4px; }
   .field-voto input{ width: 70px; }
   .valutazione-row{ display:flex; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }
   .input-voto{ width: 60px; }
