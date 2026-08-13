@@ -40,6 +40,7 @@ model User {
   sessions                   Session[]
   considerazioniProprietarie Considerazione[] @relation("ConsiderazioneOwner")
   considerazioniScritte      Considerazione[] @relation("ConsiderazioneAutore")
+  noteScritte                Note[]
 
   @@map("users")
 }
@@ -199,6 +200,10 @@ model Livello {
   numeroPortieri      Int    @default(0)
   larghezzaCampo      Float  @default(20)
   lunghezzaCampo      Float  @default(28)
+  // Esercizi puramente descrittivi non hanno bisogno del disegno campo: disattivandolo si
+  // risparmia spazio nel foglio stampato/esportato, senza perdere schemaCampo (resta salvato,
+  // solo non mostrato finché non si riattiva).
+  mostraDisegno       Boolean @default(true)
 
   esercizio    Exercise      @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
   sessionItems SessionItem[]
@@ -212,8 +217,11 @@ model Note {
   sedutaId    String?
   testo       String
   data        DateTime @default(now())
+  autoreId    String?
+  autoreNome  String?
 
   esercizio Exercise @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
+  autore    User?    @relation(fields: [autoreId], references: [id], onDelete: SetNull)
 
   @@map("notes")
 }
@@ -267,6 +275,11 @@ model Considerazione {
   sedutaId   String?
   testo      String
   creataIl   DateTime @default(now())
+  // "pre" = scritta componendo la seduta, va in cima al foglio (contesto/obiettivi/partita
+  // precedente); "post" = scritta dopo (dall'allenatore o dai collaboratori) su cosa si è
+  // visto, resta in fondo come oggi. Solo rilevante per considerazioni legate a una seduta;
+  // quelle generiche (sedutaId null) restano "post" di default ma non vengono mai lette.
+  momento    String   @default("post")
 
   owner  User     @relation("ConsiderazioneOwner", fields: [ownerId], references: [id])
   autore User     @relation("ConsiderazioneAutore", fields: [autoreId], references: [id])

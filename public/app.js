@@ -4388,7 +4388,7 @@ async function openSchemaExercise(id){
   state.currentView = 'schema';
   state.schema.view = 'sheet';
   state.schema.activeLivelloId = null;
-  await Promise.all([ensureSchemaTags(), ensureSchemaCategorie(), loadSchemaExercise(id)]);
+  await Promise.all([ensureSchemaTags(), ensureSchemaCategorie(), ensureTeamRoster(), loadSchemaExercise(id)]);
   renderView();
 }
 async function openSchemaSessions(){
@@ -5489,6 +5489,7 @@ function renderSchemaExerciseSheet(){
         '<div class="field"><label>Durata di ciascuna (min)</label><input class="schema-property-input" type="number" min="1" value="'+livello.durataRipetizione+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
         '<div class="field"><label>Recupero (sec)</label><input class="schema-property-input" type="number" min="0" value="'+livello.recuperoSecondi+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
       '</div>' +
+      '<div class="field"><label><input type="checkbox" '+(livello.mostraDisegno?'checked':'')+' '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'mostraDisegno\', this.checked)"> Includi il disegno campo nell\'esportazione/stampa</label><span class="hint">Disattivalo per gli esercizi solo descrittivi: il disegno resta salvato, solo non compare sul foglio (risparmia spazio).</span></div>' +
       (canEdit ? schemaSelectionBarHTML() : '') +
       '<div class="schema-editor-row">' +
         '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(livello) + '</div>' +
@@ -5500,9 +5501,9 @@ function renderSchemaExerciseSheet(){
     '</div>' +
     '<div class="card">' +
       '<h3>Note</h3>' +
-      (noteRecente ? '<div class="schema-note-recent"><strong>'+formatDate(noteRecente.data.slice(0,10))+'</strong><p>'+esc(noteRecente.testo)+'</p></div>' : '<p class="hint">Nessuna nota ancora.</p>') +
+      (noteRecente ? schemaNoteRowHTML(noteRecente, true) : '<p class="hint">Nessuna nota ancora.</p>') +
       (canEdit ? '<div class="form-row"><div class="field field-grow"><label>Nuova nota</label><textarea id="schema-ex-nuova-nota" rows="2"></textarea></div><button class="btn btn-small" onclick="addSchemaNote()">Aggiungi nota</button></div>' : '') +
-      (altreNote.length ? '<details class="schema-note-history"><summary>Storico note ('+altreNote.length+')</summary>' + altreNote.map(n=>'<div class="schema-note-item"><strong>'+formatDate(n.data.slice(0,10))+'</strong><p>'+esc(n.testo)+'</p></div>').join('') + '</details>' : '') +
+      (altreNote.length ? '<details class="schema-note-history"><summary>Storico note ('+altreNote.length+')</summary>' + altreNote.map(n=>schemaNoteRowHTML(n, false)).join('') + '</details>' : '') +
     '</div>' +
     '<div class="card">' +
       '<h3>Difficoltà</h3>' +
@@ -5569,6 +5570,22 @@ async function onSchemaFieldSizeOverride(){
     renderView();
   }
 }
+// Stesso criterio di eliminazione delle Considerazioni: solo chi ha scritto la nota, o il
+// vero proprietario dell'account come responsabile ultimo — mai un altro collaboratore.
+// Le note create prima di questa funzionalità hanno autoreId null: risultano non "mine" per
+// nessuno, solo il proprietario può ripulirle.
+function schemaNoteRowHTML(n, recente){
+  const mine = n.autoreId && n.autoreId===getAppUser().actorId;
+  const canDelete = mine || getAppUser().isOwner;
+  const color = n.autoreId ? schemaAutoreColor(n.autoreId) : '#8CA0AF';
+  return '<div class="'+(recente?'schema-note-recent':'schema-note-item')+'" style="border-left:3px solid '+color+'; padding-left:8px;">' +
+    '<div class="schema-consid-head"><strong>'+formatDate(n.data.slice(0,10))+'</strong>' +
+    (n.autoreNome ? '<span class="schema-consid-author" style="color:'+color+';">'+esc(schemaAutoreShortName(n.autoreNome))+'</span>' : '') +
+    (canDelete ? '<button class="btn-icon" onclick="deleteSchemaNote(\''+n.id+'\')" aria-label="Elimina">×</button>' : '') +
+    '</div>' +
+    '<p>'+esc(n.testo)+'</p>' +
+  '</div>';
+}
 async function addSchemaNote(){
   const textEl = document.getElementById('schema-ex-nuova-nota');
   const testo = textEl.value.trim();
@@ -5576,6 +5593,13 @@ async function addSchemaNote(){
   await apiPost('/api/schema/exercises/'+state.schema.exerciseId+'/notes', { testo });
   await loadSchemaExercise(state.schema.exerciseId);
   renderView();
+}
+async function deleteSchemaNote(noteId){
+  const res = await apiDelete('/api/schema/exercises/'+state.schema.exerciseId+'/notes/'+noteId);
+  if(res.ok){
+    await loadSchemaExercise(state.schema.exerciseId);
+    renderView();
+  } else alert('Errore: '+(res.error||'sconosciuto'));
 }
 function confirmDeleteSchemaExercise(){
   const primoLivello = state.schema.currentExercise.livelli[0];
@@ -6657,7 +6681,7 @@ function schemaSessionItemRowHTML(item, slotIdx, slotsLength, canEditSedute){
   const nomeLivello = schemaLivelloLabel({ nome: item.livello ? item.livello.nome : item.livelloSnapshot });
   return '<div class="schema-session-item-row">' +
     '<div><strong>'+esc(titolo)+'</strong><div class="hint">'+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div></div>' +
-    '<input type="number" min="1" placeholder="min" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
+    '<input type="number" min="1" placeholder="min" value="'+(item.durataMinuti!=null?item.durataMinuti:'')+'" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
     '<div class="pitch-actions">' +
       (canEditSedute && slotIdx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionSlot('+item.ordine+', -1)">↑</button>' : '') +
       (canEditSedute && slotIdx<slotsLength-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionSlot('+item.ordine+', 1)">↓</button>' : '') +
@@ -6680,7 +6704,7 @@ function schemaSessionBlockRowHTML(slot, slotIdx, slotsLength, canEditSedute){
       '<div class="hint">Gruppo '+(item.gruppo||'?')+'</div>' +
       '<strong>'+esc(titolo)+'</strong>' +
       '<div class="hint">'+esc(nomeLivello)+(item.livello?'':' · esercizio non più in libreria')+'</div>' +
-      '<input type="number" min="1" placeholder="min" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
+      '<input type="number" min="1" placeholder="min" value="'+(item.durataMinuti!=null?item.durataMinuti:'')+'" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
       (canEditSedute ? '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi gruppo</button>' : '') +
     '</div>';
   }).join('');
@@ -6744,12 +6768,23 @@ function renderSchemaSessionBuilder(){
         '<div class="field"><label>RPE seduta (1-10)</label><select '+(canEditSedute?'':'disabled')+' onchange="saveSchemaSessionField(\'rpe\', this.value)">'+rpeOptions+'</select></div>' +
       '</div>' +
       '<div class="form-row" style="align-items:center;">'+caricoBadge+'<span class="hint">Durata totale: '+sess.durataTotale+' min</span></div>' +
-      '<div class="field field-grow"><label>Considerazioni su questa seduta</label>' +
-        schemaConsiderazioniListHTML(sess.considerazioni||[]) +
+      '<div class="field field-grow"><label>Considerazioni pre-allenamento</label>' +
+        '<span class="hint">Contesto, obiettivi, la partita precedente: scritte adesso componendo la seduta, finiscono in cima al foglio.</span>' +
+        schemaConsiderazioniListHTML((sess.considerazioni||[]).filter(c=>c.momento==='pre')) +
         (can('write_considerazioni') ? (
           '<div class="form-row" style="margin-top:6px;">' +
-            '<textarea id="schema-consid-input" rows="2" placeholder="Scrivi una considerazione..." style="flex:1;"></textarea>' +
-            '<button class="btn btn-small" onclick="addSchemaConsiderazioneSeduta()">Aggiungi</button>' +
+            '<textarea id="schema-consid-pre-input" rows="2" placeholder="Scrivi una considerazione pre-allenamento..." style="flex:1;"></textarea>' +
+            '<button class="btn btn-small" onclick="addSchemaConsiderazioneSeduta(\'pre\')">Aggiungi</button>' +
+          '</div>'
+        ) : '') +
+      '</div>' +
+      '<div class="field field-grow"><label>Considerazioni post-allenamento</label>' +
+        '<span class="hint">Cosa hai visto tu o i collaboratori durante/dopo la seduta: restano in fondo al foglio.</span>' +
+        schemaConsiderazioniListHTML((sess.considerazioni||[]).filter(c=>c.momento!=='pre')) +
+        (can('write_considerazioni') ? (
+          '<div class="form-row" style="margin-top:6px;">' +
+            '<textarea id="schema-consid-post-input" rows="2" placeholder="Scrivi una considerazione post-allenamento..." style="flex:1;"></textarea>' +
+            '<button class="btn btn-small" onclick="addSchemaConsiderazioneSeduta(\'post\')">Aggiungi</button>' +
           '</div>'
         ) : '') +
       '</div>' +
@@ -6776,7 +6811,7 @@ function renderSchemaSessionBuilder(){
           '</div>' +
           (slots.length===0 ? '<p class="hint">Nessun esercizio aggiunto. Clicca un esercizio nella libreria per aggiungerlo.</p>' :
             slots.map(function(slot, idx){
-              return slot.items.length>1
+              return slot.blockId
                 ? schemaSessionBlockRowHTML(slot, idx, slots.length, canEditSedute)
                 : schemaSessionItemRowHTML(slot.items[0], idx, slots.length, canEditSedute);
             }).join('')
@@ -6975,7 +7010,7 @@ function schemaSessionExportItemHTML(item, idx){
       (ex.descrizione ? '<p>'+schemaRichTextToHTML(ex.descrizione)+'</p>' : '') +
       (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
     '</div>' +
-    '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(item.livello, false, true) + '</div>' +
+    (lv.mostraDisegno!==false ? '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(item.livello, false, true) + '</div>' : '') +
   '</div>';
 }
 // Un blocco di lavoro parallelo stampa i suoi gruppi affiancati in UNA sola voce numerata
@@ -6993,7 +7028,7 @@ function schemaSessionExportBlockHTML(slot, idx){
     const tempoTotale = item.durataMinuti!=null ? item.durataMinuti : totaleCalcolato;
     return '<div class="schema-export-block-col">' +
       '<h4>Gruppo '+(item.gruppo||'?')+' — '+esc(lv.titolo)+'</h4>' +
-      '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(lv, false, true) + '</div>' +
+      (lv.mostraDisegno!==false ? '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(lv, false, true) + '</div>' : '') +
       '<p class="hint">'+tempoTotale+' min · '+lv.ripetizioni+'×'+lv.durataRipetizione+' min · recupero '+lv.recuperoSecondi+'s</p>' +
       (cats.length ? '<p class="hint">'+esc(cats.map(c=>c.label).join(', '))+'</p>' : '') +
       (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
@@ -7021,13 +7056,26 @@ function schemaSessionExportPages(sess){
   // Un blocco parallelo conta come UNA voce nella sequenza/impaginazione (2 poi 3 per
   // pagina), non una per gruppo: occupa lo spazio di un esercizio normale, solo più largo.
   const itemsHtml = schemaSessionSlots(sess.items).map((slot, idx)=>
-    slot.items.length>1 ? schemaSessionExportBlockHTML(slot, idx) : schemaSessionExportItemHTML(slot.items[0], idx)
+    slot.blockId ? schemaSessionExportBlockHTML(slot, idx) : schemaSessionExportItemHTML(slot.items[0], idx)
   );
   const pages = [];
+
+  // Le considerazioni pre-allenamento (contesto/obiettivi scritti componendo la seduta)
+  // aprono il foglio, prima ancora dei ruoli coperti: sono il motivo per cui la seduta è
+  // fatta così, vanno lette per prime. Quelle post (cosa si è visto) restano dove sempre,
+  // in fondo all'ultima pagina.
+  const considerazioniPre = (sess.considerazioni||[]).filter(c=>c.momento==='pre');
+  const considerazioniPost = (sess.considerazioni||[]).filter(c=>c.momento!=='pre');
+  const considerazioniHTML = (list, titolo)=> list.length
+    ? '<h2>'+titolo+'</h2>' + list.map(c=>
+        '<p><strong style="color:'+schemaAutoreColor(c.autoreId)+';">'+esc(schemaAutoreShortName(c.autoreNome))+':</strong> '+esc(c.testo).replace(/\n/g,'<br>')+'</p>'
+      ).join('')
+    : '';
 
   const firstChunk = itemsHtml.slice(0, 2);
   pages.push(
     '<p>'+metaParts.join(' · ')+'</p>' +
+    considerazioniHTML(considerazioniPre, 'Considerazioni pre-allenamento') +
     '<h2>Ruoli coperti ('+players.length+' disponibili)</h2>' +
     '<div class="schema-export-pitch">' + schemaFormationLineupHTML(sess, players, true) + '</div>' +
     (firstChunk.length ? '<h2>Esercizi</h2>' + firstChunk.join('') : '')
@@ -7039,11 +7087,8 @@ function schemaSessionExportPages(sess){
     rest = rest.slice(3);
   }
 
-  const considerazioni = sess.considerazioni||[];
-  if(considerazioni.length){
-    pages[pages.length-1] += '<h2>Considerazioni</h2>' + considerazioni.map(c=>
-      '<p><strong style="color:'+schemaAutoreColor(c.autoreId)+';">'+esc(schemaAutoreShortName(c.autoreNome))+':</strong> '+esc(c.testo).replace(/\n/g,'<br>')+'</p>'
-    ).join('');
+  if(considerazioniPost.length){
+    pages[pages.length-1] += considerazioniHTML(considerazioniPost, 'Considerazioni post-allenamento');
   }
 
   return pages;
@@ -7193,11 +7238,11 @@ function schemaConsiderazioniListHTML(considerazioni){
     ? '<div class="schema-consid-list">' + considerazioni.map(schemaConsiderazioneRowHTML).join('') + '</div>'
     : '<p class="hint">Nessuna considerazione ancora.</p>';
 }
-async function addSchemaConsiderazioneSeduta(){
-  const el = document.getElementById('schema-consid-input');
+async function addSchemaConsiderazioneSeduta(momento){
+  const el = document.getElementById('schema-consid-'+momento+'-input');
   const testo = el.value.trim();
   if(!testo) return;
-  const res = await apiPost('/api/schema/considerazioni', { sedutaId: state.schema.sessionId, testo });
+  const res = await apiPost('/api/schema/considerazioni', { sedutaId: state.schema.sessionId, testo, momento });
   if(res.considerazione){
     state.schema.currentSession.considerazioni = (state.schema.currentSession.considerazioni||[]).concat(res.considerazione);
     el.value = '';

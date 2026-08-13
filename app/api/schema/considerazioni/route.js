@@ -45,6 +45,8 @@ export async function POST(request) {
   const nomeCompleto = autore && [autore.nome, autore.cognome].filter(Boolean).join(' ');
   const autoreNome = nomeCompleto || (autore ? autore.email : 'sconosciuto');
 
+  const momento = body.momento === 'pre' ? 'pre' : 'post';
+
   const considerazione = await prisma.considerazione.create({
     data: {
       ownerId: session.userId,
@@ -52,6 +54,7 @@ export async function POST(request) {
       autoreNome,
       sedutaId: body.sedutaId || null,
       testo,
+      momento,
     },
   });
   return Response.json({ considerazione });

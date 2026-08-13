@@ -39,6 +39,7 @@ export async function PATCH(request, { params }) {
   if (typeof body.numeroPortieri !== 'undefined') data.numeroPortieri = Number(body.numeroPortieri);
   if (typeof body.larghezzaCampo !== 'undefined') data.larghezzaCampo = Number(body.larghezzaCampo);
   if (typeof body.lunghezzaCampo !== 'undefined') data.lunghezzaCampo = Number(body.lunghezzaCampo);
+  if (typeof body.mostraDisegno === 'boolean') data.mostraDisegno = body.mostraDisegno;
 
   const livello = await prisma.livello.update({ where: { id: livelloId }, data });
   return Response.json({ livello });

@@ -52,6 +52,7 @@ export async function POST(request, { params }) {
       numeroPortieri: base ? base.numeroPortieri : (body.numeroPortieri ? Number(body.numeroPortieri) : 0),
       larghezzaCampo: base ? base.larghezzaCampo : (body.larghezzaCampo ? Number(body.larghezzaCampo) : 20),
       lunghezzaCampo: base ? base.lunghezzaCampo : (body.lunghezzaCampo ? Number(body.lunghezzaCampo) : 28),
+      mostraDisegno: base ? base.mostraDisegno : (typeof body.mostraDisegno === 'boolean' ? body.mostraDisegno : true),
     },
   });
 
