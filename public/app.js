@@ -1697,18 +1697,19 @@ function pitchMarkingsSVG(light){
   if(light){
     // Campo a sfondo bianco/grigio, senza le bande verdi: risparmia inchiostro in stampa
     // (anteprima/esportazione seduta) rispetto al campo verde usato nell'editor live.
-    return '<rect x="1" y="1" width="66" height="103" fill="#FFFFFF" stroke="#888" stroke-width="0.4"/>' +
-      '<line x1="1" y1="52.5" x2="67" y2="52.5" stroke="#888" stroke-width="0.4"/>' +
-      '<circle cx="34" cy="52.5" r="9.15" fill="none" stroke="#888" stroke-width="0.4"/>' +
+    // Linee sottili (0.2 invece di 0.4) per lasciare risaltare i nomi dei giocatori sopra.
+    return '<rect x="1" y="1" width="66" height="103" fill="#FFFFFF" stroke="#888" stroke-width="0.2"/>' +
+      '<line x1="1" y1="52.5" x2="67" y2="52.5" stroke="#888" stroke-width="0.2"/>' +
+      '<circle cx="34" cy="52.5" r="9.15" fill="none" stroke="#888" stroke-width="0.2"/>' +
       '<circle cx="34" cy="52.5" r="0.35" fill="#888"/>' +
-      '<rect x="13.84" y="1" width="40.32" height="16.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
-      '<rect x="24.84" y="1" width="18.32" height="5.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
+      '<rect x="13.84" y="1" width="40.32" height="16.5" fill="none" stroke="#888" stroke-width="0.2"/>' +
+      '<rect x="24.84" y="1" width="18.32" height="5.5" fill="none" stroke="#888" stroke-width="0.2"/>' +
       '<circle cx="34" cy="12.5" r="0.35" fill="#888"/>' +
-      '<path d="M 25.5 17.5 A 9.15 9.15 0 0 0 42.5 17.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
-      '<rect x="13.84" y="87.5" width="40.32" height="16.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
-      '<rect x="24.84" y="98.5" width="18.32" height="5.5" fill="none" stroke="#888" stroke-width="0.4"/>' +
+      '<path d="M 25.5 17.5 A 9.15 9.15 0 0 0 42.5 17.5" fill="none" stroke="#888" stroke-width="0.2"/>' +
+      '<rect x="13.84" y="87.5" width="40.32" height="16.5" fill="none" stroke="#888" stroke-width="0.2"/>' +
+      '<rect x="24.84" y="98.5" width="18.32" height="5.5" fill="none" stroke="#888" stroke-width="0.2"/>' +
       '<circle cx="34" cy="92.5" r="0.35" fill="#888"/>' +
-      '<path d="M 25.5 87.5 A 9.15 9.15 0 0 1 42.5 87.5" fill="none" stroke="#888" stroke-width="0.4"/>';
+      '<path d="M 25.5 87.5 A 9.15 9.15 0 0 1 42.5 87.5" fill="none" stroke="#888" stroke-width="0.2"/>';
   }
   let bands = '';
   const n = 8, bandH = 103/n;
@@ -7025,7 +7026,7 @@ function schemaSessionExportItemHTML(item, idx){
     '<div class="schema-export-item-text">' +
       '<h3>'+(idx+1)+'. '+esc(lv.titolo)+'</h3>' +
       '<p>Tempo totale: '+tempoTotale+' min · '+lv.ripetizioni+'×'+lv.durataRipetizione+' min · recupero '+lv.recuperoSecondi+'s tra le serie</p>' +
-      '<p class="hint">Campo: '+(lv.lunghezzaCampo||'—')+'×'+(lv.larghezzaCampo||'—')+' m</p>' +
+      '<p class="hint">Giocatori: '+lv.numeroGiocatoriBase+(lv.numeroPortieri ? '+'+lv.numeroPortieri+' portieri' : '')+' · Campo: '+(lv.lunghezzaCampo||'—')+'×'+(lv.larghezzaCampo||'—')+' m</p>' +
       '<p class="hint">Obiettivo: ' +
         (cats.length ? cats.map(cat=>'<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>').join(' ') : 'Non categorizzato') +
         (tags.length ? ' · '+esc(tags.join(', ')) : '') +
@@ -7053,6 +7054,7 @@ function schemaSessionExportBlockHTML(slot, idx){
       '<h4>Gruppo '+(item.gruppo||'?')+' — '+esc(lv.titolo)+'</h4>' +
       (lv.mostraDisegno!==false ? '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(lv, false, true) + '</div>' : '') +
       '<p class="hint">'+tempoTotale+' min · '+lv.ripetizioni+'×'+lv.durataRipetizione+' min · recupero '+lv.recuperoSecondi+'s</p>' +
+      '<p class="hint">Giocatori: '+lv.numeroGiocatoriBase+(lv.numeroPortieri ? '+'+lv.numeroPortieri+' portieri' : '')+'</p>' +
       (cats.length ? '<p class="hint">'+esc(cats.map(c=>c.label).join(', '))+'</p>' : '') +
       (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
     '</div>';
