@@ -601,18 +601,15 @@
   .schema-property-input{ height:40px; background:var(--panel-2); border-radius:8px; box-sizing:border-box; }
   .schema-toolbar-divider{ width:1px; height:24px; background:var(--border); margin:0 4px; }
   .schema-session-preview{ background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px; }
-  .schema-lineup-pitch .piano-pitch-card{ cursor:default; }
   .schema-pick-available{ color:var(--success); }
   .schema-pick-absent{ color:var(--danger); text-decoration:line-through; opacity:0.75; }
-  /* Versione "stampa" del campo ruoli coperti: sfondo bianco, card chiare invece delle
-     card scure semitrasparenti dell'editor live, per un minimo di inchiostro. */
-  .schema-lineup-pitch-print{ background:#FFFFFF; border-color:#ccc; }
-  .schema-lineup-card-print{ background:#FFFFFF; border:1px solid #ccc; box-shadow:none; }
-  .schema-lineup-card-print .piano-pitch-role{ background:#eee; color:#333; }
-  .schema-lineup-card-print .piano-pitch-compact-row{ color:#222; }
-  .schema-lineup-card-print .piano-pitch-compact-row-0{ color:#111; }
-  .schema-lineup-card-print .piano-pitch-empty{ color:#999; }
-  .schema-lineup-card-print .piano-pitch-tier{ color:#999; }
+  /* Ruoli coperti nell'anteprima/stampa seduta: solo etichetta ruolo + giocatori sotto,
+     nessun campo/card posizionata — qui serve leggere in fretta, non la disposizione
+     tattica (quella è nella vista Formazione). */
+  .schema-lineup-list{ display:flex; flex-wrap:wrap; gap:14px 28px; margin-top:8px; }
+  .schema-lineup-role-group{ min-width:110px; }
+  .schema-lineup-role-label{ font-family:'Inter',sans-serif; font-size:0.78rem; font-weight:700; letter-spacing:0.03em; color:var(--accent); text-transform:uppercase; margin-bottom:3px; }
+  .schema-lineup-player{ font-size:0.85rem; color:var(--text); padding:1px 0; }
 
   /* Esportazione/stampa seduta (immagine, PDF, condivisione): sempre sfondo bianco, testo
      grande e leggibile. Invece di rimpicciolire tutto per stare su una sola facciata, il
@@ -651,11 +648,8 @@
   .schema-print-sheet .schema-export-field{ margin-top:4px; }
   .schema-print-sheet .schema-export-pitch{ max-width:460px; margin:6px 0; }
   .schema-print-sheet .schema-cat-chip{ font-size:10px; padding:2px 7px; }
-  .schema-print-sheet .piano-pitch-card{ width:80px; padding:3px 4px; }
-  .schema-print-sheet .piano-pitch-card-head{ padding-bottom:2px; margin-bottom:2px; }
-  .schema-print-sheet .piano-pitch-role{ font-size:9px; padding:0 4px; }
-  .schema-print-sheet .piano-pitch-compact-row{ font-size:9px; }
-  .schema-print-sheet .piano-pitch-tier{ font-size:8px; width:8px; }
+  .schema-print-sheet .schema-lineup-role-label{ font-size:9px; color:#7A4A17; }
+  .schema-print-sheet .schema-lineup-player{ font-size:10px; color:#222; }
   /* Il foglio (.schema-print-sheet) è largo esattamente 210mm apposta — deve corrispondere
      al pixel a quello che poi si scarica/stampa — ma su telefono è più largo dello schermo
      e costringerebbe ad allargare con due dita solo per vedere l'impaginazione. "zoom"

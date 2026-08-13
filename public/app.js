@@ -5506,11 +5506,6 @@ function renderSchemaExerciseSheet(){
       (altreNote.length ? '<details class="schema-note-history"><summary>Storico note ('+altreNote.length+')</summary>' + altreNote.map(n=>schemaNoteRowHTML(n, false)).join('') + '</details>' : '') +
     '</div>' +
     '<div class="card">' +
-      '<h3>Difficoltà</h3>' +
-      '<p class="hint">Quanto è impegnativo questo esercizio per la squadra — un giudizio SEPARATO da "quanto lo reputi efficace" qui sotto, mai la stessa valutazione riletta due volte. Clicca di nuovo la stessa stella per azzerare.</p>' +
-      starInputHTML(e.difficolta, !canEdit, 'setSchemaDifficolta') +
-    '</div>' +
-    '<div class="card">' +
       '<h3>Quanto lo reputi efficace</h3>' +
       '<p class="hint">Una sola valutazione, tua: quanto ti piace/lo reputi efficace questo esercizio. Non è una media delle sedute — dipenderebbe da troppi fattori estranei all\'esercizio in sé. Clicca di nuovo la stessa stella per azzerare.</p>' +
       '<div class="form-row" style="align-items:center;">' +
@@ -5522,10 +5517,6 @@ function renderSchemaExerciseSheet(){
 async function setSchemaVotoPreferenza(voto){
   const current = state.schema.currentExercise.votoPreferenza;
   await saveSchemaExerciseField('votoPreferenza', current===voto ? null : voto);
-}
-async function setSchemaDifficolta(voto){
-  const current = state.schema.currentExercise.difficolta;
-  await saveSchemaExerciseField('difficolta', current===voto ? null : voto);
 }
 async function saveSchemaExerciseField(field, value){
   const res = await apiPatch('/api/schema/exercises/'+state.schema.exerciseId, { [field]: value });
@@ -6954,35 +6945,27 @@ function schemaAvailablePlayersForSession(sess){
     return v === 'Disponibile';
   });
 }
-function schemaFormationLineupHTML(sess, availablePlayers, printMode){
+// Solo ruolo + giocatori sotto, elenco semplice senza campo/card posizionate: qui serve
+// leggere in fretta chi copre cosa, non vedere la disposizione tattica (quella è nella
+// vista Formazione).
+function schemaFormationLineupHTML(sess, availablePlayers){
   const def = state.formazioneDefault;
   if(!def || !def.modulo || !(def.slots||[]).length){
     return '<p class="hint">Imposta prima una formazione predefinita in Rosa per vedere qui i ruoli coperti.</p>';
   }
   const availableIds = new Set(availablePlayers.map(p=>p.id));
   const surnameCounts = pianoSurnameCounts();
-  const cardCls = 'piano-pitch-card' + (printMode ? ' schema-lineup-card-print' : '');
-  const cardsHtml = def.slots.map(s=>{
-    let leftPctNum = (105 - s.y) / 105 * 100;
-    if(s.ruolo==='Por') leftPctNum *= 0.55;
-    const leftPct = leftPctNum.toFixed(2);
-    const topPct = (s.x / 68 * 100).toFixed(2);
+  const groupsHtml = def.slots.map(s=>{
     const rows = [0,1,2].map(idx=>{
       const pid = getPianoScelta(s.numero, idx);
       const p = pid ? state.players.find(pl=>pl.id===pid) : null;
       const label = p ? esc(pianoDisplayName(p, surnameCounts)) : '<span class="piano-pitch-empty">—</span>';
       const availCls = p ? (availableIds.has(p.id) ? 'schema-pick-available' : 'schema-pick-absent') : '';
-      return '<div class="piano-pitch-compact-row piano-pitch-compact-row-'+idx+' '+availCls+'"><span class="piano-pitch-tier">'+(idx+1)+'</span>'+label+'</div>';
+      return '<div class="schema-lineup-player '+availCls+'">'+label+'</div>';
     }).join('');
-    return '<div class="'+cardCls+'" style="left:'+leftPct+'%; top:'+topPct+'%;">' +
-      '<div class="piano-pitch-card-head"><span class="piano-pitch-role">'+esc(s.ruolo)+'</span></div>' + rows +
-    '</div>';
+    return '<div class="schema-lineup-role-group"><div class="schema-lineup-role-label">'+esc(s.ruolo)+'</div>'+rows+'</div>';
   }).join('');
-  const wrapCls = 'piano-pitch-wrap schema-lineup-pitch' + (printMode ? ' schema-lineup-pitch-print' : '');
-  return '<div class="'+wrapCls+'">' +
-      '<svg viewBox="0 0 105 68" class="piano-pitch-svg"><g transform="translate(105,0) rotate(90)">' + pitchMarkingsSVG(printMode) + '</g></svg>' +
-      '<div class="piano-pitch-cards">' + cardsHtml + '</div>' +
-    '</div>';
+  return '<div class="schema-lineup-list">' + groupsHtml + '</div>';
 }
 function schemaSessionExportItemHTML(item, idx){
   if(!item.livello) return '<div class="schema-export-item"><h3>'+(idx+1)+'. '+esc(item.titoloSnapshot)+'</h3><p class="hint">Esercizio non più in libreria.</p></div>';
@@ -7077,7 +7060,7 @@ function schemaSessionExportPages(sess){
     '<p>'+metaParts.join(' · ')+'</p>' +
     considerazioniHTML(considerazioniPre, 'Considerazioni pre-allenamento') +
     '<h2>Ruoli coperti ('+players.length+' disponibili)</h2>' +
-    '<div class="schema-export-pitch">' + schemaFormationLineupHTML(sess, players, true) + '</div>' +
+    '<div class="schema-export-pitch">' + schemaFormationLineupHTML(sess, players) + '</div>' +
     (firstChunk.length ? '<h2>Esercizi</h2>' + firstChunk.join('') : '')
   );
 
