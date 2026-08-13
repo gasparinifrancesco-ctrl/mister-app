@@ -3712,6 +3712,14 @@ function computeSeasonStats(filter){
   state.players.forEach(p=>{ perPlayer[p.id] = { nome:p.nome, convocazioni:0, titolare:0, subentrato:0, minutiTot:0, gol:0, golSubiti:0, assist:0, gialli:0, rossi:0, votiSum:0, votiCount:0 }; });
 
   const playedMatches = state.matches.filter(m=>computeMatchStato(m)==='Giocata' && matchPassesStatsFilter(m, filter));
+  // Bilancio V/N/P e andamento per tipo partita: stessa lista di partite già filtrata da
+  // filter (data + tipi selezionati in cima alla pagina), cosi il comportamento resta
+  // coerente con "Casa vs trasferta" invece di introdurre una seconda nozione di filtro.
+  const vpn = { vittorie:0, pareggi:0, sconfitte:0 };
+  const perTipo = {};
+  STATS_FILTER_TIPI.forEach(t=>{ perTipo[t] = { partite:0, vittorie:0, pareggi:0, sconfitte:0, golFatti:0, golSubiti:0 }; });
+  const risultati = [];
+  let gialliTot = 0, rossiTot = 0;
   playedMatches.forEach(m=>{
     const sede = (m.sede==='Trasferta') ? 'Trasferta' : 'Casa';
     perSede[sede].partite++;
@@ -3727,8 +3735,8 @@ function computeSeasonStats(filter){
       const uscito = s.uscito!=='' && s.uscito!=null ? parseInt(s.uscito,10) : 90;
       const minuti = Math.max(0, uscito - entrato);
       perPlayer[pid].minutiTot += minuti || 0;
-      if(s.cartellino && s.cartellino.tipo==='Giallo') perPlayer[pid].gialli++;
-      if(s.cartellino && s.cartellino.tipo==='Rosso') perPlayer[pid].rossi++;
+      if(s.cartellino && s.cartellino.tipo==='Giallo'){ perPlayer[pid].gialli++; gialliTot++; }
+      if(s.cartellino && s.cartellino.tipo==='Rosso'){ perPlayer[pid].rossi++; rossiTot++; }
     });
     (m.golFatti||[]).forEach(g=>{
       golFattiTot++;
@@ -3746,9 +3754,24 @@ function computeSeasonStats(filter){
     Object.keys(v).forEach(pid=>{
       if(v[pid].voto && perPlayer[pid]){ perPlayer[pid].votiSum += parseFloat(v[pid].voto); perPlayer[pid].votiCount++; }
     });
+    const esito = matchOutcome(m);
+    const tipo = m.tipo || 'Campionato';
+    const gf = (m.golFatti||[]).length, gs = (m.golSubiti||[]).length;
+    if(esito==='win') vpn.vittorie++; else if(esito==='draw') vpn.pareggi++; else if(esito==='loss') vpn.sconfitte++;
+    if(perTipo[tipo]){
+      perTipo[tipo].partite++;
+      perTipo[tipo].golFatti += gf;
+      perTipo[tipo].golSubiti += gs;
+      if(esito==='win') perTipo[tipo].vittorie++; else if(esito==='draw') perTipo[tipo].pareggi++; else if(esito==='loss') perTipo[tipo].sconfitte++;
+    }
+    risultati.push({ id:m.id, data:m.data, tipo, sede:m.sede, avversario:m.avversario, esito, golFatti:gf, golSubiti:gs });
   });
+  risultati.sort((a,b)=>(a.data||'').localeCompare(b.data||''));
 
-  return { golFattiTot, golSubitiTot, tipologiaFatti, tipologiaSubiti, perPlayer, perSede, partiteGiocate: playedMatches.length };
+  return {
+    golFattiTot, golSubitiTot, tipologiaFatti, tipologiaSubiti, perPlayer, perSede, partiteGiocate: playedMatches.length,
+    vpn, perTipo, risultati, cartelliniTot: { gialli: gialliTot, rossi: rossiTot },
+  };
 }
 // Ultimi voti di un giocatore in ordine cronologico (dal più vecchio al più recente), solo
 // dalle partite giocate dove ha ricevuto una valutazione: serve per la barra "forma" nella
@@ -3848,6 +3871,23 @@ function donutChartSVG(data, size){
   });
   return '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '">' + paths + '</svg>';
 }
+function statCardColorHTML(label, value, color){
+  return '<div class="stat-card"><div class="stat-card-value" style="color:'+color+';">' + value + '</div><div class="stat-card-label">' + esc(label) + '</div></div>';
+}
+// Sequenza cronologica dei risultati stagionali, stesso linguaggio visivo della "forma" del
+// singolo giocatore (playerFormaHTML) ma a livello squadra: un blocchetto colorato per
+// partita (invece di stelle o righe di tabella) cosi l'andamento si legge a colpo d'occhio.
+// V/P/S (Vittoria/Pareggio/Sconfitta) invece della sigla "N" per pareggio delle classifiche
+// ufficiali: meno ambiguo per chi non ha già in testa quella convenzione.
+function risultatiTimelineHTML(risultati){
+  if(risultati.length===0) return '<p class="hint">Nessuna partita giocata nel periodo selezionato.</p>';
+  const colori = { win:'var(--success)', draw:'var(--yellow)', loss:'var(--danger)' };
+  const lettere = { win:'V', draw:'P', loss:'S' };
+  return '<div class="risultati-timeline">' + risultati.map(r=>{
+    const title = formatDate(r.data)+' — vs '+(r.avversario||'—')+' ('+r.tipo+', '+(r.sede||'Casa')+') '+r.golFatti+'-'+r.golSubiti;
+    return '<span class="risultato-block" style="background:'+colori[r.esito]+';" title="'+esc(title)+'">'+lettere[r.esito]+'</span>';
+  }).join('') + '</div>';
+}
 function renderStatisticheView(){
   const s = computeSeasonStats();
   const barFattiSubiti = barChartSVG([
@@ -3870,13 +3910,29 @@ function renderStatisticheView(){
       statCardHTML('Gol subiti', s.golSubitiTot) +
       statCardHTML('Differenza reti', (s.golFattiTot - s.golSubitiTot)) +
     '</div>' +
+    '<div class="stat-cards" style="margin-top:8px;">' +
+      statCardColorHTML('Vittorie', s.vpn.vittorie, 'var(--success)') +
+      statCardColorHTML('Pareggi', s.vpn.pareggi, 'var(--yellow)') +
+      statCardColorHTML('Sconfitte', s.vpn.sconfitte, 'var(--danger)') +
+      statCardHTML('Ammonizioni', s.cartelliniTot.gialli) +
+      statCardHTML('Espulsioni', s.cartelliniTot.rossi) +
+    '</div>' +
     '<p class="hint" style="margin-top:10px;">Le statistiche per singolo giocatore sono nella tab "Rosa".</p>' +
   '</div>' +
+  '<div class="card"><h3>Andamento risultati</h3>' + risultatiTimelineHTML(s.risultati) + '</div>' +
   '<div class="card"><h3>Fatti vs subiti</h3>' + barFattiSubiti + '</div>' +
   '<div class="card"><h3>Casa vs trasferta</h3>' +
     '<table class="stats-table"><thead><tr><th>Sede</th><th>Partite</th><th>Gol fatti</th><th>Gol subiti</th><th>Differenza</th></tr></thead><tbody>' +
       '<tr><td>Casa</td><td>'+s.perSede.Casa.partite+'</td><td>'+s.perSede.Casa.golFatti+'</td><td>'+s.perSede.Casa.golSubiti+'</td><td>'+(s.perSede.Casa.golFatti-s.perSede.Casa.golSubiti)+'</td></tr>' +
       '<tr><td>Trasferta</td><td>'+s.perSede.Trasferta.partite+'</td><td>'+s.perSede.Trasferta.golFatti+'</td><td>'+s.perSede.Trasferta.golSubiti+'</td><td>'+(s.perSede.Trasferta.golFatti-s.perSede.Trasferta.golSubiti)+'</td></tr>' +
+    '</tbody></table>' +
+  '</div>' +
+  '<div class="card"><h3>Andamento per tipo partita</h3>' +
+    '<table class="stats-table"><thead><tr><th>Tipo</th><th>Partite</th><th>V</th><th>P</th><th>S</th><th>Gol fatti</th><th>Gol subiti</th><th>Differenza</th></tr></thead><tbody>' +
+      STATS_FILTER_TIPI.map(t=>{
+        const pt = s.perTipo[t];
+        return '<tr><td>'+esc(t)+'</td><td>'+pt.partite+'</td><td>'+pt.vittorie+'</td><td>'+pt.pareggi+'</td><td>'+pt.sconfitte+'</td><td>'+pt.golFatti+'</td><td>'+pt.golSubiti+'</td><td>'+(pt.golFatti-pt.golSubiti)+'</td></tr>';
+      }).join('') +
     '</tbody></table>' +
   '</div>' +
   '<div class="grid-2">' +
