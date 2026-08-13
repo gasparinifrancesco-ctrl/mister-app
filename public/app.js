@@ -4683,11 +4683,14 @@ function schemaActiveLivello(){
 // browser (comportamento di default di <svg>, overflow implicito sul viewBox), risultando in un
 // mezzo cerchio senza bisogno di disegnare un arco a mano.
 const SCHEMA_FIELD_PRESET_SIZES = {
-  meta:   { larghezzaCampo: 60, lunghezzaCampo: 52.5 },
-  intero: { larghezzaCampo: 60, lunghezzaCampo: 105 },
-  libero: { larghezzaCampo: 20, lunghezzaCampo: 28 },
+  // Stessa misura per le due varianti di "Metà campo": si distinguono solo per dove sta
+  // la porta-guida (in alto o in basso), non per le dimensioni del campo.
+  metaAlto:  { larghezzaCampo: 60, lunghezzaCampo: 52.5 },
+  metaBasso: { larghezzaCampo: 60, lunghezzaCampo: 52.5 },
+  intero:    { larghezzaCampo: 60, lunghezzaCampo: 105 },
+  libero:    { larghezzaCampo: 20, lunghezzaCampo: 28 },
 };
-const SCHEMA_FIELD_PRESET_LABELS = { meta: 'Metà campo', intero: 'Campo intero', libero: 'Libero' };
+const SCHEMA_FIELD_PRESET_LABELS = { metaAlto: 'Metà campo ↑', metaBasso: 'Metà campo ↓', intero: 'Campo intero', libero: 'Libero' };
 // Quale preset è attivo ORA per un livello, dedotto dalle sue misure attuali (non c'è un
 // campo dedicato salvato: le misure stesse sono la fonte di verità). "Metà campo"/"Campo
 // intero" hanno misure fisse e non modificabili a mano — solo "Libero" permette larghezza/
@@ -4696,8 +4699,13 @@ const SCHEMA_FIELD_PRESET_LABELS = { meta: 'Metà campo', intero: 'Campo intero'
 function schemaCurrentFieldPreset(livello){
   if(!livello) return 'libero';
   const w = livello.larghezzaCampo, h = livello.lunghezzaCampo;
-  if(w===SCHEMA_FIELD_PRESET_SIZES.meta.larghezzaCampo && h===SCHEMA_FIELD_PRESET_SIZES.meta.lunghezzaCampo) return 'meta';
   if(w===SCHEMA_FIELD_PRESET_SIZES.intero.larghezzaCampo && h===SCHEMA_FIELD_PRESET_SIZES.intero.lunghezzaCampo) return 'intero';
+  if(w===SCHEMA_FIELD_PRESET_SIZES.metaAlto.larghezzaCampo && h===SCHEMA_FIELD_PRESET_SIZES.metaAlto.lunghezzaCampo){
+    // "metaAlto" e "metaBasso" hanno le stesse misure: si distinguono guardando dove sta
+    // la porta-guida generata dal preset, non da un campo salvato a parte.
+    const portaGuida = parseSchemaCampo(livello).chips.find(c=>c.guida && c.tipo==='porta');
+    return (portaGuida && portaGuida.y > h/2) ? 'metaBasso' : 'metaAlto';
+  }
   return 'libero';
 }
 // Ogni elemento generato da un preset porta guida:true, cosi riapplicare un layout (o
@@ -4705,7 +4713,7 @@ function schemaCurrentFieldPreset(livello){
 // senza toccare giocatori/frecce/zone aggiunti a mano dall'allenatore.
 function schemaFieldPresetData(key){
   const empty = { chips: [], arrows: [], zones: [] };
-  if(key==='meta'){
+  if(key==='metaAlto'){
     const w = 60, h = 52.5;
     return {
       // Porta in alto (y=0): il resto del disegno (giocatori, sviluppo dell'azione) si
@@ -4717,6 +4725,21 @@ function schemaFieldPresetData(key){
         { id: uid(), x:(w-40)/2, y:0, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
         { id: uid(), x:(w-18)/2, y:0, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
         { id: uid(), x:w/2-9.15, y:h-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio', guida:true },
+      ],
+    };
+  }
+  if(key==='metaBasso'){
+    // Speculare a "metaAlto": porta in basso (y=h), il disegno si costruisce "salendo"
+    // dalla porta verso il cerchio di centrocampo in alto — comoda per chi preferisce
+    // impostare l'azione dal basso verso l'alto invece che dall'alto verso il basso.
+    const w = 60, h = 52.5;
+    return {
+      chips: [{ id: uid(), x: w/2, y: h, tipo:'porta', color: SCHEMA_COLORS[0], numero:null, label:'', rot:0, guida:true }],
+      arrows: [],
+      zones: [
+        { id: uid(), x:(w-40)/2, y:h-16, w:40, h:16, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:(w-18)/2, y:h-5.5, w:18, h:5.5, color: SCHEMA_COLORS[0], stile:'contorno', shape:'rect', guida:true },
+        { id: uid(), x:w/2-9.15, y:-9.15, w:18.3, h:18.3, color: SCHEMA_COLORS[0], stile:'contorno', shape:'cerchio', guida:true },
       ],
     };
   }
@@ -4932,7 +4955,15 @@ function schemaTextChipSVG(c, w){
     '<text text-anchor="middle" dominant-baseline="central" font-size="'+fontSize+'" fill="'+c.color+'" font-family="Inter, sans-serif" font-weight="'+fontWeight+'" paint-order="stroke" stroke="#0B141C" stroke-width="'+strokeW+'" stroke-linejoin="round">'+esc(c.label||'Testo')+'</text>' +
   '</g>';
 }
+// I segni generati dai preset di layout (porta/area/cerchio, guida:true) devono comportarsi
+// come uno sfondo: visibili ma non interattivi — niente drag, niente click destro, esclusi
+// dal lazo (vedi il filtro guida nel gestore del lazo). "schema-el-guida" li marca con
+// pointer-events:none via CSS, cosi non serve toccare ogni singolo gestore di interazione.
 function schemaChipSVG(c, w, printMode){
+  const svg = schemaChipSVGByType(c, w, printMode);
+  return c.guida ? svg.replace('class="schema-chip"', 'class="schema-chip schema-el-guida"') : svg;
+}
+function schemaChipSVGByType(c, w, printMode){
   if(c.tipo==='pallone'){
     // Meno della metà del raggio giocatore, cosi si distingue subito dai chip persona.
     return '<g class="schema-chip" data-id="'+c.id+'" transform="translate('+c.x+','+c.y+')">' + schemaBallSVG(w*0.013, w) + '</g>';
@@ -4967,14 +4998,15 @@ function schemaZoneSVG(z, printMode){
     ? 'cx="'+(z.x+z.w/2)+'" cy="'+(z.y+z.h/2)+'" rx="'+(z.w/2)+'" ry="'+(z.h/2)+'"'
     : 'x="'+z.x+'" y="'+z.y+'" width="'+z.w+'" height="'+z.h+'"';
   const tag = isCircle ? 'ellipse' : 'rect';
+  const cls = 'schema-zone'+(z.guida ? ' schema-el-guida' : '');
   if(z.stile==='contorno'){
     // Solo bordo, nessuna tinta: per marcature reali del campo (area di rigore, area
     // piccola, cerchio di centrocampo...) invece che zone tattiche colorate. Bianco
     // traslucido sul campo tecnico scuro, grigio in stampa.
     const color = printMode ? '#555' : 'rgba(255,255,255,0.18)';
-    return '<'+tag+' class="schema-zone" data-id="'+z.id+'" '+geomAttrs+' fill="none" stroke="'+color+'" stroke-width="0.2"/>';
+    return '<'+tag+' class="'+cls+'" data-id="'+z.id+'" '+geomAttrs+' fill="none" stroke="'+color+'" stroke-width="0.2"/>';
   }
-  return '<'+tag+' class="schema-zone" data-id="'+z.id+'" '+geomAttrs+' fill="'+z.color+'" fill-opacity="0.22" stroke="'+z.color+'" stroke-width="0.15" stroke-dasharray="0.4,0.3"/>';
+  return '<'+tag+' class="'+cls+'" data-id="'+z.id+'" '+geomAttrs+' fill="'+z.color+'" fill-opacity="0.22" stroke="'+z.color+'" stroke-width="0.15" stroke-dasharray="0.4,0.3"/>';
 }
 function smoothPathFromPoints(points){
   if(points.length<2) return '';
@@ -5078,12 +5110,14 @@ function schemaArrowGroupSVG(a, w, numero, printMode){
   '</g>' : '';
   // Maniglie ai due estremi: permettono di trascinare partenza o punta singolarmente
   // (mantenendo fermo l'altro estremo) invece di dover cancellare e ridisegnare. Solo
-  // nell'editor interattivo, mai in stampa/anteprima.
+  // nell'editor interattivo, mai in stampa/anteprima, mai sulle linee-guida generate da un
+  // preset di layout (non c'è nulla da trascinare su un elemento che si comporta da sfondo).
   const handleColor = (a.tipo==='divisore' || a.tipo==='campo-linea') ? neutralColor : a.color;
-  const handles = printMode ? '' :
+  const handles = (printMode || a.guida) ? '' :
     '<circle class="schema-arrow-handle" data-end="1" cx="'+a.x1+'" cy="'+a.y1+'" r="'+(w*0.014)+'" fill="'+handleColor+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
     '<circle class="schema-arrow-handle" data-end="2" cx="'+a.x2+'" cy="'+a.y2+'" r="'+(w*0.014)+'" fill="'+handleColor+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>';
-  return '<g class="schema-arrow" data-id="'+a.id+'"'+(numero!=null?' data-numero="'+numero+'"':'')+'>'+visible+hit+badge+handles+'</g>';
+  const arrowCls = 'schema-arrow'+(a.guida ? ' schema-el-guida' : '');
+  return '<g class="'+arrowCls+'" data-id="'+a.id+'"'+(numero!=null?' data-numero="'+numero+'"':'')+'>'+visible+hit+badge+handles+'</g>';
 }
 function renderSchemaFieldSVG(livello, withId, printMode){
   const data = parseSchemaCampo(livello);
@@ -5149,7 +5183,7 @@ function schemaToolbarHTML(livello){
   const currentFieldPreset = schemaCurrentFieldPreset(livello);
   const layoutGroup = schemaToolGroupHTML(
     '<span class="hint schema-toolbar-label">Layout</span>' +
-    ['meta','intero','libero'].map(key=>
+    ['metaAlto','metaBasso','intero','libero'].map(key=>
       '<button type="button" class="btn btn-small'+(currentFieldPreset===key?' btn-active':'')+'" onclick="applySchemaFieldPreset(\''+key+'\')" title="Imposta la base del campo e i segni (porta/area/cerchio) di questo layout, senza toccare giocatori e disegni già aggiunti">'+SCHEMA_FIELD_PRESET_LABELS[key]+'</button>'
     ).join('')
   );
@@ -6328,15 +6362,21 @@ function attachSchemaFieldInteractions(){
         const x1 = Math.max(start.x, p.x), y1 = Math.max(start.y, p.y);
         const data = parseSchemaCampo(schemaActiveLivello());
         const sel = [];
+        // I segni-guida generati da un preset di layout (porta/area/cerchio) si comportano
+        // da sfondo: il lazo li ignora, cosi non capitano dentro una selezione multipla
+        // insieme a giocatori/frecce/zone disegnati a mano.
         data.chips.forEach(function(c){
+          if(c.guida) return;
           if(c.x>=x0 && c.x<=x1 && c.y>=y0 && c.y<=y1) sel.push({ type:'chip', id:c.id });
         });
         data.arrows.forEach(function(a){
+          if(a.guida) return;
           const in1 = a.x1>=x0 && a.x1<=x1 && a.y1>=y0 && a.y1<=y1;
           const in2 = a.x2>=x0 && a.x2<=x1 && a.y2>=y0 && a.y2<=y1;
           if(in1 || in2) sel.push({ type:'arrow', id:a.id });
         });
         data.zones.forEach(function(z){
+          if(z.guida) return;
           const overlap = z.x<=x1 && (z.x+z.w)>=x0 && z.y<=y1 && (z.y+z.h)>=y0;
           if(overlap) sel.push({ type:'zone', id:z.id });
         });
