@@ -26,6 +26,10 @@ model User {
   cognome      String?
   ruolo        String?
   accentColor  String?
+  // Preferenza personale (come nome/cognome/ruolo, mai letta dal proprietario della squadra
+  // per un collaboratore): scambia solo bg/pannelli/testo con una palette chiara, mai
+  // --accent (quello resta il colore squadra scelto separatamente).
+  temaChiaro   Boolean  @default(false)
 
   // Solo per integrità referenziale a livello di database (constraint FK): nessuna di
   // queste liste va mai attraversata a partire da uno User nel codice applicativo, che

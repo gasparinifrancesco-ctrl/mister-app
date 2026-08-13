@@ -18,6 +18,7 @@ export default async function Page() {
       cognome={user.cognome || ""}
       ruolo={user.ruolo || ""}
       accentColor={accentColor}
+      temaChiaro={user.temaChiaro}
       isOwner={user.isOwner}
       permissions={user.permissions}
       actorId={user.id}

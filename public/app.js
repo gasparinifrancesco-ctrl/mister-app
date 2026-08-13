@@ -157,6 +157,7 @@ let state = {
   },
   profile: {
     tempAccentColor: null,
+    tempTemaChiaro: false,
   },
   team: {
     invites: [],
@@ -673,6 +674,7 @@ function getAppUser(){
     cognome: el.getAttribute('data-cognome')||'',
     ruolo: el.getAttribute('data-ruolo')||'',
     accentColor: el.getAttribute('data-accent-color')||'',
+    temaChiaro: el.getAttribute('data-tema-chiaro')==='1',
     isOwner: el.getAttribute('data-is-owner')==='1',
     permissions,
     actorId: el.getAttribute('data-actor-id')||'',
@@ -5356,6 +5358,61 @@ function schemaExerciseCategorie(e){
   try { const c = JSON.parse((e && e.categorie) || '[]'); return Array.isArray(c) ? c : []; }
   catch { return []; }
 }
+// Minuti di lavoro per fase di gioco tra gli esercizi della seduta (blocchi inclusi: ogni
+// gruppo parallelo conta per il proprio tempo, non solo quello del gruppo più lungo dello
+// slot — a differenza del calcolo di durataTotale seduta, qui interessa quanto lavoro di
+// ogni tipo è stato fatto, non quanto dura l'allenamento sull'orologio). Un esercizio con
+// più fasi insieme divide il suo tempo in parti uguali tra tutte, così la torta somma
+// sempre al 100% invece di sommare più fasi per intero. Non categorizzato = fetta a parte.
+function schemaSessionWorkCompositionData(sess){
+  const totals = {};
+  let uncategorized = 0;
+  (sess.items || []).forEach(function(item){
+    if (!item.livello) return;
+    const lv = item.livello;
+    const totaleCalcolato = Math.round(lv.ripetizioni * lv.durataRipetizione + Math.max(lv.ripetizioni - 1, 0) * (lv.recuperoSecondi || 0) / 60);
+    const minuti = item.durataMinuti != null ? item.durataMinuti : totaleCalcolato;
+    if (!minuti) return;
+    const cats = schemaExerciseCategorie(lv.esercizio);
+    if (!cats.length) { uncategorized += minuti; return; }
+    const share = minuti / cats.length;
+    cats.forEach(function(key){ totals[key] = (totals[key] || 0) + share; });
+  });
+  const slices = Object.keys(totals).map(function(key){
+    const info = schemaCategoriaInfo(key);
+    return { key, label: info ? info.label : key, color: info ? info.color : '#8CA0AF', minuti: totals[key] };
+  });
+  if (uncategorized > 0) slices.push({ key: '_none', label: 'Non categorizzato', color: '#8CA0AF', minuti: uncategorized });
+  return slices.sort(function(a, b){ return b.minuti - a.minuti; });
+}
+// Donut via stroke-dasharray su cerchi impilati (niente path/arc a mano): ogni fetta è un
+// cerchio completo mascherato a una porzione della circonferenza, ruotato di -90deg così
+// la prima fetta parte dalle ore 12 come in un grafico a torta convenzionale.
+function schemaWorkCompositionPieHTML(sess){
+  const slices = schemaSessionWorkCompositionData(sess);
+  const totalMin = slices.reduce(function(s, x){ return s + x.minuti; }, 0);
+  if (!slices.length || totalMin <= 0) {
+    return '<p class="hint">Aggiungi esercizi con una fase di gioco per vedere qui la composizione del lavoro.</p>';
+  }
+  const size = 140, r = 54, cx = size / 2, cy = size / 2, circumference = 2 * Math.PI * r;
+  let offsetAcc = 0;
+  const arcs = slices.map(function(s){
+    const pct = s.minuti / totalMin * 100;
+    const dash = (pct / 100 * circumference).toFixed(2);
+    const gap = (circumference - dash).toFixed(2);
+    const dashoffset = (-offsetAcc / 100 * circumference).toFixed(2);
+    offsetAcc += pct;
+    return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + s.color + '" stroke-width="22" stroke-dasharray="' + dash + ' ' + gap + '" stroke-dashoffset="' + dashoffset + '"></circle>';
+  }).join('');
+  const legend = slices.map(function(s){
+    const pct = Math.round(s.minuti / totalMin * 100);
+    return '<div class="schema-pie-legend-row"><span class="schema-pie-legend-dot" style="background:' + s.color + ';"></span>' + esc(s.label) + ' <span class="hint">' + pct + '% · ' + Math.round(s.minuti) + ' min</span></div>';
+  }).join('');
+  return '<div class="schema-pie-wrap">' +
+      '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" style="transform:rotate(-90deg); flex-shrink:0;">' + arcs + '</svg>' +
+      '<div class="schema-pie-legend">' + legend + '</div>' +
+    '</div>';
+}
 // Formattazione minima delle descrizioni: memorizzata come TESTO SEMPLICE con marcatori
 // (**grassetto**, ++più grande++), mai come HTML — cosi non c'è alcun rischio che un
 // input dell'utente venga interpretato come markup arbitrario quando lo mostriamo con
@@ -6799,6 +6856,11 @@ function renderSchemaSessionBuilder(){
         ) : '') +
       '</div>' +
     '</div>' +
+    '<div class="card">' +
+      '<h3>Composizione del lavoro</h3>' +
+      '<p class="hint">Percentuale di tempo dedicata a ciascuna fase di gioco tra gli esercizi di questa seduta.</p>' +
+      schemaWorkCompositionPieHTML(sess) +
+    '</div>' +
     (function(){
       const slots = schemaSessionSlots(sess.items);
       const pending = state.schema.pendingBlockTarget;
@@ -7787,6 +7849,7 @@ async function openProfileModal(){
   document.getElementById('event-modal-overlay').style.display = 'flex';
   const res = await apiGet('/api/profile');
   state.profile.tempAccentColor = res.accentColor || getAppUser().accentColor || null;
+  state.profile.tempTemaChiaro = !!res.temaChiaro;
   box.innerHTML = renderProfileFormHTML(res);
 }
 function renderProfileFormHTML(p){
@@ -7801,6 +7864,10 @@ function renderProfileFormHTML(p){
       '<div class="field"><label>Cognome</label><input id="profile-cognome" type="text" value="'+esc(p.cognome||'')+'"></div>' +
     '</div>' +
     '<div class="field"><label>Ruolo</label><input id="profile-ruolo" type="text" placeholder="es. Allenatore, Team Manager, Preparatore atletico" value="'+esc(p.ruolo||'')+'"></div>' +
+    '<div class="field" style="margin-top:14px;">' +
+      '<label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:normal;"><input type="checkbox" id="profile-tema-chiaro" '+(state.profile.tempTemaChiaro?'checked':'')+' onchange="toggleProfileTemaChiaro(this.checked)"> Usa un layout a base chiara</label>' +
+      '<p class="hint" style="margin-top:4px;">Preferenza personale: cambia lo sfondo solo per te, non per gli altri collaboratori.</p>' +
+    '</div>' +
     (isOwner ?
       '<div class="field" style="margin-top:14px;">' +
         '<label>Colore squadra</label>' +
@@ -7831,11 +7898,21 @@ function onProfileColorHexInput(value){
   state.profile.tempAccentColor = value;
   applyAccentPreview(value);
 }
+const SCHEMA_LIGHT_THEME_VARS = { '--bg':'#FFFFFF', '--panel':'#F6F6F4', '--panel-2':'#ECECE8', '--border':'rgba(0,0,0,0.12)', '--chalk':'#111111', '--text':'#1C1C1C', '--text-dim':'#6B6B6B', '--shadow-card':'0 1px 2px rgba(0,0,0,0.10)', '--shadow-elevated':'0 10px 28px rgba(0,0,0,0.18)' };
+const SCHEMA_DARK_THEME_VARS = { '--bg':'#000000', '--panel':'#141414', '--panel-2':'#1F1F1F', '--border':'rgba(255,255,255,0.10)', '--chalk':'#FFFFFF', '--text':'#E8E8E8', '--text-dim':'#9A9A9A', '--shadow-card':'0 1px 2px rgba(0,0,0,0.18)', '--shadow-elevated':'0 10px 28px rgba(0,0,0,0.45)' };
+function toggleProfileTemaChiaro(checked){
+  state.profile.tempTemaChiaro = checked;
+  const vars = checked ? SCHEMA_LIGHT_THEME_VARS : SCHEMA_DARK_THEME_VARS;
+  const root = document.documentElement.style;
+  Object.keys(vars).forEach(function(k){ root.setProperty(k, vars[k]); });
+}
 async function submitProfile(){
   const nome = document.getElementById('profile-nome').value.trim();
   const cognome = document.getElementById('profile-cognome').value.trim();
   const ruolo = document.getElementById('profile-ruolo').value.trim();
   const body = { nome, cognome, ruolo };
+  const temaChiaroInput = document.getElementById('profile-tema-chiaro');
+  if(temaChiaroInput) body.temaChiaro = temaChiaroInput.checked;
   const colorInput = document.getElementById('profile-color-hex');
   if(colorInput){
     const value = colorInput.value.trim();

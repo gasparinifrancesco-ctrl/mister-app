@@ -11,7 +11,7 @@ export async function GET() {
 
   const actor = await prisma.user.findUnique({
     where: { id: session.actorUserId },
-    select: { nome: true, cognome: true, ruolo: true, accentColor: true },
+    select: { nome: true, cognome: true, ruolo: true, accentColor: true, temaChiaro: true },
   });
 
   const accentColor = session.isOwner
@@ -23,6 +23,7 @@ export async function GET() {
     cognome: actor?.cognome || '',
     ruolo: actor?.ruolo || '',
     accentColor,
+    temaChiaro: actor?.temaChiaro || false,
     isOwner: session.isOwner,
   });
 }
@@ -42,6 +43,7 @@ export async function PATCH(request) {
   if (typeof body.nome === 'string') personalData.nome = body.nome.trim();
   if (typeof body.cognome === 'string') personalData.cognome = body.cognome.trim();
   if (typeof body.ruolo === 'string') personalData.ruolo = body.ruolo.trim();
+  if (typeof body.temaChiaro === 'boolean') personalData.temaChiaro = body.temaChiaro;
   if (Object.keys(personalData).length) {
     await prisma.user.update({ where: { id: session.actorUserId }, data: personalData });
   }

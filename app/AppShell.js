@@ -5,12 +5,17 @@ import Script from "next/script";
 import { logoutAction } from "@/app/actions/auth";
 import { deriveAccentPalette } from "@/lib/color";
 
-export default function AppShell({ email, nome, cognome, ruolo, accentColor, isOwner, permissions, actorId, schemaUnlocked, stagione }) {
+export default function AppShell({ email, nome, cognome, ruolo, accentColor, temaChiaro, isOwner, permissions, actorId, schemaUnlocked, stagione }) {
   const squadraLabel = [stagione?.tipoSquadra, stagione?.livello].filter(Boolean).join(" ");
   const displayName = [nome, cognome].filter(Boolean).join(" ");
   // Solo --accent* cambia (mai bg/pannelli/testo): calcolato lato server per evitare un
   // lampo del colore di default prima che il client applichi la scelta dell'utente.
   const palette = accentColor ? deriveAccentPalette(accentColor) : null;
+  // Preferenza personale (mai letta dal proprietario per un collaboratore, vedi
+  // getCurrentUser): scambia solo sfondo/pannelli/bordi/testo, mai --accent* (quello resta
+  // il colore squadra) — calcolato lato server per lo stesso motivo della palette accent,
+  // niente lampo del tema scuro di default prima che React idrati.
+  const LIGHT_THEME_CSS = ":root{--bg:#FFFFFF;--panel:#F6F6F4;--panel-2:#ECECE8;--border:rgba(0,0,0,0.12);--chalk:#111111;--text:#1C1C1C;--text-dim:#6B6B6B;--shadow-card:0 1px 2px rgba(0,0,0,0.10);--shadow-elevated:0 10px 28px rgba(0,0,0,0.18);}";
   // Su telefono la barra di navigazione in alto non ha spazio per "Esporta/Importa
   // backup" ed "Esci" insieme alle 6 voci di navigazione (misurato: ~1100px di
   // contenuto su un viewport da 375px). Questi tre pulsanti, usati raramente, si
@@ -31,6 +36,7 @@ export default function AppShell({ email, nome, cognome, ruolo, accentColor, isO
       {palette && (
         <style>{":root{--accent:" + palette.accent + ";--accent-hover:" + palette.accentHover + ";--accent-dim:" + palette.accentDim + ";--accent-wash:" + palette.accentWash + ";--accent-rgb:" + palette.accentRgb + ";}"}</style>
       )}
+      {temaChiaro && <style>{LIGHT_THEME_CSS}</style>}
       {/* Data attributes instead of an inline <script>: React's hydration reliably
           preserves attributes but does not re-execute dangerouslySetInnerHTML script
           content, so app.js reads this element instead of a window global. */}
@@ -41,6 +47,7 @@ export default function AppShell({ email, nome, cognome, ruolo, accentColor, isO
         data-cognome={cognome || ""}
         data-ruolo={ruolo || ""}
         data-accent-color={accentColor || ""}
+        data-tema-chiaro={temaChiaro ? "1" : "0"}
         data-is-owner={isOwner === false ? "0" : "1"}
         data-permissions={JSON.stringify(permissions || [])}
         data-actor-id={actorId || ""}

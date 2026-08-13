@@ -607,6 +607,10 @@
   .schema-property-input{ height:40px; background:var(--panel-2); border-radius:8px; box-sizing:border-box; }
   .schema-toolbar-divider{ width:1px; height:24px; background:var(--border); margin:0 4px; }
   .schema-session-preview{ background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px; }
+  .schema-pie-wrap{ display:flex; align-items:center; gap:20px; flex-wrap:wrap; margin-top:8px; }
+  .schema-pie-legend{ display:flex; flex-direction:column; gap:6px; }
+  .schema-pie-legend-row{ display:flex; align-items:center; gap:8px; font-size:0.86rem; color:var(--text); }
+  .schema-pie-legend-dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
   .schema-pick-available{ color:var(--success); }
   .schema-pick-absent{ color:var(--danger); text-decoration:line-through; opacity:0.75; }
   /* Ruoli coperti nell'anteprima/stampa seduta: stesso campo e disposizione tattica della
