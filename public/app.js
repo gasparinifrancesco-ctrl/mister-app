@@ -652,6 +652,7 @@ const SIDE_NAV_ICONS = {
 const SIDE_NAV_LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
 const BELL_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>';
 const HELP_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+const MESSAGE_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>';
 const SIDE_NAV_LABELS = { calendario:'Calendario', pianoSquadra:'Piano Squadra', formazione:'Formazione', rosa:'Rosa', statistiche:'Statistiche', schema:'Allenamenti' };
 const DEFAULT_SIDE_NAV_ORDER = ['calendario','formazione','pianoSquadra','rosa','statistiche','schema'];
 function currentSideNavOrder(){
@@ -2627,6 +2628,14 @@ function renderNotificheBell(){
 function renderHelpButtonHTML(){
   return '<button class="header-icon-btn" onclick="reopenSectionTip()" title="Aiuto per questa sezione" aria-label="Aiuto">' + HELP_ICON_SVG + '</button>';
 }
+// Accessibile da qualunque pagina (non solo da dentro Allenamenti), stesso trattamento
+// della campanella: stesso permesso di lettura di Allenamenti (view_allenamenti), visibile
+// solo se il modulo è sbloccato per l'account.
+function renderMessaggiButtonHTML(){
+  const user = getAppUser();
+  if(!(user.schemaUnlocked && can('view_allenamenti'))) return '';
+  return '<button class="header-icon-btn" onclick="openSchemaConsiderazioni()" title="Messaggi" aria-label="Messaggi">' + MESSAGE_ICON_SVG + '</button>';
+}
 async function refreshSchemaNotifiche(){
   if(!getAppUser().schemaUnlocked) return;
   await loadSchemaSessions();
@@ -2636,7 +2645,7 @@ function renderNextMatchBar(){
   const bar = document.getElementById('next-match-bar');
   if(!bar) return;
   const nm = findNextMatch();
-  const icons = '<div class="header-icons">' + renderNotificheBell() + renderHelpButtonHTML() + '</div>';
+  const icons = '<div class="header-icons">' + renderMessaggiButtonHTML() + renderNotificheBell() + renderHelpButtonHTML() + '</div>';
   if(!nm){
     bar.innerHTML = '<span class="next-match-empty">Nessuna partita in programma</span>' + icons;
     return;
@@ -4403,6 +4412,7 @@ async function openSchemaSessionBuilder(id){
   await Promise.all([
     ensureSchemaObjectives(),
     ensureSchemaCategorie(),
+    ensureSchemaTags(),
     ensureTeamRoster(),
     loadSchemaLibrary(),
     loadSchemaSessionDetail(id),
@@ -5226,6 +5236,16 @@ function renderSchemaFieldSVG(livello, withId, printMode){
     '<g class="arrows-layer">'+arrowsSvg+'</g>' +
     '<g class="chips-layer">'+chipsSvg+'</g>' +
   '</svg>';
+}
+const SCHEMA_CONSID_INFO = {
+  pre: { titolo: 'Considerazioni pre-allenamento', testo: 'Scrivile componendo la seduta: contesto, obiettivi, la partita precedente o cosa vuoi proporre oggi. Finiscono in cima al foglio esportato, prima dei ruoli coperti.' },
+  post: { titolo: 'Considerazioni post-allenamento', testo: 'Scritte da te o dai collaboratori durante o dopo la seduta, su cosa avete visto in campo. Restano in fondo al foglio esportato.' },
+};
+function showSchemaConsiderazioniInfo(momento){
+  const info = SCHEMA_CONSID_INFO[momento];
+  const box = document.getElementById('event-modal-box');
+  box.innerHTML = '<h3>'+esc(info.titolo)+'</h3><p>'+esc(info.testo)+'</p><div class="modal-actions"><button type="button" class="btn btn-primary" onclick="closeEventModal()">Ho capito</button></div>';
+  document.getElementById('event-modal-overlay').style.display = 'flex';
 }
 function showSchemaGuidaModal(){
   const box = document.getElementById('event-modal-box');
@@ -6759,8 +6779,7 @@ function renderSchemaSessionBuilder(){
         '<div class="field"><label>RPE seduta (1-10)</label><select '+(canEditSedute?'':'disabled')+' onchange="saveSchemaSessionField(\'rpe\', this.value)">'+rpeOptions+'</select></div>' +
       '</div>' +
       '<div class="form-row" style="align-items:center;">'+caricoBadge+'<span class="hint">Durata totale: '+sess.durataTotale+' min</span></div>' +
-      '<div class="field field-grow"><label>Considerazioni pre-allenamento</label>' +
-        '<span class="hint">Contesto, obiettivi, la partita precedente: scritte adesso componendo la seduta, finiscono in cima al foglio.</span>' +
+      '<div class="field field-grow"><label>Considerazioni pre-allenamento <button type="button" class="btn-icon btn-icon-info" onclick="showSchemaConsiderazioniInfo(\'pre\')" title="Cosa sono" aria-label="Cosa sono">ⓘ</button></label>' +
         schemaConsiderazioniListHTML((sess.considerazioni||[]).filter(c=>c.momento==='pre')) +
         (can('write_considerazioni') ? (
           '<div class="form-row" style="margin-top:6px;">' +
@@ -6769,8 +6788,7 @@ function renderSchemaSessionBuilder(){
           '</div>'
         ) : '') +
       '</div>' +
-      '<div class="field field-grow"><label>Considerazioni post-allenamento</label>' +
-        '<span class="hint">Cosa hai visto tu o i collaboratori durante/dopo la seduta: restano in fondo al foglio.</span>' +
+      '<div class="field field-grow"><label>Considerazioni post-allenamento <button type="button" class="btn-icon btn-icon-info" onclick="showSchemaConsiderazioniInfo(\'post\')" title="Cosa sono" aria-label="Cosa sono">ⓘ</button></label>' +
         schemaConsiderazioniListHTML((sess.considerazioni||[]).filter(c=>c.momento!=='pre')) +
         (can('write_considerazioni') ? (
           '<div class="form-row" style="margin-top:6px;">' +
@@ -6789,10 +6807,23 @@ function renderSchemaSessionBuilder(){
       const pendingBanner = pending
         ? '<div class="schema-block-pending-banner">Sto scegliendo l\'esercizio per un gruppo del blocco parallelo. <button type="button" class="btn btn-small" onclick="cancelSchemaBlockTarget()">Annulla</button></div>'
         : '';
+      // Stessi filtri della libreria vera e propria (ricerca/fasi di gioco/focus), qui in
+      // versione compatta senza drag-riordino né menu contestuale (quelli sono gestione
+      // libreria, non scelta esercizio) — agiscono sullo stesso state.schema.exercises,
+      // quindi filtrano anche cosa si vede tornando alla Libreria dopo.
+      const filterCategoriaChips = s.categorie.map(c=>
+        '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategorie.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="setSchemaFilterCategoria(\''+c.key+'\')">'+esc(c.label)+'</button>'
+      ).join('');
+      const filterTagChips = s.availableTags.map(t=>
+        '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" onclick="toggleSchemaFilterTag(\''+esc(t)+'\')">'+esc(t)+'</button>'
+      ).join('');
       const librarySection =
         '<div class="card'+(canEditSedute?'':' readonly-block')+'">' +
           '<h3>Libreria esercizi</h3>' +
           pendingBanner +
+          '<div class="form-row"><div class="field field-grow"><label>Cerca</label><input id="schema-filter-search" type="text" placeholder="titolo o focus" value="'+esc(s.filterSearch)+'" oninput="onSchemaFilterChange()"></div></div>' +
+          '<div class="field"><label>Fasi di gioco</label><div class="schema-tag-chip-row">'+filterCategoriaChips+'</div></div>' +
+          (s.availableTags.length ? '<div class="field"><label>Focus</label><div class="schema-tag-chip-row">'+filterTagChips+'</div></div>' : '') +
           '<div class="schema-exercise-grid schema-exercise-grid-compact">' + s.exercises.map(e=>schemaExerciseCardHTML(e, "addSchemaSessionItem('"+e.id+"')", true)).join('') + '</div>' +
         '</div>';
       const sedutaSection =
@@ -6945,9 +6976,9 @@ function schemaAvailablePlayersForSession(sess){
     return v === 'Disponibile';
   });
 }
-// Solo ruolo + giocatori sotto, elenco semplice senza campo/card posizionate: qui serve
-// leggere in fretta chi copre cosa, non vedere la disposizione tattica (quella è nella
-// vista Formazione).
+// Campo e disposizione tattica reali (stessa posizione della formazione predefinita), ma
+// senza il box scuro attorno ai nomi dell'editor live: qui serve solo leggere ruolo +
+// giocatori sovrapposti al campo, non interagire con le card.
 function schemaFormationLineupHTML(sess, availablePlayers){
   const def = state.formazioneDefault;
   if(!def || !def.modulo || !(def.slots||[]).length){
@@ -6956,6 +6987,10 @@ function schemaFormationLineupHTML(sess, availablePlayers){
   const availableIds = new Set(availablePlayers.map(p=>p.id));
   const surnameCounts = pianoSurnameCounts();
   const groupsHtml = def.slots.map(s=>{
+    let leftPctNum = (105 - s.y) / 105 * 100;
+    if(s.ruolo==='Por') leftPctNum *= 0.55;
+    const leftPct = leftPctNum.toFixed(2);
+    const topPct = (s.x / 68 * 100).toFixed(2);
     const rows = [0,1,2].map(idx=>{
       const pid = getPianoScelta(s.numero, idx);
       const p = pid ? state.players.find(pl=>pl.id===pid) : null;
@@ -6963,9 +6998,14 @@ function schemaFormationLineupHTML(sess, availablePlayers){
       const availCls = p ? (availableIds.has(p.id) ? 'schema-pick-available' : 'schema-pick-absent') : '';
       return '<div class="schema-lineup-player '+availCls+'">'+label+'</div>';
     }).join('');
-    return '<div class="schema-lineup-role-group"><div class="schema-lineup-role-label">'+esc(s.ruolo)+'</div>'+rows+'</div>';
+    return '<div class="schema-lineup-role-group" style="left:'+leftPct+'%; top:'+topPct+'%;">' +
+      '<div class="schema-lineup-role-label">'+esc(s.ruolo)+'</div>' + rows +
+    '</div>';
   }).join('');
-  return '<div class="schema-lineup-list">' + groupsHtml + '</div>';
+  return '<div class="piano-pitch-wrap schema-lineup-pitch">' +
+      '<svg viewBox="0 0 105 68" class="piano-pitch-svg"><g transform="translate(105,0) rotate(90)">' + pitchMarkingsSVG(true) + '</g></svg>' +
+      '<div class="piano-pitch-cards">' + groupsHtml + '</div>' +
+    '</div>';
 }
 function schemaSessionExportItemHTML(item, idx){
   if(!item.livello) return '<div class="schema-export-item"><h3>'+(idx+1)+'. '+esc(item.titoloSnapshot)+'</h3><p class="hint">Esercizio non più in libreria.</p></div>';
@@ -7220,7 +7260,7 @@ function schemaConsiderazioneRowHTML(c){
 function schemaConsiderazioniListHTML(considerazioni){
   return considerazioni.length
     ? '<div class="schema-consid-list">' + considerazioni.map(schemaConsiderazioneRowHTML).join('') + '</div>'
-    : '<p class="hint">Nessuna considerazione ancora.</p>';
+    : '';
 }
 async function addSchemaConsiderazioneSeduta(momento){
   const el = document.getElementById('schema-consid-'+momento+'-input');

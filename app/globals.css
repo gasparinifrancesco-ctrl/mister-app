@@ -280,6 +280,11 @@
     width: 26px; height: 26px; border-radius: 50%; transition: background .18s ease-in-out, color .18s ease-in-out;
   }
   .btn-icon:hover{ background: var(--panel-2); color: var(--danger); }
+  /* Icona "i" informativa inline accanto a un'etichetta (es. Considerazioni pre/post-
+     allenamento): stesso pulsante tondo, ma hover accent invece di danger — non è
+     un'azione distruttiva. */
+  .btn-icon-info{ font-size:0.95rem; vertical-align:middle; }
+  .btn-icon-info:hover{ color: var(--accent); }
 
   /* modale conferma */
   .modal-overlay{ position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px; }
@@ -604,13 +609,16 @@
   .schema-session-preview{ background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px; }
   .schema-pick-available{ color:var(--success); }
   .schema-pick-absent{ color:var(--danger); text-decoration:line-through; opacity:0.75; }
-  /* Ruoli coperti nell'anteprima/stampa seduta: solo etichetta ruolo + giocatori sotto,
-     nessun campo/card posizionata — qui serve leggere in fretta, non la disposizione
-     tattica (quella è nella vista Formazione). */
-  .schema-lineup-list{ display:flex; flex-wrap:wrap; gap:14px 28px; margin-top:8px; }
-  .schema-lineup-role-group{ min-width:110px; }
-  .schema-lineup-role-label{ font-family:'Inter',sans-serif; font-size:0.78rem; font-weight:700; letter-spacing:0.03em; color:var(--accent); text-transform:uppercase; margin-bottom:3px; }
-  .schema-lineup-player{ font-size:0.85rem; color:var(--text); padding:1px 0; }
+  /* Ruoli coperti nell'anteprima/stampa seduta: stesso campo e disposizione tattica della
+     formazione predefinita (posizione dei ruoli sul rettangolo), ma senza il box scuro
+     attorno ai nomi dell'editor live — qui è solo lettura, non serve interagire. */
+  .schema-lineup-pitch{ background:#FFFFFF; border-color:#ccc; }
+  .schema-lineup-role-group{
+    position:absolute; transform:translate(-50%,-50%); width:max-content; min-width:60px; max-width:130px;
+    text-align:center; z-index:2;
+  }
+  .schema-lineup-role-label{ font-family:'Inter',sans-serif; font-size:0.7rem; font-weight:700; letter-spacing:0.03em; color:var(--accent); text-transform:uppercase; margin-bottom:1px; }
+  .schema-lineup-player{ font-size:0.74rem; color:var(--text); line-height:1.25; white-space:nowrap; }
 
   /* Esportazione/stampa seduta (immagine, PDF, condivisione): sempre sfondo bianco, testo
      grande e leggibile. Invece di rimpicciolire tutto per stare su una sola facciata, il
