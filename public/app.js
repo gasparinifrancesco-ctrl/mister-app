@@ -4333,6 +4333,7 @@ const SCHEMA_ICON_GIOCATORE = '<svg viewBox="0 0 24 24" width="26" height="26" f
 const SCHEMA_ICON_PALLONE = '<svg viewBox="0 0 24 24" width="26" height="26"><g transform="translate(12,12)">'+schemaBallSVG(9,24)+'</g></svg>';
 const SCHEMA_ICON_MOVIMENTO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18L18 6" stroke-dasharray="3,2.4"/><path d="M12.5 6H18v5.5"/></svg>';
 const SCHEMA_ICON_PASSAGGIO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18L18 6"/><path d="M12.5 6H18v5.5"/></svg>';
+const SCHEMA_ICON_CONDUZIONE = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 18Q7.5 13 9.5 16T14.5 12T18 7"/><path d="M13 7.3L18 6.5L18.7 11.8"/></svg>';
 const SCHEMA_ICON_PALLONE_ALTO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 19Q11 4 20 10"/><path d="M15.5 7.5l4.5 2.5-2.3 4.3"/></svg>';
 const SCHEMA_ICON_DIVISORE = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="2.5,2.5"><path d="M4 20L20 4"/></svg>';
 const SCHEMA_ICON_RIGACAMPO = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20L20 4"/></svg>';
@@ -4894,7 +4895,7 @@ function parseSchemaCampo(livello){
     // Curvatura regolare del pallone-alto (vedi schemaCurveControlPoint): assente sulle
     // frecce non curve e su quelle disegnate a mano libera prima di questa modifica.
     bend: typeof a.bend==='number' ? a.bend : null,
-    tipo: ['movimento','passaggio','pallone-alto','divisore','campo-linea'].includes(a.tipo) ? a.tipo : 'passaggio',
+    tipo: ['movimento','passaggio','conduzione','pallone-alto','divisore','campo-linea'].includes(a.tipo) ? a.tipo : 'passaggio',
     color: a.color || SCHEMA_COLORS[0],
     // Numerazione manuale (click destro → Numera), mai automatica: solo le frecce che
     // l'allenatore sceglie esplicitamente di numerare mostrano il badge.
@@ -5095,6 +5096,29 @@ function schemaCurveControlPoint(x1,y1,x2,y2,bend){
 function schemaQuadraticMidpoint(x1,y1,cx,cy,x2,y2){
   return { x: 0.25*x1 + 0.5*cx + 0.25*x2, y: 0.25*y1 + 0.5*cy + 0.25*y2 };
 }
+// Linea ondulata per la conduzione (palla al piede): convenzione classica della lavagna
+// tattica, a differenza della linea dritta di movimento/passaggio. Onda procedurale fra i
+// due estremi (non a mano libera come il pallone alto): tante "S" quante ne stanno nella
+// lunghezza della freccia (una ogni ~2m), cosi resta un'onda regolare qualunque sia la
+// distanza, e si ridisegna da sola quando si trascina un estremo.
+function schemaConduzionePath(x1,y1,x2,y2){
+  const dx=x2-x1, dy=y2-y1;
+  const len=Math.hypot(dx,dy)||1;
+  const ux=dx/len, uy=dy/len, px=-uy, py=ux;
+  const halfWave = 2, amp = 0.6;
+  const segments = Math.max(2, Math.round(len/halfWave));
+  const segLen = len/segments;
+  let d = 'M'+x1+','+y1;
+  for(let i=0;i<segments;i++){
+    const sign = (i%2===0) ? 1 : -1;
+    const midDist = segLen*(i+0.5);
+    const midX = x1+ux*midDist+px*amp*sign, midY = y1+uy*midDist+py*amp*sign;
+    const endDist = segLen*(i+1);
+    const endX = x1+ux*endDist, endY = y1+uy*endDist;
+    d += ' Q'+midX+','+midY+' '+endX+','+endY;
+  }
+  return d;
+}
 function schemaArrowGeometry(a){
   // La freccia "pallone alto" è una quadratica regolare: "bend" (uno scostamento
   // perpendicolare con segno, misurato una volta al rilascio del disegno a mano libera)
@@ -5118,6 +5142,9 @@ function schemaArrowGeometry(a){
     const offset = len*0.25;
     const cx = mx - (dy/len)*offset, cy = my + (dx/len)*offset;
     return { tag:'path', d: 'M'+a.x1+','+a.y1+' Q'+cx+','+cy+' '+a.x2+','+a.y2, mid: schemaQuadraticMidpoint(a.x1,a.y1,cx,cy,a.x2,a.y2) };
+  }
+  if(a.tipo==='conduzione'){
+    return { tag:'path', d: schemaConduzionePath(a.x1,a.y1,a.x2,a.y2), mid: {x:(a.x1+a.x2)/2, y:(a.y1+a.y2)/2} };
   }
   return { tag:'line', x1:a.x1, y1:a.y1, x2:a.x2, y2:a.y2, mid:{x:(a.x1+a.x2)/2, y:(a.y1+a.y2)/2} };
 }
@@ -5231,6 +5258,7 @@ function schemaToolbarHTML(livello){
   const lineTypes = [
     ['movimento', SCHEMA_ICON_MOVIMENTO, 'Movimento'],
     ['passaggio', SCHEMA_ICON_PASSAGGIO, 'Passaggio / tiro'],
+    ['conduzione', SCHEMA_ICON_CONDUZIONE, 'Conduzione (palla al piede)'],
     ['pallone-alto', SCHEMA_ICON_PALLONE_ALTO, 'Pallone alto (disegna la curva)'],
     ['divisore', SCHEMA_ICON_DIVISORE, 'Divisore spazi'],
     ['campo-linea', SCHEMA_ICON_RIGACAMPO, 'Riga bianca del campo'],
