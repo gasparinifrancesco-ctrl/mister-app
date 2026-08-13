@@ -85,7 +85,7 @@ const SCHEMA_EXTENDED_COLORS = [
   '#2563EB','#38BDF8','#14B8A6','#34D399','#FB7185',
   '#DC2626','#FBBF24','#A78BFA','#8B5CF6','#94A3B8','#FFFFFF',
 ];
-// Fase di allenamento a scelta vincolata (non etichetta libera): personalizzabile per
+// Fasi di gioco a scelta vincolata (non etichetta libera): personalizzabile per
 // account (modello Categoria, vedi /api/schema/categorie), non più una lista fissa qui.
 // Stessa palette pre-verificata per il contrasto offerta da /api/schema/categorie per le
 // fasi create da zero — riproposta qui per il menu "cambia colore" di una fase esistente,
@@ -4333,7 +4333,7 @@ function showSchemaCategoriaContextMenu(evt, key){
 async function renameSchemaCategoria(key){
   const c = state.schema.categorie.find(x=>x.key===key);
   if(!c) return;
-  const label = prompt('Nome della fase di allenamento:', c.label);
+  const label = prompt('Nome della fase di gioco:', c.label);
   if(label===null) return;
   const trimmed = label.trim();
   if(!trimmed) return;
@@ -4360,7 +4360,7 @@ function deleteSchemaCategoria(key){
   });
 }
 async function createSchemaCategoria(){
-  const label = prompt('Nome della nuova fase di allenamento:', '');
+  const label = prompt('Nome della nuova fase di gioco:', '');
   if(label===null) return;
   const trimmed = label.trim();
   if(!trimmed) return;
@@ -4394,7 +4394,7 @@ function renderSchemaLibrary(){
       '<div class="form-row">' +
         '<div class="field field-grow"><label>Cerca</label><input id="schema-filter-search" type="text" placeholder="titolo o focus" value="'+esc(s.filterSearch)+'" oninput="onSchemaFilterChange()"></div>' +
       '</div>' +
-      '<div class="field"><label>Fase di allenamento</label><div class="schema-tag-chip-row">'+categoriaChips+'</div></div>' +
+      '<div class="field"><label>Fasi di gioco</label><div class="schema-tag-chip-row">'+categoriaChips+'</div></div>' +
       (s.availableTags.length ? '<div class="field"><label>Focus</label><div class="schema-tag-chip-row">'+tagChips+'</div></div>' : '') +
       '<div class="schema-exercise-grid">' + renderSchemaExerciseCards() + '</div>' +
     '</div>';
@@ -4457,7 +4457,7 @@ function renderSchemaNewExerciseForm(){
         '<div class="field field-grow"><label>Titolo</label><input id="schema-new-ex-titolo" type="text"></div>' +
         '<div class="field"><label title="Giocatori di movimento">Mov.</label><input id="schema-new-ex-numgiocatori" type="number" min="1" value="8" style="width:64px;"></div>' +
         '<div class="field"><label title="Portieri">Por.</label><input id="schema-new-ex-numportieri" type="number" min="0" value="0" style="width:64px;"></div>' +
-        '<div class="field"><label>Fase di allenamento</label><select id="schema-new-ex-categoria">'+schemaCategoriaOptionsHTML('')+'</select></div>' +
+        '<div class="field"><label>Fasi di gioco</label><select id="schema-new-ex-categoria">'+schemaCategoriaOptionsHTML('')+'</select></div>' +
       '</div>' +
       '<div class="field"><label>Descrizione generale</label><textarea id="schema-new-ex-descrizione" rows="3"></textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa insieme allo svolgimento, che si scrive dopo, nel livello.</span></div>' +
       '<button class="btn btn-primary" onclick="createSchemaExercise()">Crea esercizio</button>' +
@@ -5155,7 +5155,7 @@ function renderSchemaExerciseSheet(){
         '<div class="pitch-actions"><button class="btn btn-small" onclick="openSchemaLibrary()">← Libreria</button>'+(canEdit ? '<button class="btn btn-small btn-danger" onclick="confirmDeleteSchemaExercise()">Elimina</button>' : '')+'</div>' +
       '</div>' +
       '<div class="form-row">' +
-        '<div class="field"><label>Fase di allenamento</label><select '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'categoria\', this.value)">'+schemaCategoriaOptionsHTML(e.categoria)+'</select></div>' +
+        '<div class="field"><label>Fasi di gioco</label><select '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'categoria\', this.value)">'+schemaCategoriaOptionsHTML(e.categoria)+'</select></div>' +
       '</div>' +
       '<div class="field"><label>Descrizione generale</label><textarea rows="2" '+(canEdit?'':'disabled')+' onchange="saveSchemaExerciseField(\'descrizione\', this.value)">'+esc(e.descrizione)+'</textarea><span class="hint">Perché/a cosa serve questo esercizio — compare anche in anteprima/stampa, insieme allo svolgimento del livello scelto.</span></div>' +
       '<div class="field field-grow">' +
