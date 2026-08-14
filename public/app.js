@@ -4448,35 +4448,103 @@ function schemaSubNavHTML(active){
     '<button class="btn btn-small '+(active==='considerazioni'?'btn-active':'')+'" onclick="openSchemaConsiderazioni()">Messaggi</button>' +
   '</div>';
 }
-// Composizione del lavoro aggregata su tutte le sedute già svolte nella stagione attiva
-// (stesso criterio "eseguita" del calendario, vedi getPastAllenamentoIds): riusa le stesse
-// funzioni torta della singola seduta passando un "sess" virtuale i cui items sono l'unione
-// di tutte le sedute svolte, così le fette restano coerenti (stesse chiavi, stessi colori).
+// Composizione del lavoro aggregata sulle sedute già svolte nella stagione attiva, con
+// filtro periodo opzionale (da/a) — stesso pattern del filtro Statistiche partite
+// (getStatsFilter/setStatsFilterField), ma qui il filtro è lato server perché i dati non
+// sono già tutti in memoria come per le partite: ogni cambio di data rilancia la fetch.
+function getSchemaStatisticheFilter(){
+  return state.schema.statisticheFilter || { da:'', a:'' };
+}
+async function loadSchemaStatistiche(){
+  const f = getSchemaStatisticheFilter();
+  const params = new URLSearchParams();
+  if(f.da) params.set('da', f.da);
+  if(f.a) params.set('a', f.a);
+  const res = await apiGet('/api/schema/statistiche?'+params.toString());
+  state.schema.statistiche = { sedute: res.sedute || 0, items: res.items || [] };
+}
+async function setSchemaStatisticheFilterField(field, value){
+  const f = Object.assign({}, getSchemaStatisticheFilter());
+  f[field] = value;
+  state.schema.statisticheFilter = f;
+  await loadSchemaStatistiche();
+  renderView();
+}
+async function resetSchemaStatisticheFilter(){
+  state.schema.statisticheFilter = { da:'', a:'' };
+  await loadSchemaStatistiche();
+  renderView();
+}
 async function openSchemaStatistiche(){
   state.currentView = 'schema';
   state.schema.view = 'statistiche';
-  const [, , res] = await Promise.all([ensureSchemaCategorie(), ensureSchemaTags(), apiGet('/api/schema/statistiche')]);
-  state.schema.statistiche = { sedute: res.sedute || 0, items: res.items || [] };
+  await Promise.all([ensureSchemaCategorie(), ensureSchemaTags(), loadSchemaStatistiche()]);
   renderView();
+}
+// Minuti totali per esercizio (raggruppati per titoloSnapshot, il nome che l'allenatore
+// riconosce — lo stesso mostrato nelle righe seduta), percentuale sul totale del periodo e
+// numero di volte usato: risponde a "su cosa ci siamo concentrati" a livello di singolo
+// esercizio, non solo di fase/focus.
+function schemaSessionExerciseUsageData(sess){
+  const totals = {};
+  let totalMin = 0;
+  (sess.items || []).forEach(function(item){
+    const lv = item.livello;
+    const totaleCalcolato = lv ? Math.round(lv.ripetizioni * lv.durataRipetizione + Math.max(lv.ripetizioni - 1, 0) * (lv.recuperoSecondi || 0) / 60) : 0;
+    const minuti = item.durataMinuti != null ? item.durataMinuti : totaleCalcolato;
+    if (!minuti) return;
+    const titolo = item.titoloSnapshot || 'Esercizio eliminato';
+    if (!totals[titolo]) totals[titolo] = { titolo: titolo, minuti: 0, volte: 0 };
+    totals[titolo].minuti += minuti;
+    totals[titolo].volte += 1;
+    totalMin += minuti;
+  });
+  return Object.keys(totals).map(function(k){
+    const t = totals[k];
+    return { titolo: t.titolo, minuti: t.minuti, volte: t.volte, pct: totalMin ? Math.round(t.minuti / totalMin * 100) : 0 };
+  }).sort(function(a, b){ return b.minuti - a.minuti; });
+}
+function schemaUsageListHTML(rows){
+  if (!rows.length) return '<p class="hint">Nessun dato disponibile.</p>';
+  return '<div class="schema-usage-list">' + rows.map(function(r){
+    return '<div class="schema-usage-row">' +
+      '<span class="schema-usage-label">'+esc(r.titolo)+'</span>' +
+      '<span class="schema-usage-track"><span class="schema-usage-fill" style="width:'+r.pct+'%;"></span></span>' +
+      '<span class="schema-usage-pct">'+r.pct+'% · '+r.volte+'×</span>' +
+    '</div>';
+  }).join('') + '</div>';
 }
 function renderSchemaStatisticheView(){
   const stat = state.schema.statistiche || { sedute: 0, items: [] };
+  const f = getSchemaStatisticheFilter();
   const virtualSess = { items: stat.items };
   const fasiSlices = schemaSessionWorkCompositionData(virtualSess);
   const focusSlices = schemaSessionFocusCompositionData(virtualSess);
+  const esercizi = schemaSessionExerciseUsageData(virtualSess);
   const minutiTotali = Math.round(fasiSlices.reduce(function(s, x){ return s + x.minuti; }, 0));
+  const filterHTML =
+    '<div class="stats-filter-row">' +
+      '<div class="field"><label>Da</label><input type="date" value="'+esc(f.da)+'" onchange="setSchemaStatisticheFilterField(\'da\',this.value)"></div>' +
+      '<div class="field"><label>A</label><input type="date" value="'+esc(f.a)+'" onchange="setSchemaStatisticheFilterField(\'a\',this.value)"></div>' +
+      ((f.da || f.a) ? '<button type="button" class="btn btn-small" onclick="resetSchemaStatisticheFilter()">Tutta la stagione</button>' : '') +
+    '</div>';
   return schemaSubNavHTML('statistiche') +
     '<div class="card">' +
-      '<h2>Statistiche allenamenti — stagione in corso</h2>' +
-      '<p class="hint">Composizione del lavoro su tutte le sedute già svolte in questa stagione (le sedute in bozza o ancora da svolgere non sono incluse).</p>' +
-      '<div class="stat-cards">' +
+      '<h2>Statistiche allenamenti</h2>' +
+      '<p class="hint">Composizione del lavoro sulle sedute già svolte nel periodo selezionato (le sedute in bozza o ancora da svolgere non sono incluse). Utile per rivedere cosa si è allenato prima di una partita in particolare.</p>' +
+      filterHTML +
+      '<div class="stat-cards" style="margin-top:16px;">' +
         '<div class="stat-card"><div class="stat-card-value">'+stat.sedute+'</div><div class="stat-card-label">Sedute svolte</div></div>' +
         '<div class="stat-card"><div class="stat-card-value">'+minutiTotali+'</div><div class="stat-card-label">Minuti totali allenati</div></div>' +
       '</div>' +
-      (stat.sedute===0 ? '<p class="hint" style="margin-top:16px;">Nessuna seduta ancora svolta in questa stagione.</p>' :
+      (stat.sedute===0 ? '<p class="hint" style="margin-top:16px;">Nessuna seduta svolta nel periodo selezionato.</p>' :
         '<div class="grid-2" style="margin-top:16px;">' +
           '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaPieChartHTML(fasiSlices, 'Nessun dato disponibile.') + '</div>' +
           '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaPieChartHTML(focusSlices, 'Nessun dato disponibile.') + '</div>' +
+        '</div>' +
+        '<div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">' +
+          '<h4 class="schema-pie-subtitle">Esercizi utilizzati</h4>' +
+          schemaUsageListHTML(esercizi) +
         '</div>'
       ) +
     '</div>';

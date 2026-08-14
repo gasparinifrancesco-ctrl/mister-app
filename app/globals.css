@@ -619,6 +619,12 @@
   .schema-pie-legend{ display:flex; flex-direction:column; gap:6px; }
   .schema-pie-legend-row{ display:flex; align-items:center; gap:8px; font-size:0.86rem; color:var(--text); }
   .schema-pie-legend-dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .schema-usage-list{ display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+  .schema-usage-row{ display:flex; align-items:center; gap:10px; }
+  .schema-usage-label{ flex:0 0 auto; max-width:45%; font-size:0.86rem; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .schema-usage-track{ flex:1; height:8px; background:var(--panel-2); border-radius:999px; overflow:hidden; }
+  .schema-usage-fill{ display:block; height:100%; background:var(--accent); border-radius:999px; }
+  .schema-usage-pct{ flex:0 0 auto; width:80px; text-align:right; font-size:0.8rem; color:var(--text-dim); font-variant-numeric:tabular-nums; }
   .schema-pick-available{ color:var(--success); }
   .schema-pick-absent{ color:var(--danger); text-decoration:line-through; opacity:0.75; }
   /* Ruoli coperti nell'anteprima/stampa seduta: stesso campo e disposizione tattica della
