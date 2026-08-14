@@ -4666,7 +4666,7 @@ function schemaExerciseCardHTML(e, onclickAttr, compact){
   // l'esercizio da aggiungere, non a gestirlo.
   const contextMenuAttr = (!compact && can('edit_esercizi')) ? ' oncontextmenu="showSchemaExerciseCardContextMenu(event,\''+e.id+'\')"' : '';
   return '<div class="'+cls+'" style="'+(cats[0]?'border-left-color:'+cats[0].color+';':'')+'" onclick="'+onclickAttr+'"'+contextMenuAttr+'>' +
-    '<div class="schema-exercise-card-thumb">' + (primoLivello ? renderSchemaFieldSVG(primoLivello, false) : '') + '</div>' +
+    '<div class="schema-exercise-card-thumb">' + (primoLivello ? renderSchemaFieldSVG(primoLivello, false, schemaShouldUseLightBoard()) : '') + '</div>' +
     '<div class="schema-exercise-card-body">' +
       '<div class="schema-exercise-card-head"><strong>'+esc(primoLivello ? primoLivello.titolo : '')+'</strong>'+badge+'</div>' +
       '<div class="schema-exercise-card-meta">' +
@@ -5172,7 +5172,7 @@ function schemaContrastPair(hex){
   const luminance = 0.299*r + 0.587*g + 0.114*b;
   return luminance > 170 ? { fill:'#0B141C', stroke:'#FFFFFF' } : { fill:'#FFFFFF', stroke:'#0B141C' };
 }
-function schemaArrowGroupSVG(a, w, numero, printMode){
+function schemaArrowGroupSVG(a, w, numero, printMode, interactive){
   const strokeW = w*0.0035;
   const geo = schemaArrowGeometry(a);
   const shapeAttrs = geo.tag==='path' ? 'd="'+geo.d+'"' : 'x1="'+geo.x1+'" y1="'+geo.y1+'" x2="'+geo.x2+'" y2="'+geo.y2+'"';
@@ -5210,26 +5210,39 @@ function schemaArrowGroupSVG(a, w, numero, printMode){
   // (mantenendo fermo l'altro estremo) invece di dover cancellare e ridisegnare. Solo
   // nell'editor interattivo, mai in stampa/anteprima, mai sulle linee-guida generate da un
   // preset di layout (non c'è nulla da trascinare su un elemento che si comporta da sfondo).
+  // "interactive" è distinto da printMode: il layout chiaro può chiedere i colori chiari
+  // dell'anteprima stampa pur restando un editor vero, con le maniglie attive.
   const handleColor = (a.tipo==='divisore' || a.tipo==='campo-linea') ? neutralColor : a.color;
-  const handles = (printMode || a.guida) ? '' :
+  const handles = (!interactive || a.guida) ? '' :
     '<circle class="schema-arrow-handle" data-end="1" cx="'+a.x1+'" cy="'+a.y1+'" r="'+(w*0.014)+'" fill="'+handleColor+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>' +
     '<circle class="schema-arrow-handle" data-end="2" cx="'+a.x2+'" cy="'+a.y2+'" r="'+(w*0.014)+'" fill="'+handleColor+'" stroke="#0B141C" stroke-width="'+(w*0.003)+'"/>';
   const arrowCls = 'schema-arrow'+(a.guida ? ' schema-el-guida' : '');
   return '<g class="'+arrowCls+'" data-id="'+a.id+'"'+(numero!=null?' data-numero="'+numero+'"':'')+'>'+visible+hit+badge+handles+'</g>';
 }
-function renderSchemaFieldSVG(livello, withId, printMode){
+// Il layout chiaro (preferenza personale dal profilo) vale anche per la lavagna tattica e
+// le sue anteprime: sfondo bianco invece del campo tecnico scuro, coerente col resto
+// dell'interfaccia — vedi renderSchemaFieldSVG.
+function schemaShouldUseLightBoard(){
+  return !!getAppUser().temaChiaro;
+}
+function renderSchemaFieldSVG(livello, withId, printMode, interactive){
   const data = parseSchemaCampo(livello);
   const w = livello.larghezzaCampo || 20, h = livello.lunghezzaCampo || 28;
+  // "interactive" è distinto da printMode: le maniglie di trascinamento restano attive
+  // nell'editor anche quando printMode=true chiede solo i colori chiari (layout a base
+  // chiara dal profilo), mentre in stampa/anteprima (nessun override esplicito) restano
+  // disattivate come sempre.
+  if(interactive===undefined) interactive = !printMode;
   const zonesSvg = data.zones.map(z=>schemaZoneSVG(z, printMode)).join('');
   const chipsSvg = data.chips.map(c=>schemaChipSVG(c,w,printMode)).join('');
-  const arrowsSvg = data.arrows.map(a=>schemaArrowGroupSVG(a, w, a.numero, printMode)).join('');
+  const arrowsSvg = data.arrows.map(a=>schemaArrowGroupSVG(a, w, a.numero, printMode, interactive)).join('');
   const idAttr = withId===false ? '' : ' id="schema-field-svg"';
   const thumbClass = withId===false ? ' schema-field-svg-thumb' : '';
-  // Sfondo bianco/grigio in stampa (anteprima/esportazione seduta) per risparmiare
-  // inchiostro; campo tecnico scuro (non verde) nell'editor/libreria live — a differenza
-  // di Piano Squadra/Formazione/Convocazioni, qui il campo è solo un supporto grafico per
-  // il disegno tattico, non lo spazio di lavoro reale, quindi non deve competere visivamente
-  // con il resto dell'interfaccia dark.
+  // Sfondo bianco/grigio in stampa (anteprima/esportazione seduta) o quando l'account ha
+  // scelto il layout a base chiara dal profilo; campo tecnico scuro (non verde) altrimenti
+  // — a differenza di Piano Squadra/Formazione/Convocazioni, qui il campo è solo un
+  // supporto grafico per il disegno tattico, non lo spazio di lavoro reale, quindi non deve
+  // competere visivamente con il resto dell'interfaccia.
   const bgFill = printMode ? '#FFFFFF' : '#1F1F1F';
   const bgStroke = printMode ? '#888' : 'rgba(255,255,255,0.18)';
   return '<svg'+idAttr+' viewBox="0 0 '+w+' '+h+'" class="pitch-svg schema-field-svg'+thumbClass+'">' +
@@ -5358,41 +5371,58 @@ function schemaExerciseCategorie(e){
   try { const c = JSON.parse((e && e.categorie) || '[]'); return Array.isArray(c) ? c : []; }
   catch { return []; }
 }
-// Minuti di lavoro per fase di gioco tra gli esercizi della seduta (blocchi inclusi: ogni
-// gruppo parallelo conta per il proprio tempo, non solo quello del gruppo più lungo dello
-// slot — a differenza del calcolo di durataTotale seduta, qui interessa quanto lavoro di
-// ogni tipo è stato fatto, non quanto dura l'allenamento sull'orologio). Un esercizio con
-// più fasi insieme divide il suo tempo in parti uguali tra tutte, così la torta somma
-// sempre al 100% invece di sommare più fasi per intero. Non categorizzato = fetta a parte.
-function schemaSessionWorkCompositionData(sess){
+// Minuti di lavoro per chiave (fase di gioco o focus) tra gli esercizi della seduta
+// (blocchi inclusi: ogni gruppo parallelo conta per il proprio tempo, non solo quello del
+// gruppo più lungo dello slot — a differenza del calcolo di durataTotale seduta, qui
+// interessa quanto lavoro di ogni tipo è stato fatto, non quanto dura l'allenamento
+// sull'orologio). Un esercizio con più chiavi insieme (più fasi, o più focus) divide il suo
+// tempo in parti uguali tra tutte, così la torta somma sempre al 100% invece di sommare più
+// fette per intero. extractKeys riceve l'esercizio e ritorna l'array di chiavi da questo
+// livello (categorie o focus); "senza chiave" finisce in una fetta a parte.
+function schemaSessionMinutesByKey(sess, extractKeys){
   const totals = {};
-  let uncategorized = 0;
+  let none = 0;
   (sess.items || []).forEach(function(item){
     if (!item.livello) return;
     const lv = item.livello;
     const totaleCalcolato = Math.round(lv.ripetizioni * lv.durataRipetizione + Math.max(lv.ripetizioni - 1, 0) * (lv.recuperoSecondi || 0) / 60);
     const minuti = item.durataMinuti != null ? item.durataMinuti : totaleCalcolato;
     if (!minuti) return;
-    const cats = schemaExerciseCategorie(lv.esercizio);
-    if (!cats.length) { uncategorized += minuti; return; }
-    const share = minuti / cats.length;
-    cats.forEach(function(key){ totals[key] = (totals[key] || 0) + share; });
+    const keys = extractKeys(lv.esercizio);
+    if (!keys.length) { none += minuti; return; }
+    const share = minuti / keys.length;
+    keys.forEach(function(key){ totals[key] = (totals[key] || 0) + share; });
   });
+  return { totals, none };
+}
+function schemaSessionWorkCompositionData(sess){
+  const { totals, none } = schemaSessionMinutesByKey(sess, schemaExerciseCategorie);
   const slices = Object.keys(totals).map(function(key){
     const info = schemaCategoriaInfo(key);
     return { key, label: info ? info.label : key, color: info ? info.color : '#8CA0AF', minuti: totals[key] };
   });
-  if (uncategorized > 0) slices.push({ key: '_none', label: 'Non categorizzato', color: '#8CA0AF', minuti: uncategorized });
+  if (none > 0) slices.push({ key: '_none', label: 'Non categorizzato', color: '#8CA0AF', minuti: none });
+  return slices.sort(function(a, b){ return b.minuti - a.minuti; });
+}
+// I focus sono vocabolario libero (stringhe), non hanno un colore assegnato come le fasi di
+// gioco: ciclano sulla stessa palette pre-verificata per il contrasto, in ordine alfabetico
+// così lo stesso focus ha sempre lo stesso colore da una seduta all'altra.
+function schemaSessionFocusCompositionData(sess){
+  const { totals, none } = schemaSessionMinutesByKey(sess, schemaExerciseTags);
+  const keys = Object.keys(totals).sort(function(a, b){ return a.localeCompare(b); });
+  const slices = keys.map(function(key, idx){
+    return { key, label: key, color: SCHEMA_CATEGORIA_COLORI[idx % SCHEMA_CATEGORIA_COLORI.length], minuti: totals[key] };
+  });
+  if (none > 0) slices.push({ key: '_none', label: 'Senza focus', color: '#8CA0AF', minuti: none });
   return slices.sort(function(a, b){ return b.minuti - a.minuti; });
 }
 // Donut via stroke-dasharray su cerchi impilati (niente path/arc a mano): ogni fetta è un
 // cerchio completo mascherato a una porzione della circonferenza, ruotato di -90deg così
 // la prima fetta parte dalle ore 12 come in un grafico a torta convenzionale.
-function schemaWorkCompositionPieHTML(sess){
-  const slices = schemaSessionWorkCompositionData(sess);
+function schemaPieChartHTML(slices, emptyMessage){
   const totalMin = slices.reduce(function(s, x){ return s + x.minuti; }, 0);
   if (!slices.length || totalMin <= 0) {
-    return '<p class="hint">Aggiungi esercizi con una fase di gioco per vedere qui la composizione del lavoro.</p>';
+    return '<p class="hint">'+emptyMessage+'</p>';
   }
   const size = 140, r = 54, cx = size / 2, cy = size / 2, circumference = 2 * Math.PI * r;
   let offsetAcc = 0;
@@ -5412,6 +5442,12 @@ function schemaWorkCompositionPieHTML(sess){
       '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" style="transform:rotate(-90deg); flex-shrink:0;">' + arcs + '</svg>' +
       '<div class="schema-pie-legend">' + legend + '</div>' +
     '</div>';
+}
+function schemaWorkCompositionPieHTML(sess){
+  return schemaPieChartHTML(schemaSessionWorkCompositionData(sess), 'Aggiungi esercizi con una fase di gioco per vedere qui la composizione del lavoro.');
+}
+function schemaWorkCompositionByTagPieHTML(sess){
+  return schemaPieChartHTML(schemaSessionFocusCompositionData(sess), 'Aggiungi esercizi con un focus per vedere qui la composizione del lavoro.');
 }
 // Formattazione minima delle descrizioni: memorizzata come TESTO SEMPLICE con marcatori
 // (**grassetto**, ++più grande++), mai come HTML — cosi non c'è alcun rischio che un
@@ -5570,7 +5606,7 @@ function renderSchemaExerciseSheet(){
       '<div class="field"><label><input type="checkbox" '+(livello.mostraDisegno?'checked':'')+' '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'mostraDisegno\', this.checked)"> Includi il disegno campo nell\'esportazione/stampa</label><span class="hint">Disattivalo per gli esercizi solo descrittivi: il disegno resta salvato, solo non compare sul foglio (risparmia spazio).</span></div>' +
       (canEdit ? schemaSelectionBarHTML() : '') +
       '<div class="schema-editor-row">' +
-        '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(livello) + '</div>' +
+        '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(livello, undefined, schemaShouldUseLightBoard(), true) + '</div>' +
         (canEdit ? schemaToolbarHTML(livello) : '') +
       '</div>' +
       (canEdit ? '<p class="hint">Trascina per spostare qualsiasi elemento, comprese le linee.<br>Click destro su un elemento per le opzioni (rinomina, colore, numerazione...). ' +
@@ -6856,11 +6892,6 @@ function renderSchemaSessionBuilder(){
         ) : '') +
       '</div>' +
     '</div>' +
-    '<div class="card">' +
-      '<h3>Composizione del lavoro</h3>' +
-      '<p class="hint">Percentuale di tempo dedicata a ciascuna fase di gioco tra gli esercizi di questa seduta.</p>' +
-      schemaWorkCompositionPieHTML(sess) +
-    '</div>' +
     (function(){
       const slots = schemaSessionSlots(sess.items);
       const pending = state.schema.pendingBlockTarget;
@@ -6904,6 +6935,14 @@ function renderSchemaSessionBuilder(){
         '</div>';
       return '<div class="grid-2">' + librarySection + sedutaSection + '</div>';
     })() +
+    '<div class="card">' +
+      '<h3>Composizione del lavoro</h3>' +
+      '<p class="hint">Percentuale di tempo dedicata a ciascuna fase di gioco e a ciascun focus tra gli esercizi di questa seduta.</p>' +
+      '<div class="grid-2">' +
+        '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaWorkCompositionPieHTML(sess) + '</div>' +
+        '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaWorkCompositionByTagPieHTML(sess) + '</div>' +
+      '</div>' +
+    '</div>' +
     '<div class="card">' +
       '<h3>Anteprima seduta (come viene esportata)</h3>' +
       '<p class="hint">Si aggiorna da sola man mano che aggiungi esercizi. Ogni foglio bianco è una pagina reale dell\'esportazione.</p>' +

@@ -376,16 +376,22 @@
   }
   .piano-pitch-card-expanded{ width:max-content; min-width:210px; max-width:280px; z-index:20; box-shadow: var(--shadow-elevated); cursor:default; }
   .piano-pitch-card-head{ display:flex; align-items:center; justify-content:space-between; gap:6px; padding-bottom:4px; margin-bottom:4px; border-bottom:1px solid var(--border); }
-  .piano-pitch-role{ font-family:'Inter',sans-serif; font-size:0.8rem; font-weight:600; letter-spacing:0.03em; color:var(--accent); background:var(--panel-2); padding:2px 8px; border-radius:4px; flex-shrink:0; }
-  .piano-pitch-compact-row{ display:flex; align-items:center; gap:6px; padding:2px 0; font-size:0.76rem; color:var(--text); white-space:nowrap; }
-  .piano-pitch-compact-row-0{ color:var(--chalk); font-weight:700; }
+  /* Le card sul campo (.piano-pitch-card/.piano-mobile-card) hanno sfondo scuro FISSO
+     (rgba(20,20,20,0.94)), sempre — sono un overlay sul campo verde, non parte del resto
+     dell'interfaccia che segue il tema chiaro/scuro. Il testo al loro interno resta quindi
+     ancorato a colori chiari letterali, non alle variabili di tema: altrimenti col layout
+     chiaro (--text/--chalk diventano scuri) diventerebbe illeggibile su quello sfondo che
+     non cambia mai. */
+  .piano-pitch-role{ font-family:'Inter',sans-serif; font-size:0.8rem; font-weight:600; letter-spacing:0.03em; color:var(--accent); background:rgba(255,255,255,0.08); padding:2px 8px; border-radius:4px; flex-shrink:0; }
+  .piano-pitch-compact-row{ display:flex; align-items:center; gap:6px; padding:2px 0; font-size:0.76rem; color:#E8E8E8; white-space:nowrap; }
+  .piano-pitch-compact-row-0{ color:#FFFFFF; font-weight:700; }
   .piano-pitch-compact-name{ min-width:0; overflow:hidden; text-overflow:ellipsis; flex:1; }
   .piano-pitch-compact-row .star-rating{ flex-shrink:0; }
-  .piano-pitch-empty{ color:var(--text-dim); font-weight:400; }
+  .piano-pitch-empty{ color:#9A9A9A; font-weight:400; }
   .piano-pitch-row{ display:flex; align-items:center; gap:6px; padding:2px 0; }
-  .piano-pitch-tier{ font-size:0.72rem; color:var(--text-dim); width:12px; flex-shrink:0; text-align:center; }
-  .piano-pitch-row select{ flex:1; min-width:0; font-size:0.78rem; padding:3px 4px; background:var(--panel-2); border:1px solid var(--border); border-radius:4px; color:var(--text); cursor:pointer; }
-  .piano-pitch-row-0 select{ font-weight:700; color:var(--chalk); border-color:var(--accent-dim); }
+  .piano-pitch-tier{ font-size:0.72rem; color:#9A9A9A; width:12px; flex-shrink:0; text-align:center; }
+  .piano-pitch-row select{ flex:1; min-width:0; font-size:0.78rem; padding:3px 4px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.10); border-radius:4px; color:#E8E8E8; cursor:pointer; }
+  .piano-pitch-row-0 select{ font-weight:700; color:#FFFFFF; border-color:var(--accent-dim); }
   @media (max-width:640px){ .piano-pitch-card{ min-width:110px; } .piano-pitch-card-expanded{ min-width:170px; } .piano-pitch-row select{ font-size:0.7rem; } }
   /* Da telefono: stesso contenuto delle card sul campo, ma impilate invece che in
      percentuale sul disegno — vedi renderPianoSquadraMobileList in app.js. */
@@ -450,7 +456,7 @@
   .schema-cat-add-chip{ background:none; border:1px dashed var(--border); color:var(--text-dim); cursor:pointer; }
   .schema-cat-add-chip:hover{ border-color:var(--accent); color:var(--accent); }
   .schema-field-wrap{ max-width:624px; }
-  .schema-field-svg{ background:#1F1F1F; }
+  .schema-field-svg{ background:var(--panel-2); }
   /* Campo a sinistra, barra strumenti a destra come colonna: su schermi stretti la barra
      va sotto invece di schiacciarsi illeggibile (il disegnatore resta comunque un'attività
      da desktop, ma niente vieta di aprirlo con una finestra ridotta). */
@@ -514,7 +520,7 @@
   .schema-color-swatch-active{ box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px #FFFFFF; }
   .schema-color-swatch-custom{
     display:flex; align-items:center; justify-content:center; background:var(--panel-2);
-    border:2px dashed rgba(255,255,255,0.35); color:var(--text-dim); font-size:14px; line-height:1; font-weight:700;
+    border:2px dashed var(--text-dim); color:var(--text-dim); font-size:14px; line-height:1; font-weight:700;
   }
   .schema-color-swatch-custom:hover{ border-color:var(--accent); color:var(--accent); }
   /* Paletta estesa: un pannello interno all'app (stessa estetica di card/menu contestuali),
@@ -607,6 +613,7 @@
   .schema-property-input{ height:40px; background:var(--panel-2); border-radius:8px; box-sizing:border-box; }
   .schema-toolbar-divider{ width:1px; height:24px; background:var(--border); margin:0 4px; }
   .schema-session-preview{ background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:14px; }
+  .schema-pie-subtitle{ font-size:0.82rem; color:var(--text-dim); margin:0 0 4px; }
   .schema-pie-wrap{ display:flex; align-items:center; gap:20px; flex-wrap:wrap; margin-top:8px; }
   .schema-pie-legend{ display:flex; flex-direction:column; gap:6px; }
   .schema-pie-legend-row{ display:flex; align-items:center; gap:8px; font-size:0.86rem; color:var(--text); }
