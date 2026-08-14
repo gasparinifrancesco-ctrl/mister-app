@@ -238,6 +238,14 @@ function formatDate(d){
   if(parts.length!==3) return d;
   return parts[2] + '/' + parts[1] + '/' + parts[0];
 }
+const GIORNI_SETTIMANA_IT = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
+function weekdayLabel(d){
+  if(!d) return '';
+  const parts = d.split('-');
+  if(parts.length!==3) return '';
+  const dt = new Date(Number(parts[0]), Number(parts[1])-1, Number(parts[2]));
+  return GIORNI_SETTIMANA_IT[dt.getDay()];
+}
 function surnameOf(fullName){
   if(!fullName) return '';
   const parts = fullName.trim().split(/\s+/);
@@ -6826,7 +6834,7 @@ function renderSchemaSessionsList(){
       '<div class="card-header-row"><h2>Sedute</h2>' +
         '<div class="pitch-actions"><button class="btn btn-primary btn-small" onclick="createSchemaSessionBozza()">+ Nuova seduta</button></div>' +
       '</div>' +
-      '<p class="hint">Lo stato si calcola da solo: bozza finché non è collegata a un giorno di allenamento, programmata se il giorno è futuro, eseguita quando il giorno è passato. Il nome della seduta è sempre "Allenamento del (data)", preso dal giorno collegato.</p>' +
+      '<p class="hint">Lo stato si calcola da solo: bozza finché non è collegata a un giorno di allenamento, programmata se il giorno è futuro, eseguita quando il giorno è passato. Il nome della seduta è sempre "Allenamento di (giorno) (data)", preso dal giorno collegato.</p>' +
       (s.sessions.length===0 ? '<p class="hint">Nessuna seduta ancora.</p>' :
         s.sessions.map(sess=>{
           return '<div class="schema-session-row" onclick="openSchemaSessionBuilder(\''+sess.id+'\')">' +
@@ -6844,7 +6852,8 @@ function renderSchemaSessionsList(){
 // resta nel DB solo come valore interno non mostrato.
 function schemaSessionDisplayName(sess){
   const allenamento = sess.allenamentoId ? state.allenamenti.find(a=>a.id===sess.allenamentoId) : null;
-  return allenamento ? 'Allenamento del '+formatDate(allenamento.data) : 'Nuova seduta (bozza, nessun giorno collegato)';
+  if(!allenamento) return 'Nuova seduta (bozza, nessun giorno collegato)';
+  return 'Allenamento di '+weekdayLabel(allenamento.data)+' '+formatDate(allenamento.data);
 }
 async function createSchemaSessionBozza(){
   const res = await apiPost('/api/schema/sessions', { titolo: 'Seduta', allenamentoId: null });
