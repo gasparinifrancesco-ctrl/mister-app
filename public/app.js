@@ -4431,6 +4431,7 @@ function renderSchemaView(){
   else if(v==='sheet') html = renderSchemaExerciseSheet();
   else if(v==='sessions') html = renderSchemaSessionsList();
   else if(v==='sessionBuilder') html = renderSchemaSessionBuilder();
+  else if(v==='statistiche') html = renderSchemaStatisticheView();
   else if(v==='considerazioni') html = renderSchemaConsiderazioniView();
   else html = renderSchemaLibrary();
   return html + schemaLivelloPickerHTML() + schemaDuplicatePickerHTML();
@@ -4443,8 +4444,42 @@ function schemaSubNavHTML(active){
   return '<div class="pitch-actions" style="margin-bottom:12px;">' +
     '<button class="btn btn-small '+(active==='library'?'btn-active':'')+'" onclick="openSchemaLibrary()">Libreria esercizi</button>' +
     '<button class="btn btn-small '+(active==='sessions'?'btn-active':'')+'" onclick="openSchemaSessions()">Sedute</button>' +
+    '<button class="btn btn-small '+(active==='statistiche'?'btn-active':'')+'" onclick="openSchemaStatistiche()">Statistiche</button>' +
     '<button class="btn btn-small '+(active==='considerazioni'?'btn-active':'')+'" onclick="openSchemaConsiderazioni()">Messaggi</button>' +
   '</div>';
+}
+// Composizione del lavoro aggregata su tutte le sedute già svolte nella stagione attiva
+// (stesso criterio "eseguita" del calendario, vedi getPastAllenamentoIds): riusa le stesse
+// funzioni torta della singola seduta passando un "sess" virtuale i cui items sono l'unione
+// di tutte le sedute svolte, così le fette restano coerenti (stesse chiavi, stessi colori).
+async function openSchemaStatistiche(){
+  state.currentView = 'schema';
+  state.schema.view = 'statistiche';
+  const [, , res] = await Promise.all([ensureSchemaCategorie(), ensureSchemaTags(), apiGet('/api/schema/statistiche')]);
+  state.schema.statistiche = { sedute: res.sedute || 0, items: res.items || [] };
+  renderView();
+}
+function renderSchemaStatisticheView(){
+  const stat = state.schema.statistiche || { sedute: 0, items: [] };
+  const virtualSess = { items: stat.items };
+  const fasiSlices = schemaSessionWorkCompositionData(virtualSess);
+  const focusSlices = schemaSessionFocusCompositionData(virtualSess);
+  const minutiTotali = Math.round(fasiSlices.reduce(function(s, x){ return s + x.minuti; }, 0));
+  return schemaSubNavHTML('statistiche') +
+    '<div class="card">' +
+      '<h2>Statistiche allenamenti — stagione in corso</h2>' +
+      '<p class="hint">Composizione del lavoro su tutte le sedute già svolte in questa stagione (le sedute in bozza o ancora da svolgere non sono incluse).</p>' +
+      '<div class="stat-cards">' +
+        '<div class="stat-card"><div class="stat-card-value">'+stat.sedute+'</div><div class="stat-card-label">Sedute svolte</div></div>' +
+        '<div class="stat-card"><div class="stat-card-value">'+minutiTotali+'</div><div class="stat-card-label">Minuti totali allenati</div></div>' +
+      '</div>' +
+      (stat.sedute===0 ? '<p class="hint" style="margin-top:16px;">Nessuna seduta ancora svolta in questa stagione.</p>' :
+        '<div class="grid-2" style="margin-top:16px;">' +
+          '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaPieChartHTML(fasiSlices, 'Nessun dato disponibile.') + '</div>' +
+          '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaPieChartHTML(focusSlices, 'Nessun dato disponibile.') + '</div>' +
+        '</div>'
+      ) +
+    '</div>';
 }
 // Considerazioni "aperte", non legate a nessuna seduta specifica — a differenza di quelle
 // dentro il costruttore seduta, che invece sono sempre agganciate a una particolare sedutaId.
@@ -5436,7 +5471,7 @@ function schemaPieChartHTML(slices, emptyMessage){
   }).join('');
   const legend = slices.map(function(s){
     const pct = Math.round(s.minuti / totalMin * 100);
-    return '<div class="schema-pie-legend-row"><span class="schema-pie-legend-dot" style="background:' + s.color + ';"></span>' + esc(s.label) + ' <span class="hint">' + pct + '% · ' + Math.round(s.minuti) + ' min</span></div>';
+    return '<div class="schema-pie-legend-row"><span class="schema-pie-legend-dot" style="background:' + s.color + ';"></span>' + esc(s.label) + ' <span class="hint">' + pct + '%</span></div>';
   }).join('');
   return '<div class="schema-pie-wrap">' +
       '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" style="transform:rotate(-90deg); flex-shrink:0;">' + arcs + '</svg>' +
@@ -6932,17 +6967,16 @@ function renderSchemaSessionBuilder(){
                 : schemaSessionItemRowHTML(slot.items[0], idx, slots.length, canEditSedute);
             }).join('')
           ) +
+          '<div class="schema-composizione-lavoro">' +
+            '<h4>Composizione del lavoro</h4>' +
+            '<div class="grid-2">' +
+              '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaWorkCompositionPieHTML(sess) + '</div>' +
+              '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaWorkCompositionByTagPieHTML(sess) + '</div>' +
+            '</div>' +
+          '</div>' +
         '</div>';
       return '<div class="grid-2">' + librarySection + sedutaSection + '</div>';
     })() +
-    '<div class="card">' +
-      '<h3>Composizione del lavoro</h3>' +
-      '<p class="hint">Percentuale di tempo dedicata a ciascuna fase di gioco e a ciascun focus tra gli esercizi di questa seduta.</p>' +
-      '<div class="grid-2">' +
-        '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaWorkCompositionPieHTML(sess) + '</div>' +
-        '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaWorkCompositionByTagPieHTML(sess) + '</div>' +
-      '</div>' +
-    '</div>' +
     '<div class="card">' +
       '<h3>Anteprima seduta (come viene esportata)</h3>' +
       '<p class="hint">Si aggiorna da sola man mano che aggiungi esercizi. Ogni foglio bianco è una pagina reale dell\'esportazione.</p>' +
