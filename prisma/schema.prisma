@@ -151,14 +151,18 @@ model Objective {
   @@map("objectives")
 }
 
-// Un esercizio è un'identità (titolo, dimensioni, etichette); il contenuto vero e proprio
-// (disegno, descrizione, ripetizioni/durata/recupero) vive nei suoi Livelli. Un esercizio
-// senza progressione ha semplicemente un solo Livello ("A"); una progressione A/B/C è lo
-// stesso esercizio con più livelli, non esercizi diversi.
+// Un esercizio è un'unica scheda (niente più progressioni A/B/C: un esercizio = un solo
+// insieme di campi/disegno). "descrizione" è il perché/a cosa serve (generale), "svolgimento"
+// è il come si fa (l'unico testo stampato insieme al disegno), "vincoli" sono le regole o
+// limitazioni imposte durante l'esecuzione (es. tocchi limitati, tempo per azione, zone
+// vietate) — tre testi con scopi diversi, non uno la copia dell'altro.
 model Exercise {
   id                  String   @id @default(cuid())
   userId              String
+  titolo              String   @default("")
   descrizione         String   @default("")
+  svolgimento         String   @default("")
+  vincoli             String   @default("")
   tags                String   @default("[]")
   // Fasi di gioco a scelta vincolata (non un'etichetta libera): JSON array di "chiave" di
   // Categoria, stesso pattern di tags — un esercizio può appartenere a più fasi insieme
@@ -175,50 +179,31 @@ model Exercise {
   difficolta          Int?
   creatoIl            DateTime @default(now())
 
-  user    User      @relation(fields: [userId], references: [id])
-  livelli Livello[]
-  note    Note[]
-
-  @@map("exercises")
-}
-
-model Livello {
-  id                String @id @default(cuid())
-  esercizioId       String
-  nome              String @default("A")
-  ordine            Int    @default(0)
-  descrizione       String @default("")
-  schemaCampo       String @default("{}")
-  ripetizioni       Int    @default(1)
-  durataRipetizione Int    @default(15)
-  recuperoSecondi   Int    @default(0)
-  // Spostati qui da Exercise: ogni livello di progressione ha il proprio titolo e la propria
-  // messa in campo (giocatori, dimensioni), modificabili senza incidere sugli altri livelli
-  // dello stesso esercizio — solo tags/categorie/votoPreferenza restano condivisi a livello
-  // di Exercise (metadati di famiglia, non della singola progressione).
-  titolo              String @default("")
+  schemaCampo         String  @default("{}")
+  ripetizioni         Int     @default(1)
+  durataRipetizione   Int     @default(15)
+  recuperoSecondi     Int     @default(0)
   // Giocatori di movimento; i portieri sono un conteggio separato (numeroPortieri) invece
   // di essere sommati qui dentro, cosi la scheda esercizio può mostrare "8+1" invece di un
   // solo "9" che non distingue i ruoli.
-  numeroGiocatoriBase Int    @default(8)
-  numeroPortieri      Int    @default(0)
-  larghezzaCampo      Float  @default(20)
-  lunghezzaCampo      Float  @default(28)
+  numeroGiocatoriBase Int     @default(8)
+  numeroPortieri      Int     @default(0)
+  larghezzaCampo      Float   @default(20)
+  lunghezzaCampo      Float   @default(28)
   // Esercizi puramente descrittivi non hanno bisogno del disegno campo: disattivandolo si
   // risparmia spazio nel foglio stampato/esportato, senza perdere schemaCampo (resta salvato,
   // solo non mostrato finché non si riattiva).
   mostraDisegno       Boolean @default(true)
-  // Vocabolario chiuso, NON personalizzabile dall'utente (a differenza di Exercise.categorie):
+  // Vocabolario chiuso, NON personalizzabile dall'utente (a differenza di categorie sopra):
   // 'analitico' | 'situazionale' | 'globale' | 'preparazione_atletica'. Null = non specificato,
   // finisce nel bucket "non categorizzato" nelle statistiche come le fasi senza categoria.
-  // Varia per progressione (come numeroGiocatoriBase): un esercizio può iniziare analitico nel
-  // livello A e diventare situazionale/globale nei livelli successivi.
   tipoEsercitazione   String?
 
-  esercizio    Exercise      @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id])
+  note         Note[]
   sessionItems SessionItem[]
 
-  @@map("livelli")
+  @@map("exercises")
 }
 
 model Note {
@@ -298,28 +283,27 @@ model Considerazione {
   @@map("considerazioni")
 }
 
-// livelloId è facoltativo (SetNull): un esercizio/livello può essere eliminato dalla libreria
-// anche se usato in una seduta passata. titoloSnapshot/livelloSnapshot congelano il nome
-// visto al momento dell'inserimento, così la seduta resta leggibile come "immagine" storica
-// anche se la fonte viene poi cancellata.
+// esercizioId è facoltativo (SetNull): un esercizio può essere eliminato dalla libreria
+// anche se usato in una seduta passata. titoloSnapshot congela il nome visto al momento
+// dell'inserimento, così la seduta resta leggibile come "immagine" storica anche se la
+// fonte viene poi cancellata.
 model SessionItem {
-  id              String  @id @default(cuid())
-  sessionId       String
-  livelloId       String?
-  titoloSnapshot  String
-  livelloSnapshot String
-  ordine          Int     @default(0)
-  durataMinuti    Int?
+  id             String  @id @default(cuid())
+  sessionId      String
+  esercizioId    String?
+  titoloSnapshot String
+  ordine         Int     @default(0)
+  durataMinuti   Int?
   // Se valorizzato, l'item fa parte di un blocco di lavoro parallelo (blockId) nella
   // posizione "gruppo" (1, 2, 3...) tra quelli che lavorano nello stesso momento. Gli item
   // dello stesso blocco devono avere ordine contiguo: la UI li raggruppa camminando la
   // lista ordinata per ordine e accorpando le righe consecutive con lo stesso blockId.
-  blockId         String?
-  gruppo          Int?
+  blockId        String?
+  gruppo         Int?
 
-  session Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  livello Livello?      @relation(fields: [livelloId], references: [id], onDelete: SetNull)
-  blocco  SessionBlock? @relation(fields: [blockId], references: [id], onDelete: SetNull)
+  session   Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  esercizio Exercise?     @relation(fields: [esercizioId], references: [id], onDelete: SetNull)
+  blocco    SessionBlock? @relation(fields: [blockId], references: [id], onDelete: SetNull)
 
   @@map("session_items")
 }

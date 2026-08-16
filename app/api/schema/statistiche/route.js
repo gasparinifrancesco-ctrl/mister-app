@@ -44,7 +44,7 @@ export async function GET(request) {
 
   const sessions = await prisma.session.findMany({
     where: { userId: session.userId, allenamentoId: { in: allenamentoIds } },
-    include: { items: { include: { livello: { include: { esercizio: true } } } } },
+    include: { items: { include: { esercizio: true } } },
   });
 
   const items = sessions.flatMap((s) => s.items);

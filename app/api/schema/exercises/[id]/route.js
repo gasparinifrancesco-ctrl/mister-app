@@ -15,39 +15,33 @@ async function sanitizeCategorie(userId, chiavi) {
   return chiavi.filter((c) => valid.has(c));
 }
 
+const TIPO_ESERCITAZIONE_VALUES = ['analitico', 'situazionale', 'globale', 'preparazione_atletica'];
+
 async function loadExercise(id, userId, pastAllenamentoIds) {
   return prisma.exercise.findFirst({
     where: { id, userId },
     include: {
       note: { orderBy: { data: 'desc' } },
-      livelli: {
-        orderBy: { ordine: 'asc' },
-        include: {
-          // Contano per le statistiche solo gli utilizzi in sedute il cui giorno di
-          // allenamento collegato è già passato (stato "eseguita" calcolato dal calendario).
-          sessionItems: {
-            where: { session: { allenamentoId: { in: [...pastAllenamentoIds] } } },
-            select: { durataMinuti: true },
-          },
-        },
+      // Contano per le statistiche solo gli utilizzi in sedute il cui giorno di allenamento
+      // collegato è già passato (stato "eseguita" calcolato dal calendario).
+      sessionItems: {
+        where: { session: { allenamentoId: { in: [...pastAllenamentoIds] } } },
+        select: { durataMinuti: true },
       },
     },
   });
 }
 
 function withComputed(exercise) {
+  const durataTipica = exercise.ripetizioni * exercise.durataRipetizione;
   let minutiTotaliStagione = 0;
   let utilizzi = 0;
-  const livelli = exercise.livelli.map((l) => {
-    const durataTipica = l.ripetizioni * l.durataRipetizione;
-    l.sessionItems.forEach((si) => {
-      minutiTotaliStagione += si.durataMinuti ?? durataTipica;
-      utilizzi += 1;
-    });
-    const { sessionItems, ...rest } = l;
-    return rest;
+  exercise.sessionItems.forEach((si) => {
+    minutiTotaliStagione += si.durataMinuti ?? durataTipica;
+    utilizzi += 1;
   });
-  return { ...exercise, livelli, minutiTotaliStagione, utilizzi };
+  const { sessionItems, ...rest } = exercise;
+  return { ...rest, minutiTotaliStagione, utilizzi };
 }
 
 export async function GET(request, { params }) {
@@ -78,7 +72,22 @@ export async function PATCH(request, { params }) {
   }
 
   const data = {};
+  if (typeof body.titolo === 'string') data.titolo = body.titolo;
   if (typeof body.descrizione === 'string') data.descrizione = body.descrizione;
+  if (typeof body.svolgimento === 'string') data.svolgimento = body.svolgimento;
+  if (typeof body.vincoli === 'string') data.vincoli = body.vincoli;
+  if (typeof body.schemaCampo === 'string') data.schemaCampo = body.schemaCampo;
+  if (typeof body.ripetizioni !== 'undefined') data.ripetizioni = Number(body.ripetizioni);
+  if (typeof body.durataRipetizione !== 'undefined') data.durataRipetizione = Number(body.durataRipetizione);
+  if (typeof body.recuperoSecondi !== 'undefined') data.recuperoSecondi = Number(body.recuperoSecondi);
+  if (typeof body.numeroGiocatoriBase !== 'undefined') data.numeroGiocatoriBase = Number(body.numeroGiocatoriBase);
+  if (typeof body.numeroPortieri !== 'undefined') data.numeroPortieri = Number(body.numeroPortieri);
+  if (typeof body.larghezzaCampo !== 'undefined') data.larghezzaCampo = Number(body.larghezzaCampo);
+  if (typeof body.lunghezzaCampo !== 'undefined') data.lunghezzaCampo = Number(body.lunghezzaCampo);
+  if (typeof body.mostraDisegno === 'boolean') data.mostraDisegno = body.mostraDisegno;
+  if (typeof body.tipoEsercitazione !== 'undefined') {
+    data.tipoEsercitazione = body.tipoEsercitazione === null ? null : (TIPO_ESERCITAZIONE_VALUES.includes(body.tipoEsercitazione) ? body.tipoEsercitazione : existing.tipoEsercitazione);
+  }
   if (Array.isArray(body.tags)) data.tags = JSON.stringify(body.tags);
   if (Array.isArray(body.categorie)) {
     data.categorie = JSON.stringify(await sanitizeCategorie(session.userId, body.categorie));

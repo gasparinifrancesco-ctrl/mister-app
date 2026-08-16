@@ -12,6 +12,8 @@ async function sanitizeCategorie(userId, chiavi) {
   return chiavi.filter((c) => valid.has(c));
 }
 
+const TIPO_ESERCITAZIONE_VALUES = ['analitico', 'situazionale', 'globale', 'preparazione_atletica'];
+
 export async function GET(request) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
@@ -23,16 +25,11 @@ export async function GET(request) {
   const wantedTags = tagsParam.split(',').map((t) => t.trim()).filter(Boolean);
   const categorieParam = searchParams.get('categoria') || '';
   const wantedCategorie = categorieParam.split(',').map((c) => c.trim()).filter(Boolean);
+  const tipoParam = searchParams.get('tipo') || '';
+  const wantedTipo = tipoParam.split(',').map((t) => t.trim()).filter((t) => TIPO_ESERCITAZIONE_VALUES.includes(t));
 
   const exercises = await prisma.exercise.findMany({
     where: { userId: session.userId },
-    include: {
-      // schemaCampo del primo livello serve alla card libreria per mostrare l'anteprima
-      // in miniatura del disegno, invece di una lista "cieca" di soli titoli. titolo/
-      // numeroGiocatoriBase/larghezzaCampo/lunghezzaCampo sono per-livello (indipendenti
-      // tra loro): la card mostra sempre quelli del primo livello come rappresentativi.
-      livelli: { select: { id: true, nome: true, titolo: true, numeroGiocatoriBase: true, numeroPortieri: true, larghezzaCampo: true, lunghezzaCampo: true, ripetizioni: true, durataRipetizione: true, recuperoSecondi: true, schemaCampo: true, mostraDisegno: true, tipoEsercitazione: true }, orderBy: { ordine: 'asc' } },
-    },
     orderBy: { creatoIl: 'desc' },
   });
 
@@ -40,9 +37,7 @@ export async function GET(request) {
     ? exercises.filter((e) => {
         const s = search.toLowerCase();
         const tags = JSON.parse(e.tags || '[]');
-        // Il titolo ora vive sul livello (indipendente per progressione): un esercizio
-        // compare se la ricerca combacia con il titolo di ALMENO uno dei suoi livelli.
-        return e.livelli.some((l) => l.titolo.toLowerCase().includes(s)) || tags.some((t) => t.toLowerCase().includes(s));
+        return e.titolo.toLowerCase().includes(s) || tags.some((t) => t.toLowerCase().includes(s));
       })
     : exercises;
 
@@ -61,6 +56,12 @@ export async function GET(request) {
       const categorie = JSON.parse(e.categorie || '[]');
       return wantedCategorie.some((wc) => categorie.includes(wc));
     });
+  }
+
+  // Filtro Tipo di esercitazione: campo a valore singolo (non un array come fasi/focus),
+  // quindi qui basta l'appartenenza diretta all'insieme selezionato.
+  if (wantedTipo.length) {
+    filtered = filtered.filter((e) => e.tipoEsercitazione && wantedTipo.includes(e.tipoEsercitazione));
   }
 
   return Response.json({ exercises: filtered });
@@ -85,29 +86,18 @@ export async function POST(request) {
   const categorieArr = await sanitizeCategorie(session.userId, Array.isArray(categorie) ? categorie : []);
 
   // Nessun calcolo automatico dalle dimensioni: un default ragionevole, sempre modificabile.
-  // Titolo/N.giocatori/misure campo vivono sul primo livello (indipendenti da eventuali
-  // livelli aggiunti dopo), non sull'esercizio.
   const exercise = await prisma.exercise.create({
     data: {
       userId: session.userId,
+      titolo,
       descrizione: descrizione || '',
       tags: JSON.stringify(Array.isArray(tags) ? tags : []),
       categorie: JSON.stringify(categorieArr),
-      // Il livello nasce con lo svolgimento vuoto: la descrizione generale (perché/a cosa
-      // serve) e lo svolgimento del livello (come si fa, l'unico stampato) sono due campi
-      // con scopi diversi, non uno la copia dell'altro.
-      livelli: {
-        create: [{
-          nome: 'A', ordine: 0, descrizione: '',
-          titolo,
-          numeroGiocatoriBase: Number(numeroGiocatoriBase),
-          numeroPortieri: numeroPortieri ? Number(numeroPortieri) : 0,
-          larghezzaCampo: larghezzaCampo ? Number(larghezzaCampo) : 20,
-          lunghezzaCampo: lunghezzaCampo ? Number(lunghezzaCampo) : 28,
-        }],
-      },
+      numeroGiocatoriBase: Number(numeroGiocatoriBase),
+      numeroPortieri: numeroPortieri ? Number(numeroPortieri) : 0,
+      larghezzaCampo: larghezzaCampo ? Number(larghezzaCampo) : 20,
+      lunghezzaCampo: lunghezzaCampo ? Number(lunghezzaCampo) : 28,
     },
-    include: { livelli: true },
   });
 
   return Response.json({ exercise });

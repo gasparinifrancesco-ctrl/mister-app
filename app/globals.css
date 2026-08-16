@@ -469,12 +469,10 @@
   }
   .schema-tipo-chip-filter{ opacity:0.6; cursor:pointer; }
   .schema-tipo-chip-filter-active{ opacity:1; color:var(--text); border-color:var(--text-dim); }
-  /* Focus in lettura (non nell'editor a tag rimovibili, che resta interattivo): riga unica
-     con etichetta invece di una fila di chip — è vocabolario libero, non una categoria
-     scelta da un menu, e la tipografia lo comunica meglio di un contenitore. */
-  .schema-focus-inline{ font-size:0.82rem; color:var(--text-dim); }
-  .schema-focus-inline .k{ font-size:0.64rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:var(--text-dim); opacity:0.8; margin-right:8px; }
-  .schema-focus-inline .sep{ color:var(--text-dim); opacity:0.6; margin:0 6px; }
+  /* Focus in lettura (non nell'editor a tag rimovibili, che resta interattivo): hashtag
+     corsivi invece di un'etichetta o una fila di chip — è vocabolario libero, non una
+     categoria scelta da un menu, e la tipografia lo comunica meglio di un contenitore. */
+  .schema-focus-hash{ font-style:italic; margin-right:6px; }
   .schema-field-wrap{ max-width:624px; }
   .schema-field-svg{ background:var(--panel-2); }
   /* Campo a sinistra, barra strumenti a destra come colonna: su schermi stretti la barra

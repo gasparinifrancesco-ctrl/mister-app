@@ -18,12 +18,12 @@ export async function POST(request, { params }) {
     return Response.json({ error: 'invalid json body' }, { status: 400 });
   }
 
-  const { livelloId, durataMinuti, blockId } = body;
-  if (!livelloId) return Response.json({ error: 'livelloId è obbligatorio' }, { status: 400 });
+  const { esercizioId, durataMinuti, blockId } = body;
+  if (!esercizioId) return Response.json({ error: 'esercizioId è obbligatorio' }, { status: 400 });
 
-  const livello = await prisma.livello.findFirst({ where: { id: livelloId }, include: { esercizio: true } });
-  if (!livello || livello.esercizio.userId !== session.userId) {
-    return Response.json({ error: 'livello non valido' }, { status: 400 });
+  const esercizio = await prisma.exercise.findFirst({ where: { id: esercizioId, userId: session.userId } });
+  if (!esercizio) {
+    return Response.json({ error: 'esercizio non valido' }, { status: 400 });
   }
 
   // Item normale: uno slot nuovo in fondo alla seduta. Item di un blocco parallelo (blockId):
@@ -51,9 +51,8 @@ export async function POST(request, { params }) {
   const item = await prisma.sessionItem.create({
     data: {
       sessionId: id,
-      livelloId,
-      titoloSnapshot: livello.titolo,
-      livelloSnapshot: livello.nome,
+      esercizioId,
+      titoloSnapshot: esercizio.titolo,
       ordine,
       durataMinuti: durataMinuti != null && durataMinuti !== '' ? Number(durataMinuti) : null,
       blockId: blockId || null,

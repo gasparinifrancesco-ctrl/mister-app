@@ -9,7 +9,7 @@ async function loadSession(id, userId) {
     include: {
       items: {
         orderBy: [{ ordine: 'asc' }, { gruppo: 'asc' }],
-        include: { livello: { include: { esercizio: true } }, blocco: true },
+        include: { esercizio: true, blocco: true },
       },
       considerazioni: { orderBy: { creataIl: 'asc' } },
     },
@@ -17,9 +17,9 @@ async function loadSession(id, userId) {
 }
 
 function schemaItemDurata(item) {
-  // Il livello può non esistere più (esercizio eliminato dopo l'uso): in quel caso
-  // conta solo la durata già salvata su questo item, senza una durata tipica di fallback.
-  const durataTipica = item.livello ? item.livello.ripetizioni * item.livello.durataRipetizione : 0;
+  // L'esercizio può non esistere più (eliminato dopo l'uso): in quel caso conta solo la
+  // durata già salvata su questo item, senza una durata tipica di fallback.
+  const durataTipica = item.esercizio ? item.esercizio.ripetizioni * item.esercizio.durataRipetizione : 0;
   return item.durataMinuti ?? durataTipica;
 }
 

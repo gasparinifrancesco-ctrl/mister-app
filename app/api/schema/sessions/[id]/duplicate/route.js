@@ -2,9 +2,9 @@ import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
 import { hasPermission } from '@/lib/permissions';
 
-// Duplica una seduta (tipicamente già svolta) su un nuovo giorno: stessi esercizi/livelli/
-// durate e lo stesso obiettivo fisico, ma RPE e note ripartono vuoti perché riguardano
-// come è andata la seduta originale, non quella nuova.
+// Duplica una seduta (tipicamente già svolta) su un nuovo giorno: stessi esercizi/durate e
+// lo stesso obiettivo fisico, ma RPE e note ripartono vuoti perché riguardano come è andata
+// la seduta originale, non quella nuova.
 export async function POST(request, { params }) {
   const session = await getSchemaSessionOrNull();
   if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 });
@@ -52,9 +52,8 @@ export async function POST(request, { params }) {
       await tx.sessionItem.createMany({
         data: existing.items.map((item) => ({
           sessionId: created.id,
-          livelloId: item.livelloId,
+          esercizioId: item.esercizioId,
           titoloSnapshot: item.titoloSnapshot,
-          livelloSnapshot: item.livelloSnapshot,
           ordine: ordineMap.get(item.ordine),
           durataMinuti: item.durataMinuti,
           blockId: item.blockId ? blockIdMap.get(item.blockId) : null,
