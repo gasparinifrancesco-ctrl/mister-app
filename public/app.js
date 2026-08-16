@@ -4811,6 +4811,7 @@ function schemaExerciseCardHTML(e, onclickAttr, compact){
       '<div class="schema-exercise-card-head"><strong>'+esc(primoLivello ? primoLivello.titolo : '')+'</strong>'+badge+'</div>' +
       '<div class="schema-exercise-card-meta">' +
         (cats.length ? cats.map(cat=>'<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>').join('') : '<span class="hint">Non categorizzato</span>') +
+        (primoLivello && primoLivello.tipoEsercitazione ? schemaTipoEsercitazioneChipsHTML(primoLivello.tipoEsercitazione, true) : '') +
         '<span class="hint" title="Movimento + portieri">'+(primoLivello ? primoLivello.numeroGiocatoriBase+(primoLivello.numeroPortieri ? '+'+primoLivello.numeroPortieri : '') : '—')+' giocatori</span>' +
         (durata!=null ? '<span class="hint" title="Tempo totale, recuperi tra le serie inclusi">'+durata+' min tot.</span>' : '') +
       '</div>' +
@@ -7300,6 +7301,7 @@ function schemaSessionExportItemHTML(item, idx){
         (cats.length ? cats.map(cat=>'<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>').join(' ') : 'Non categorizzato') +
         (tags.length ? ' · '+esc(tags.join(', ')) : '') +
       '</p>' +
+      (lv.tipoEsercitazione ? '<p class="hint">Tipo: '+schemaTipoEsercitazioneChipsHTML(lv.tipoEsercitazione, true)+'</p>' : '') +
       (ex.descrizione ? '<p>'+schemaRichTextToHTML(ex.descrizione)+'</p>' : '') +
       (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
     '</div>' +
@@ -7325,6 +7327,7 @@ function schemaSessionExportBlockHTML(slot, idx){
       '<p class="hint">'+tempoTotale+' min · '+lv.ripetizioni+'×'+lv.durataRipetizione+' min · recupero '+lv.recuperoSecondi+'s</p>' +
       '<p class="hint">Giocatori: '+lv.numeroGiocatoriBase+(lv.numeroPortieri ? '+'+lv.numeroPortieri+' portieri' : '')+'</p>' +
       (cats.length ? '<p class="hint">'+esc(cats.map(c=>c.label).join(', '))+'</p>' : '') +
+      (lv.tipoEsercitazione ? '<p class="hint">Tipo: '+schemaTipoEsercitazioneChipsHTML(lv.tipoEsercitazione, true)+'</p>' : '') +
       (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
     '</div>';
   }).join('');
