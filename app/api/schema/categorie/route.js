@@ -7,12 +7,15 @@ import { hasPermission } from '@/lib/permissions';
 // non si rischia di crearne una poco leggibile scegliendo un colore a caso.
 const CATEGORIA_COLORI = ['#F2C94C', '#4FA8E0', '#6FCF7A', '#B591DE', '#E67F78', '#E08A4F', '#4FD1C5', '#7FA8C9', '#C9A0DC', '#8FBF6F'];
 
-// Fasi di gioco di partenza per ogni nuovo account: stessa struttura a 5 macro-fasi usata da
-// YouCoach (Attacco/Fase difensiva/Calci piazzati/Transizioni negative/Transizioni positive),
-// appiattita in 10 voci singole perché il nostro modello Categoria è una lista piatta, non a
-// due livelli — ogni voce eredita il colore della sua macro-fase cosi il raggruppamento resta
-// leggibile a colpo d'occhio anche senza gerarchia vera. Restano comunque solo un punto di
-// partenza: rinominabili, ricolorabili, eliminabili e affiancabili da nuove voci come sempre.
+// Fasi di gioco di partenza per ogni nuovo account: stessa struttura a macro-fasi usata da
+// YouCoach (Attacco/Fase difensiva/Calci piazzati/Transizioni), appiattita in voci singole
+// perché il nostro modello Categoria è una lista piatta, non a due livelli — ogni voce eredita
+// il colore della sua macro-fase cosi il raggruppamento resta leggibile a colpo d'occhio anche
+// senza gerarchia vera. Le transizioni positive/negative sono un'unica voce "Transizione" (non
+// due) su richiesta esplicita: nella pratica di un allenatore dilettante non si lavorano come
+// momenti distinti, essendo il passaggio continuo tra possesso e non possesso. Restano comunque
+// solo un punto di partenza: rinominabili, ricolorabili, eliminabili e affiancabili da nuove
+// voci come sempre.
 const CATEGORIA_DEFAULTS = [
   { label: 'Costruzione dal basso', color: '#6FCF7A' },
   { label: 'Mantenimento e sviluppo', color: '#6FCF7A' },
@@ -22,8 +25,7 @@ const CATEGORIA_DEFAULTS = [
   { label: 'Blocco basso', color: '#E67F78' },
   { label: "Calci piazzati in fase d'attacco", color: '#B591DE' },
   { label: 'Calci piazzati in fase difensiva', color: '#B591DE' },
-  { label: 'Transizioni negative', color: '#F2C94C' },
-  { label: 'Transizioni positive', color: '#4FA8E0' },
+  { label: 'Transizione', color: '#F2C94C' },
 ];
 
 function slugify(label) {

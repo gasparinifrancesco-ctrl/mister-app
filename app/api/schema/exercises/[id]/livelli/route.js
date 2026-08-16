@@ -2,6 +2,10 @@ import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
 import { hasPermission } from '@/lib/permissions';
 
+// Vocabolario chiuso (vedi commento su Livello.tipoEsercitazione in schema.prisma): a
+// differenza delle fasi di gioco, questi 4 valori non sono personalizzabili dall'utente.
+const TIPO_ESERCITAZIONE_VALUES = ['analitico', 'situazionale', 'globale', 'preparazione_atletica'];
+
 // Una progressione (A/B/C...) è un nuovo livello dello STESSO esercizio, non un esercizio
 // separato: eredita dimensioni/tag dall'esercizio padre, ma ha il proprio disegno campo,
 // descrizione e struttura ripetizioni/durata/recupero.
@@ -53,6 +57,7 @@ export async function POST(request, { params }) {
       larghezzaCampo: base ? base.larghezzaCampo : (body.larghezzaCampo ? Number(body.larghezzaCampo) : 20),
       lunghezzaCampo: base ? base.lunghezzaCampo : (body.lunghezzaCampo ? Number(body.lunghezzaCampo) : 28),
       mostraDisegno: base ? base.mostraDisegno : (typeof body.mostraDisegno === 'boolean' ? body.mostraDisegno : true),
+      tipoEsercitazione: base ? base.tipoEsercitazione : (TIPO_ESERCITAZIONE_VALUES.includes(body.tipoEsercitazione) ? body.tipoEsercitazione : null),
     },
   });
 

@@ -107,6 +107,33 @@ function schemaCategoriaMultiSelectHTML(selectedKeys, toggleFnName, readonly){
     '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(selectedKeys.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="'+toggleFnName+'(\''+c.key+'\')">'+esc(c.label)+'</button>'
   ).join('') + '</div>';
 }
+// Vocabolario chiuso, NON personalizzabile (a differenza delle fasi di gioco sopra): solo
+// questi 4 valori esistono, lo stesso elenco validato lato server in
+// app/api/schema/exercises/[id]/livelli/route.js — un click sul valore già selezionato lo
+// deseleziona (torna a "non specificato"), come i filtri fase/focus.
+const SCHEMA_TIPO_ESERCITAZIONE = [
+  { key: 'analitico', label: 'Analitico', color: '#4FA8E0' },
+  { key: 'situazionale', label: 'Situazionale', color: '#6FCF7A' },
+  { key: 'globale', label: 'Globale', color: '#E67F78' },
+  { key: 'preparazione_atletica', label: 'Preparazione Atletica', color: '#E08A4F' },
+];
+function schemaTipoEsercitazioneInfo(key){
+  return SCHEMA_TIPO_ESERCITAZIONE.find(t=>t.key===key) || null;
+}
+function schemaTipoEsercitazioneChipsHTML(current, readonly){
+  if(readonly){
+    const info = schemaTipoEsercitazioneInfo(current);
+    return info ? '<span class="schema-cat-chip" style="background:'+info.color+';">'+esc(info.label)+'</span>' : '<span class="hint">Non specificato</span>';
+  }
+  return '<div class="schema-tag-chip-row">' + SCHEMA_TIPO_ESERCITAZIONE.map(t=>
+    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(current===t.key?'schema-cat-filter-chip-active':'')+'" style="background:'+t.color+';" onclick="setSchemaLivelloTipoEsercitazione(\''+t.key+'\')">'+esc(t.label)+'</button>'
+  ).join('') + '</div>';
+}
+async function setSchemaLivelloTipoEsercitazione(key){
+  const livello = state.schema.currentExercise.livelli.find(l=>l.id===state.schema.activeLivelloId) || state.schema.currentExercise.livelli[0];
+  const nextValue = livello.tipoEsercitazione===key ? null : key;
+  await saveSchemaLivelloField('tipoEsercitazione', nextValue);
+}
 const STAGIONE_LIVELLI = {
   'Prima Squadra': ['Terza Categoria','Seconda Categoria','Prima Categoria','Promozione','Eccellenza','Serie D','Serie C','Serie B','Serie A','Altro'],
   'Juniores': ['Provinciale','Regionale','Élite','Nazionale','Altro'],
@@ -4527,6 +4554,7 @@ function renderSchemaStatisticheView(){
   const f = getSchemaStatisticheFilter();
   const virtualSess = { items: stat.items };
   const fasiSlices = schemaSessionWorkCompositionData(virtualSess);
+  const tipoSlices = schemaSessionTipoEsercitazioneData(virtualSess);
   const focusSlices = schemaSessionFocusCompositionData(virtualSess);
   const esercizi = schemaSessionExerciseUsageData(virtualSess);
   const minutiTotali = Math.round(fasiSlices.reduce(function(s, x){ return s + x.minuti; }, 0));
@@ -4546,8 +4574,9 @@ function renderSchemaStatisticheView(){
         '<div class="stat-card"><div class="stat-card-value">'+minutiTotali+'</div><div class="stat-card-label">Minuti totali allenati</div></div>' +
       '</div>' +
       (stat.sedute===0 ? '<p class="hint" style="margin-top:16px;">Nessuna seduta svolta nel periodo selezionato.</p>' :
-        '<div class="grid-2" style="margin-top:16px;">' +
+        '<div class="grid-3" style="margin-top:16px;">' +
           '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaPieChartHTML(fasiSlices, 'Nessun dato disponibile.') + '</div>' +
+          '<div><h4 class="schema-pie-subtitle">Tipo di esercitazione</h4>' + schemaPieChartHTML(tipoSlices, 'Nessun dato disponibile.') + '</div>' +
           '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaPieChartHTML(focusSlices, 'Nessun dato disponibile.') + '</div>' +
         '</div>' +
         '<div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">' +
@@ -4777,7 +4806,7 @@ function schemaExerciseCardHTML(e, onclickAttr, compact){
   // l'esercizio da aggiungere, non a gestirlo.
   const contextMenuAttr = (!compact && can('edit_esercizi')) ? ' oncontextmenu="showSchemaExerciseCardContextMenu(event,\''+e.id+'\')"' : '';
   return '<div class="'+cls+'" style="'+(cats[0]?'border-left-color:'+cats[0].color+';':'')+'" onclick="'+onclickAttr+'"'+contextMenuAttr+'>' +
-    '<div class="schema-exercise-card-thumb">' + (primoLivello ? renderSchemaFieldSVG(primoLivello, false, schemaShouldUseLightBoard()) : '') + '</div>' +
+    '<div class="schema-exercise-card-thumb">' + (primoLivello && primoLivello.mostraDisegno!==false ? renderSchemaFieldSVG(primoLivello, false, schemaShouldUseLightBoard()) : '') + '</div>' +
     '<div class="schema-exercise-card-body">' +
       '<div class="schema-exercise-card-head"><strong>'+esc(primoLivello ? primoLivello.titolo : '')+'</strong>'+badge+'</div>' +
       '<div class="schema-exercise-card-meta">' +
@@ -5560,6 +5589,32 @@ function schemaWorkCompositionPieHTML(sess){
 function schemaWorkCompositionByTagPieHTML(sess){
   return schemaPieChartHTML(schemaSessionFocusCompositionData(sess), 'Aggiungi esercizi con un focus per vedere qui la composizione del lavoro.');
 }
+// tipoEsercitazione vive sul Livello stesso (non su Exercise, a differenza di categorie/tags)
+// ed è un valore singolo non un array: un item vale per intero verso un solo tipo, o nessuno
+// se non specificato — niente divisione in quote come schemaSessionMinutesByKey.
+function schemaSessionTipoEsercitazioneData(sess){
+  const totals = {};
+  let none = 0;
+  (sess.items || []).forEach(function(item){
+    if (!item.livello) return;
+    const lv = item.livello;
+    const totaleCalcolato = Math.round(lv.ripetizioni * lv.durataRipetizione + Math.max(lv.ripetizioni - 1, 0) * (lv.recuperoSecondi || 0) / 60);
+    const minuti = item.durataMinuti != null ? item.durataMinuti : totaleCalcolato;
+    if (!minuti) return;
+    const key = lv.tipoEsercitazione;
+    if (!key) { none += minuti; return; }
+    totals[key] = (totals[key] || 0) + minuti;
+  });
+  const slices = Object.keys(totals).map(function(key){
+    const info = schemaTipoEsercitazioneInfo(key);
+    return { key, label: info ? info.label : key, color: info ? info.color : '#8CA0AF', minuti: totals[key] };
+  });
+  if (none > 0) slices.push({ key: '_none', label: 'Non specificato', color: '#8CA0AF', minuti: none });
+  return slices.sort(function(a, b){ return b.minuti - a.minuti; });
+}
+function schemaWorkCompositionByTipoPieHTML(sess){
+  return schemaPieChartHTML(schemaSessionTipoEsercitazioneData(sess), 'Assegna un tipo di esercitazione per vedere qui la composizione del lavoro.');
+}
 // Formattazione minima delle descrizioni: memorizzata come TESTO SEMPLICE con marcatori
 // (**grassetto**, ++più grande++), mai come HTML — cosi non c'è alcun rischio che un
 // input dell'utente venga interpretato come markup arbitrario quando lo mostriamo con
@@ -5714,7 +5769,8 @@ function renderSchemaExerciseSheet(){
         '<div class="field"><label>Durata di ciascuna (min)</label><input class="schema-property-input" type="number" min="1" value="'+livello.durataRipetizione+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'durataRipetizione\', this.value)"></div>' +
         '<div class="field"><label>Recupero (sec)</label><input class="schema-property-input" type="number" min="0" value="'+livello.recuperoSecondi+'" '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'recuperoSecondi\', this.value)"></div>' +
       '</div>' +
-      '<div class="field"><label><input type="checkbox" '+(livello.mostraDisegno?'checked':'')+' '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'mostraDisegno\', this.checked)"> Includi il disegno campo nell\'esportazione/stampa</label><span class="hint">Disattivalo per gli esercizi solo descrittivi: il disegno resta salvato, solo non compare sul foglio (risparmia spazio).</span></div>' +
+      '<div class="field field-grow"><label>Tipo di esercitazione</label>'+schemaTipoEsercitazioneChipsHTML(livello.tipoEsercitazione, !canEdit)+'</div>' +
+      '<div class="field"><label><input type="checkbox" '+(livello.mostraDisegno===false?'checked':'')+' '+(canEdit?'':'disabled')+' onchange="saveSchemaLivelloField(\'mostraDisegno\', !this.checked)"> Nessuna immagine per questo esercizio</label><span class="hint">Per gli esercizi solo descrittivi: il disegno resta salvato, solo non compare più in anteprima né sul foglio stampato/esportato (risparmia spazio).</span></div>' +
       (canEdit ? schemaSelectionBarHTML() : '') +
       '<div class="schema-editor-row">' +
         '<div class="pitch-wrap schema-field-wrap '+(state.schema.eraserMode?'schema-eraser-active':'')+(canEdit?'':' readonly-block')+'">' + renderSchemaFieldSVG(livello, undefined, schemaShouldUseLightBoard(), true) + '</div>' +
@@ -7046,8 +7102,9 @@ function renderSchemaSessionBuilder(){
           ) +
           '<div class="schema-composizione-lavoro">' +
             '<h4>Composizione del lavoro</h4>' +
-            '<div class="grid-2">' +
+            '<div class="grid-3">' +
               '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaWorkCompositionPieHTML(sess) + '</div>' +
+              '<div><h4 class="schema-pie-subtitle">Tipo di esercitazione</h4>' + schemaWorkCompositionByTipoPieHTML(sess) + '</div>' +
               '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaWorkCompositionByTagPieHTML(sess) + '</div>' +
             '</div>' +
           '</div>' +

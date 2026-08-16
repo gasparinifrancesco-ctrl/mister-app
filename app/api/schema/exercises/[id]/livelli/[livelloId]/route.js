@@ -2,6 +2,10 @@ import { prisma } from '@/lib/prisma';
 import { getSchemaSessionOrNull } from '@/lib/dal';
 import { hasPermission } from '@/lib/permissions';
 
+// Vocabolario chiuso (vedi commento su Livello.tipoEsercitazione in schema.prisma): a
+// differenza delle fasi di gioco, questi 4 valori non sono personalizzabili dall'utente.
+const TIPO_ESERCITAZIONE_VALUES = ['analitico', 'situazionale', 'globale', 'preparazione_atletica'];
+
 async function ownedLivello(esercizioId, livelloId, userId) {
   const livello = await prisma.livello.findFirst({
     where: { id: livelloId, esercizioId },
@@ -40,6 +44,9 @@ export async function PATCH(request, { params }) {
   if (typeof body.larghezzaCampo !== 'undefined') data.larghezzaCampo = Number(body.larghezzaCampo);
   if (typeof body.lunghezzaCampo !== 'undefined') data.lunghezzaCampo = Number(body.lunghezzaCampo);
   if (typeof body.mostraDisegno === 'boolean') data.mostraDisegno = body.mostraDisegno;
+  if (typeof body.tipoEsercitazione !== 'undefined') {
+    data.tipoEsercitazione = body.tipoEsercitazione === null ? null : (TIPO_ESERCITAZIONE_VALUES.includes(body.tipoEsercitazione) ? body.tipoEsercitazione : existing.tipoEsercitazione);
+  }
 
   const livello = await prisma.livello.update({ where: { id: livelloId }, data });
   return Response.json({ livello });

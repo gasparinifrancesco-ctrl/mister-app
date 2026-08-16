@@ -31,7 +31,7 @@ export async function GET(request) {
       // in miniatura del disegno, invece di una lista "cieca" di soli titoli. titolo/
       // numeroGiocatoriBase/larghezzaCampo/lunghezzaCampo sono per-livello (indipendenti
       // tra loro): la card mostra sempre quelli del primo livello come rappresentativi.
-      livelli: { select: { id: true, nome: true, titolo: true, numeroGiocatoriBase: true, numeroPortieri: true, larghezzaCampo: true, lunghezzaCampo: true, ripetizioni: true, durataRipetizione: true, recuperoSecondi: true, schemaCampo: true }, orderBy: { ordine: 'asc' } },
+      livelli: { select: { id: true, nome: true, titolo: true, numeroGiocatoriBase: true, numeroPortieri: true, larghezzaCampo: true, lunghezzaCampo: true, ripetizioni: true, durataRipetizione: true, recuperoSecondi: true, schemaCampo: true, mostraDisegno: true, tipoEsercitazione: true }, orderBy: { ordine: 'asc' } },
     },
     orderBy: { creatoIl: 'desc' },
   });

@@ -208,6 +208,12 @@ model Livello {
   // risparmia spazio nel foglio stampato/esportato, senza perdere schemaCampo (resta salvato,
   // solo non mostrato finché non si riattiva).
   mostraDisegno       Boolean @default(true)
+  // Vocabolario chiuso, NON personalizzabile dall'utente (a differenza di Exercise.categorie):
+  // 'analitico' | 'situazionale' | 'globale' | 'preparazione_atletica'. Null = non specificato,
+  // finisce nel bucket "non categorizzato" nelle statistiche come le fasi senza categoria.
+  // Varia per progressione (come numeroGiocatoriBase): un esercizio può iniziare analitico nel
+  // livello A e diventare situazionale/globale nei livelli successivi.
+  tipoEsercitazione   String?
 
   esercizio    Exercise      @relation(fields: [esercizioId], references: [id], onDelete: Cascade)
   sessionItems SessionItem[]
