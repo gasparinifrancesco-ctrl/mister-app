@@ -94,6 +94,18 @@ const SCHEMA_CATEGORIA_COLORI = ['#F2C94C', '#4FA8E0', '#6FCF7A', '#B591DE', '#E
 function schemaCategoriaInfo(key){
   return state.schema.categorie.find(c=>c.key===key) || null;
 }
+// "Tonal chip": tinta chiara del colore categoria invece del riempimento pieno (solo a
+// schermo — in stampa il chip resta a riempimento pieno per il contrasto su carta, vedi
+// schemaSessionExportItemHTML). hex è sempre un colore validato lato server (Categoria.color
+// o la palette SCHEMA_CATEGORIA_COLORI), quindi niente sanificazione dell'input qui.
+function hexToRgbTriplet(hex){
+  const h = (hex || '#8CA0AF').replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16), g = parseInt(h.substring(2, 4), 16), b = parseInt(h.substring(4, 6), 16);
+  return r + ',' + g + ',' + b;
+}
+function schemaTonalChipStyle(hex){
+  return 'background:rgba(' + hexToRgbTriplet(hex) + ',0.16); color:' + hex + ';';
+}
 // Un esercizio può appartenere a più fasi di gioco insieme (vedi Exercise.categorie, JSON
 // array): stessa UI a chip cliccabili già in uso per il filtro libreria, riproposta qui per
 // la selezione vera e propria — un clic aggiunge/rimuove la fase dall'insieme selezionato.
@@ -101,21 +113,23 @@ function schemaCategoriaMultiSelectHTML(selectedKeys, toggleFnName, readonly){
   if(!state.schema.categorie.length) return '<p class="hint">Nessuna fase di gioco disponibile.</p>';
   if(readonly){
     const selected = state.schema.categorie.filter(c=>selectedKeys.includes(c.key));
-    return selected.length ? '<div class="schema-tag-chip-row">' + selected.map(c=>'<span class="schema-cat-chip" style="background:'+c.color+';">'+esc(c.label)+'</span>').join('') + '</div>' : '<p class="hint">Non categorizzato</p>';
+    return selected.length ? '<div class="schema-tag-chip-row">' + selected.map(c=>'<span class="schema-cat-chip schema-cat-chip-tonal" style="'+schemaTonalChipStyle(c.color)+'">'+esc(c.label)+'</span>').join('') + '</div>' : '<p class="hint">Non categorizzato</p>';
   }
   return '<div class="schema-tag-chip-row">' + state.schema.categorie.map(c=>
-    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(selectedKeys.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="'+toggleFnName+'(\''+c.key+'\')">'+esc(c.label)+'</button>'
+    '<button type="button" class="schema-cat-chip schema-cat-chip-tonal schema-cat-filter-chip '+(selectedKeys.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="'+schemaTonalChipStyle(c.color)+'" onclick="'+toggleFnName+'(\''+c.key+'\')">'+esc(c.label)+'</button>'
   ).join('') + '</div>';
 }
 // Vocabolario chiuso, NON personalizzabile (a differenza delle fasi di gioco sopra): solo
 // questi 4 valori esistono, lo stesso elenco validato lato server in
 // app/api/schema/exercises/[id]/livelli/route.js — un click sul valore già selezionato lo
-// deseleziona (torna a "non specificato"), come i filtri fase/focus.
+// deseleziona (torna a "non specificato"), come i filtri fase/focus. Sempre grigio neutro,
+// mai colorato: è proprio l'assenza di tinta a distinguerlo dalla fase di gioco, che invece
+// è sempre colorata per categoria — stessa forma di chip morbido, famiglia diversa.
 const SCHEMA_TIPO_ESERCITAZIONE = [
-  { key: 'analitico', label: 'Analitico', color: '#4FA8E0' },
-  { key: 'situazionale', label: 'Situazionale', color: '#6FCF7A' },
-  { key: 'globale', label: 'Globale', color: '#E67F78' },
-  { key: 'preparazione_atletica', label: 'Preparazione Atletica', color: '#E08A4F' },
+  { key: 'analitico', label: 'Analitico' },
+  { key: 'situazionale', label: 'Situazionale' },
+  { key: 'globale', label: 'Globale' },
+  { key: 'preparazione_atletica', label: 'Preparazione Atletica' },
 ];
 function schemaTipoEsercitazioneInfo(key){
   return SCHEMA_TIPO_ESERCITAZIONE.find(t=>t.key===key) || null;
@@ -123,10 +137,10 @@ function schemaTipoEsercitazioneInfo(key){
 function schemaTipoEsercitazioneChipsHTML(current, readonly){
   if(readonly){
     const info = schemaTipoEsercitazioneInfo(current);
-    return info ? '<span class="schema-cat-chip" style="background:'+info.color+';">'+esc(info.label)+'</span>' : '<span class="hint">Non specificato</span>';
+    return info ? '<span class="schema-tipo-chip">'+esc(info.label)+'</span>' : '<span class="hint">Non specificato</span>';
   }
   return '<div class="schema-tag-chip-row">' + SCHEMA_TIPO_ESERCITAZIONE.map(t=>
-    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(current===t.key?'schema-cat-filter-chip-active':'')+'" style="background:'+t.color+';" onclick="setSchemaLivelloTipoEsercitazione(\''+t.key+'\')">'+esc(t.label)+'</button>'
+    '<button type="button" class="schema-tipo-chip schema-tipo-chip-filter '+(current===t.key?'schema-tipo-chip-filter-active':'')+'" onclick="setSchemaLivelloTipoEsercitazione(\''+t.key+'\')">'+esc(t.label)+'</button>'
   ).join('') + '</div>';
 }
 async function setSchemaLivelloTipoEsercitazione(key){
@@ -4762,7 +4776,7 @@ function renderSchemaLibrary(){
     '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" data-tag="'+esc(t)+'" '+(canEditLibrary?'draggable="true"':'')+' onclick="toggleSchemaFilterTag(\''+esc(t)+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaTagContextMenu(event,\''+esc(t).replace(/'/g,"\\'")+'\')" title="Trascina per riordinare, clic destro per rinominare o eliminare"':'')+'>'+esc(t)+'</button>'
   ).join('');
   const categoriaChips = s.categorie.map(c=>
-    '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategorie.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" data-cat-id="'+c.id+'" '+(canEditLibrary?'draggable="true"':'')+' onclick="setSchemaFilterCategoria(\''+c.key+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaCategoriaContextMenu(event,\''+c.key+'\')" title="Trascina per riordinare, clic destro per rinominare, cambiare colore o eliminare"':'')+'>'+esc(c.label)+'</button>'
+    '<button type="button" class="schema-cat-chip schema-cat-chip-tonal schema-cat-filter-chip '+(s.filterCategorie.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="'+schemaTonalChipStyle(c.color)+'" data-cat-id="'+c.id+'" '+(canEditLibrary?'draggable="true"':'')+' onclick="setSchemaFilterCategoria(\''+c.key+'\')" '+(canEditLibrary?'oncontextmenu="showSchemaCategoriaContextMenu(event,\''+c.key+'\')" title="Trascina per riordinare, clic destro per rinominare, cambiare colore o eliminare"':'')+'>'+esc(c.label)+'</button>'
   ).join('') + (canEditLibrary ? '<button type="button" class="schema-cat-chip schema-cat-add-chip" onclick="createSchemaCategoria()">+ Nuova fase</button>' : '');
   // Il disegnatore tattico (per creare un esercizio nuovo) serve spazio e precisione che uno
   // schermo da telefono non offre: da mobile resta raggiungibile solo da computer, mentre
@@ -4810,7 +4824,7 @@ function schemaExerciseCardHTML(e, onclickAttr, compact){
     '<div class="schema-exercise-card-body">' +
       '<div class="schema-exercise-card-head"><strong>'+esc(primoLivello ? primoLivello.titolo : '')+'</strong>'+badge+'</div>' +
       '<div class="schema-exercise-card-meta">' +
-        (cats.length ? cats.map(cat=>'<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>').join('') : '<span class="hint">Non categorizzato</span>') +
+        (cats.length ? cats.map(cat=>'<span class="schema-cat-chip schema-cat-chip-tonal" style="'+schemaTonalChipStyle(cat.color)+'">'+esc(cat.label)+'</span>').join('') : '<span class="hint">Non categorizzato</span>') +
         (primoLivello && primoLivello.tipoEsercitazione ? schemaTipoEsercitazioneChipsHTML(primoLivello.tipoEsercitazione, true) : '') +
         '<span class="hint" title="Movimento + portieri">'+(primoLivello ? primoLivello.numeroGiocatoriBase+(primoLivello.numeroPortieri ? '+'+primoLivello.numeroPortieri : '') : '—')+' giocatori</span>' +
         (durata!=null ? '<span class="hint" title="Tempo totale, recuperi tra le serie inclusi">'+durata+' min tot.</span>' : '') +
@@ -7075,7 +7089,7 @@ function renderSchemaSessionBuilder(){
       // libreria, non scelta esercizio) — agiscono sullo stesso state.schema.exercises,
       // quindi filtrano anche cosa si vede tornando alla Libreria dopo.
       const filterCategoriaChips = s.categorie.map(c=>
-        '<button type="button" class="schema-cat-chip schema-cat-filter-chip '+(s.filterCategorie.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="background:'+c.color+';" onclick="setSchemaFilterCategoria(\''+c.key+'\')">'+esc(c.label)+'</button>'
+        '<button type="button" class="schema-cat-chip schema-cat-chip-tonal schema-cat-filter-chip '+(s.filterCategorie.includes(c.key)?'schema-cat-filter-chip-active':'')+'" style="'+schemaTonalChipStyle(c.color)+'" onclick="setSchemaFilterCategoria(\''+c.key+'\')">'+esc(c.label)+'</button>'
       ).join('');
       const filterTagChips = s.availableTags.map(t=>
         '<button type="button" class="schema-tag-chip '+(s.filterTags.includes(t)?'schema-tag-chip-active':'')+'" onclick="toggleSchemaFilterTag(\''+esc(t)+'\')">'+esc(t)+'</button>'
@@ -7299,9 +7313,9 @@ function schemaSessionExportItemHTML(item, idx){
       '<p class="hint">Giocatori: '+lv.numeroGiocatoriBase+(lv.numeroPortieri ? '+'+lv.numeroPortieri+' portieri' : '')+' · Campo: '+(lv.lunghezzaCampo||'—')+'×'+(lv.larghezzaCampo||'—')+' m</p>' +
       '<p class="hint">Obiettivo: ' +
         (cats.length ? cats.map(cat=>'<span class="schema-cat-chip" style="background:'+cat.color+';">'+esc(cat.label)+'</span>').join(' ') : 'Non categorizzato') +
-        (tags.length ? ' · '+esc(tags.join(', ')) : '') +
       '</p>' +
       (lv.tipoEsercitazione ? '<p class="hint">Tipo: '+schemaTipoEsercitazioneChipsHTML(lv.tipoEsercitazione, true)+'</p>' : '') +
+      (tags.length ? '<p class="schema-focus-inline"><span class="k">Focus</span>'+esc(tags.join(' · '))+'</p>' : '') +
       (ex.descrizione ? '<p>'+schemaRichTextToHTML(ex.descrizione)+'</p>' : '') +
       (lv.descrizione ? '<p>'+schemaRichTextToHTML(lv.descrizione)+'</p>' : '') +
     '</div>' +

@@ -452,9 +452,29 @@
   .schema-exercise-card-foot{ margin-top:auto; }
   .schema-cat-chip{ display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:999px; color:#0B141C; white-space:nowrap; }
   .schema-cat-filter-chip{ color:#0B141C; opacity:0.6; border:none; cursor:pointer; }
-  .schema-cat-filter-chip-active{ opacity:1; box-shadow:0 0 0 2px var(--text); }
+  .schema-cat-filter-chip-active{ opacity:1; box-shadow:0 0 0 2px currentColor; }
   .schema-cat-add-chip{ background:none; border:1px dashed var(--border); color:var(--text-dim); cursor:pointer; }
   .schema-cat-add-chip:hover{ border-color:var(--accent); color:var(--accent); }
+  /* Fasi di gioco a schermo (non in stampa, dove resta il pieno per il contrasto su carta):
+     "tonal chip" — tinta chiara della categoria invece del riempimento pieno, stesso raggio
+     8px per tutte così si distinguono in forma dal Tipo di esercitazione (sotto), che è
+     sempre grigio neutro anche se ha la stessa "famiglia" di chip morbido. */
+  .schema-cat-chip-tonal{ border-radius:8px; font-weight:600; }
+  /* Tipo di esercitazione: stesso chip tonal della fase, ma MAI colorato — l'assenza di
+     tinta (non una tinta dedicata) è ciò che lo distingue dalla fase a colpo d'occhio. */
+  .schema-tipo-chip{
+    display:inline-flex; align-items:center; font-size:0.68rem; font-weight:600; padding:2px 8px;
+    border-radius:8px; white-space:nowrap; background:var(--panel-2); color:var(--text-dim);
+    border:1px solid var(--border);
+  }
+  .schema-tipo-chip-filter{ opacity:0.6; cursor:pointer; }
+  .schema-tipo-chip-filter-active{ opacity:1; color:var(--text); border-color:var(--text-dim); }
+  /* Focus in lettura (non nell'editor a tag rimovibili, che resta interattivo): riga unica
+     con etichetta invece di una fila di chip — è vocabolario libero, non una categoria
+     scelta da un menu, e la tipografia lo comunica meglio di un contenitore. */
+  .schema-focus-inline{ font-size:0.82rem; color:var(--text-dim); }
+  .schema-focus-inline .k{ font-size:0.64rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:var(--text-dim); opacity:0.8; margin-right:8px; }
+  .schema-focus-inline .sep{ color:var(--text-dim); opacity:0.6; margin:0 6px; }
   .schema-field-wrap{ max-width:624px; }
   .schema-field-svg{ background:var(--panel-2); }
   /* Campo a sinistra, barra strumenti a destra come colonna: su schermi stretti la barra
