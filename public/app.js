@@ -4625,7 +4625,7 @@ function renderSchemaStatisticheView(){
         '<div class="stat-card"><div class="stat-card-value">'+minutiTattici+'</div><div class="stat-card-label">Min. lavoro tattico ('+pctTattici+'%)</div></div>' +
       '</div>' +
       (stat.sedute===0 ? '<p class="hint" style="margin-top:16px;">Nessuna seduta svolta nel periodo selezionato.</p>' :
-        '<div class="grid-3" style="margin-top:16px;">' +
+        '<div class="schema-composizione-rows" style="margin-top:16px;">' +
           '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaBarListHTML(fasiSlices, 'Nessun dato disponibile.') + '</div>' +
           '<div><h4 class="schema-pie-subtitle">Tipo di esercitazione</h4>' + schemaPieChartHTML(tipoSlices, 'Nessun dato disponibile.') + '</div>' +
           '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaBarListHTML(focusSlices, 'Nessun dato disponibile.') + '</div>' +
@@ -5601,15 +5601,17 @@ function schemaSessionMinutesByKey(sess, extractKeys, fallbackKey){
   return { totals, none };
 }
 // Un esercizio di preparazione atletica non ha (e non deve avere) una fase di gioco: non è
-// lavoro tattico. Etichettarlo "Preparazione atletica" invece che genericamente "Non
-// categorizzato" separa questo caso normale da una vera svista (esercizio tattico dimenticato
-// da categorizzare), che resta nel bucket "Non categorizzato".
+// lavoro tattico, quindi non compare affatto in questo grafico (stesso principio con cui
+// "Senza focus" è stato tolto dal grafico Focus — un valore normale e atteso non è
+// informazione utile qui). Instradarlo comunque su una chiave propria ('_fisico', mai
+// mostrata) invece di lasciarlo cadere nel bucket "none" è ciò che lo tiene fuori da "Non
+// categorizzato", che resta libero di segnalare solo una vera svista (esercizio tattico
+// dimenticato da categorizzare).
 function schemaSessionWorkCompositionData(sess){
   const { totals, none } = schemaSessionMinutesByKey(sess, schemaExerciseCategorie, function(lv){
     return lv.tipoEsercitazione === 'preparazione_atletica' ? '_fisico' : null;
   });
-  const slices = Object.keys(totals).map(function(key){
-    if (key === '_fisico') return { key, label: 'Preparazione atletica', color: '#8CA0AF', minuti: totals[key] };
+  const slices = Object.keys(totals).filter(function(key){ return key !== '_fisico'; }).map(function(key){
     const info = schemaCategoriaInfo(key);
     return { key, label: info ? info.label : key, color: info ? info.color : '#8CA0AF', minuti: totals[key] };
   });
@@ -7098,7 +7100,7 @@ function renderSchemaSessionBuilder(){
               const pct = totMin > 0 ? Math.round(tatMin / totMin * 100) : 0;
               return totMin > 0 ? '<p class="hint">Lavoro tattico: '+tatMin+' min su '+totMin+' totali ('+pct+'%)</p>' : '';
             })() +
-            '<div class="grid-3">' +
+            '<div class="schema-composizione-rows">' +
               '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaWorkCompositionFasiHTML(sess) + '</div>' +
               '<div><h4 class="schema-pie-subtitle">Tipo di esercitazione</h4>' + schemaWorkCompositionByTipoPieHTML(sess) + '</div>' +
               '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaWorkCompositionFocusHTML(sess) + '</div>' +
