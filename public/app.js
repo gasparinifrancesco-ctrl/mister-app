@@ -5645,12 +5645,11 @@ function schemaSessionTotalMinutes(sess){
 // gioco: ciclano sulla stessa palette pre-verificata per il contrasto, in ordine alfabetico
 // così lo stesso focus ha sempre lo stesso colore da una seduta all'altra.
 function schemaSessionFocusCompositionData(sess){
-  const { totals, none } = schemaSessionMinutesByKey(sess, schemaExerciseTags);
+  const { totals } = schemaSessionMinutesByKey(sess, schemaExerciseTags);
   const keys = Object.keys(totals).sort(function(a, b){ return a.localeCompare(b); });
   const slices = keys.map(function(key, idx){
     return { key, label: key, color: SCHEMA_CATEGORIA_COLORI[idx % SCHEMA_CATEGORIA_COLORI.length], minuti: totals[key] };
   });
-  if (none > 0) slices.push({ key: '_none', label: 'Senza focus', color: '#8CA0AF', minuti: none });
   return slices.sort(function(a, b){ return b.minuti - a.minuti; });
 }
 // Barre orizzontali per Fasi di gioco e Focus (campi multi-selezione): ogni barra è scalata
