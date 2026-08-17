@@ -4037,14 +4037,14 @@ function barChartSVG(data, opts){
     const x = pad + i*bw + bw*0.15;
     const y = h - 30 - bh;
     bars += '<rect x="' + x + '" y="' + y + '" width="' + (bw*0.7) + '" height="' + bh + '" fill="' + (d.color||'#4FA8E0') + '" rx="2"/>';
-    bars += '<text x="' + (x+bw*0.35) + '" y="' + (h-14) + '" text-anchor="middle" font-size="9" fill="#8CA0AF" font-family="Inter">' + esc(d.label) + '</text>';
-    bars += '<text x="' + (x+bw*0.35) + '" y="' + (y-4) + '" text-anchor="middle" font-size="10" fill="#F4F1EA" font-family="Oswald">' + d.value + '</text>';
+    bars += '<text x="' + (x+bw*0.35) + '" y="' + (h-14) + '" text-anchor="middle" font-size="9" fill="var(--text-dim)" font-family="Inter">' + esc(d.label) + '</text>';
+    bars += '<text x="' + (x+bw*0.35) + '" y="' + (y-4) + '" text-anchor="middle" font-size="10" fill="var(--chalk)" font-family="Oswald">' + d.value + '</text>';
   });
   return '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:auto;">' + bars + '</svg>';
 }
 function donutChartSVG(data, size){
   const total = data.reduce((s,d)=>s+d.value,0);
-  if(total===0) return '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '"><circle cx="' + size/2 + '" cy="' + size/2 + '" r="' + (size/2-4) + '" fill="none" stroke="#223243" stroke-width="' + (size*0.18) + '"/></svg>';
+  if(total===0) return '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '"><circle cx="' + size/2 + '" cy="' + size/2 + '" r="' + (size/2-4) + '" fill="none" stroke="var(--panel-2)" stroke-width="' + (size*0.18) + '"/></svg>';
   const r = size/2 - 4, cx = size/2, cy = size/2, innerR = r*0.55;
   let angle = -Math.PI/2;
   let paths = '';
@@ -4085,7 +4085,7 @@ function valutazioneSquadraHTML(v){
   const assi = [['atletico','Atletico'],['tecnico','Tecnico'],['tattico','Tattico'],['personalita','Personalità']];
   const compilati = assi.filter(([k])=>v[k]!=null);
   if(compilati.length===0) return '<p class="hint">Nessuna valutazione di squadra compilata nel periodo selezionato (tab Valutazioni di una partita giocata).</p>';
-  const data = assi.map(([k,label])=>({ label, value: v[k]!=null ? Math.round(v[k]*10)/10 : 0, color: v[k]!=null ? '#4FA8E0' : '#223243' }));
+  const data = assi.map(([k,label])=>({ label, value: v[k]!=null ? Math.round(v[k]*10)/10 : 0, color: v[k]!=null ? '#4FA8E0' : 'var(--panel-2)' }));
   return barChartSVG(data, { width:320, height:180 });
 }
 // Heatmap 3x3 delle zone di gol segnate col picker ▧ sulla riga gol (tap facoltativo, non
