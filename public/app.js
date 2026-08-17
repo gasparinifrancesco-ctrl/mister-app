@@ -4138,18 +4138,18 @@ function renderStatisticheView(){
   '<div class="card"><h3>Valutazione di squadra</h3><p class="hint">Media stagionale dei 4 assi (1-10), una valutazione a partita per l\'intera squadra.</p>' + valutazioneSquadraHTML(s.valutazioneSquadra) + '</div>' +
   '<div class="card"><h3>Fatti vs subiti</h3>' + barFattiSubiti + '</div>' +
   '<div class="card"><h3>Casa vs trasferta</h3>' +
-    '<table class="stats-table"><thead><tr><th>Sede</th><th>Partite</th><th>Gol fatti</th><th>Gol subiti</th><th>Differenza</th></tr></thead><tbody>' +
+    '<div class="stats-table-wrap"><table class="stats-table"><thead><tr><th>Sede</th><th>Partite</th><th>Gol fatti</th><th>Gol subiti</th><th>Differenza</th></tr></thead><tbody>' +
       '<tr><td>Casa</td><td>'+s.perSede.Casa.partite+'</td><td>'+s.perSede.Casa.golFatti+'</td><td>'+s.perSede.Casa.golSubiti+'</td><td>'+(s.perSede.Casa.golFatti-s.perSede.Casa.golSubiti)+'</td></tr>' +
       '<tr><td>Trasferta</td><td>'+s.perSede.Trasferta.partite+'</td><td>'+s.perSede.Trasferta.golFatti+'</td><td>'+s.perSede.Trasferta.golSubiti+'</td><td>'+(s.perSede.Trasferta.golFatti-s.perSede.Trasferta.golSubiti)+'</td></tr>' +
-    '</tbody></table>' +
+    '</tbody></table></div>' +
   '</div>' +
   '<div class="card"><h3>Andamento per tipo partita</h3>' +
-    '<table class="stats-table"><thead><tr><th>Tipo</th><th>Partite</th><th>V</th><th>P</th><th>S</th><th>Gol fatti</th><th>Gol subiti</th><th>Differenza</th></tr></thead><tbody>' +
+    '<div class="stats-table-wrap"><table class="stats-table"><thead><tr><th>Tipo</th><th>Partite</th><th>V</th><th>P</th><th>S</th><th>Gol fatti</th><th>Gol subiti</th><th>Differenza</th></tr></thead><tbody>' +
       STATS_FILTER_TIPI.map(t=>{
         const pt = s.perTipo[t];
         return '<tr><td>'+esc(t)+'</td><td>'+pt.partite+'</td><td>'+pt.vittorie+'</td><td>'+pt.pareggi+'</td><td>'+pt.sconfitte+'</td><td>'+pt.golFatti+'</td><td>'+pt.golSubiti+'</td><td>'+(pt.golFatti-pt.golSubiti)+'</td></tr>';
       }).join('') +
-    '</tbody></table>' +
+    '</tbody></table></div>' +
   '</div>' +
   '<div class="grid-2">' +
     '<div class="card"><h3>Tipologia gol fatti</h3><div class="donut-row">' + donutFatti + legendHTML(typeColorList(s.tipologiaFatti)) + '</div></div>' +

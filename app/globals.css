@@ -394,14 +394,24 @@
   .piano-pitch-row-0 select{ font-weight:700; color:#FFFFFF; border-color:var(--accent-dim); }
   @media (max-width:640px){ .piano-pitch-card{ min-width:110px; } .piano-pitch-card-expanded{ min-width:170px; } .piano-pitch-row select{ font-size:0.7rem; } }
   /* Da telefono: stesso contenuto delle card sul campo, ma impilate invece che in
-     percentuale sul disegno — vedi renderPianoSquadraMobileList in app.js. */
+     percentuale sul disegno — vedi renderPianoSquadraMobileList in app.js. A differenza
+     delle card sul campo (sempre scure, overlay sul verde — vedi sopra), qui non c'è
+     nessun campo sotto: sono voci di un elenco come tutte le altre card dell'app, quindi
+     seguono il tema chiaro/scuro invece dello sfondo scuro fisso. */
   .piano-mobile-list{ display:flex; flex-direction:column; gap:8px; margin-top:10px; }
   .piano-mobile-card{
     position:static; transform:none; width:100%; min-width:0; max-width:none;
-    background:rgba(20,20,20,0.94); border:1px solid var(--border); border-radius:8px;
+    background:var(--panel-2); border:1px solid var(--border); border-radius:8px;
     padding:8px 12px 9px; box-shadow:var(--shadow-card); cursor:pointer;
   }
   .piano-mobile-card.piano-pitch-card-expanded{ width:100%; min-width:0; max-width:none; z-index:auto; }
+  .piano-mobile-card .piano-pitch-role{ background:var(--panel); }
+  .piano-mobile-card .piano-pitch-compact-row{ color:var(--text); }
+  .piano-mobile-card .piano-pitch-compact-row-0{ color:var(--chalk); }
+  .piano-mobile-card .piano-pitch-empty{ color:var(--text-dim); }
+  .piano-mobile-card .piano-pitch-tier{ color:var(--text-dim); }
+  .piano-mobile-card .piano-pitch-row select{ background:var(--panel); border-color:var(--border); color:var(--text); }
+  .piano-mobile-card .piano-pitch-row-0 select{ color:var(--chalk); }
 
   /* partite */
   .match-list{ display:flex; flex-direction:column; gap:2px; margin-top:8px; }
@@ -957,7 +967,11 @@
   .chart-legend{ display:flex; flex-direction:column; gap:5px; }
   .legend-item{ font-size:0.82rem; color: var(--text-dim); display:flex; align-items:center; gap:6px; }
   .legend-dot{ width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
-  .stats-table{ width:100%; border-collapse:collapse; margin-top:8px; }
+  /* Le tabelle di Statistiche partite hanno 5-8 colonne fisse: senza un contenitore con
+     scroll proprio, su schermi stretti costringevano l'intera pagina ad allargarsi oltre
+     il viewport (unica pagina a farlo) — stesso pattern già usato per .rosa-table-wrap. */
+  .stats-table-wrap{ overflow-x:auto; margin-top:8px; -webkit-overflow-scrolling:touch; }
+  .stats-table{ width:100%; min-width:420px; border-collapse:collapse; }
   .stats-table th, .stats-table td{ border-bottom:1px solid var(--border); padding:10px 8px; text-align:left; font-size:0.85rem; }
   .stats-table th{ color: var(--text-dim); font-weight:600; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; }
   .stats-table tbody tr:hover{ background: var(--panel-2); }
