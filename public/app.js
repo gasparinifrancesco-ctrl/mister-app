@@ -171,6 +171,17 @@ const SCHEMA_TIPO_ESERCITAZIONE = [
 function schemaTipoEsercitazioneInfo(key){
   return SCHEMA_TIPO_ESERCITAZIONE.find(t=>t.key===key) || null;
 }
+// Il Tipo di esercitazione è deliberatamente senza colore ovunque compaia come chip (vedi
+// sopra), ma una torta SENZA tinte diverse per fetta è illeggibile — il colore lì non è
+// decorazione, è l'unico modo di distinguere le fette. Palette dedicata al grafico, più
+// sobria di quella delle fasi di gioco (SCHEMA_CATEGORIA_COLORI) apposta per non confondere
+// le due torte, indicizzata sull'ordine fisso di SCHEMA_TIPO_ESERCITAZIONE cosi un tipo ha
+// sempre lo stesso colore da una seduta all'altra.
+const SCHEMA_TIPO_CHART_COLORI = ['#5C7C99', '#9A7C5C', '#6B8F71', '#8C6B8F'];
+function schemaTipoEsercitazioneChartColor(key){
+  const idx = SCHEMA_TIPO_ESERCITAZIONE.findIndex(t=>t.key===key);
+  return idx >= 0 ? SCHEMA_TIPO_CHART_COLORI[idx % SCHEMA_TIPO_CHART_COLORI.length] : '#8CA0AF';
+}
 function schemaTipoEsercitazioneChipsHTML(current, readonly){
   if(readonly){
     const info = schemaTipoEsercitazioneInfo(current);
@@ -5722,7 +5733,7 @@ function schemaSessionTipoEsercitazioneData(sess){
   });
   const slices = Object.keys(totals).map(function(key){
     const info = schemaTipoEsercitazioneInfo(key);
-    return { key, label: info ? info.label : key, color: info ? info.color : '#8CA0AF', minuti: totals[key] };
+    return { key, label: info ? info.label : key, color: schemaTipoEsercitazioneChartColor(key), minuti: totals[key] };
   });
   if (none > 0) slices.push({ key: '_none', label: 'Non specificato', color: '#8CA0AF', minuti: none });
   return slices.sort(function(a, b){ return b.minuti - a.minuti; });
