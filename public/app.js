@@ -4605,7 +4605,9 @@ function renderSchemaStatisticheView(){
   const tipoSlices = schemaSessionTipoEsercitazioneData(virtualSess);
   const focusSlices = schemaSessionFocusCompositionData(virtualSess);
   const esercizi = schemaSessionExerciseUsageData(virtualSess);
-  const minutiTotali = Math.round(fasiSlices.reduce(function(s, x){ return s + x.minuti; }, 0));
+  const minutiTotali = schemaSessionTotalMinutes(virtualSess);
+  const minutiTattici = schemaSessionTacticalMinutes(virtualSess);
+  const pctTattici = minutiTotali > 0 ? Math.round(minutiTattici / minutiTotali * 100) : 0;
   const filterHTML =
     '<div class="stats-filter-row">' +
       '<div class="field"><label>Da</label><input type="date" value="'+esc(f.da)+'" onchange="setSchemaStatisticheFilterField(\'da\',this.value)"></div>' +
@@ -4620,12 +4622,13 @@ function renderSchemaStatisticheView(){
       '<div class="stat-cards" style="margin-top:16px;">' +
         '<div class="stat-card"><div class="stat-card-value">'+stat.sedute+'</div><div class="stat-card-label">Sedute svolte</div></div>' +
         '<div class="stat-card"><div class="stat-card-value">'+minutiTotali+'</div><div class="stat-card-label">Minuti totali allenati</div></div>' +
+        '<div class="stat-card"><div class="stat-card-value">'+minutiTattici+'</div><div class="stat-card-label">Min. lavoro tattico ('+pctTattici+'%)</div></div>' +
       '</div>' +
       (stat.sedute===0 ? '<p class="hint" style="margin-top:16px;">Nessuna seduta svolta nel periodo selezionato.</p>' :
         '<div class="grid-3" style="margin-top:16px;">' +
-          '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaPieChartHTML(fasiSlices, 'Nessun dato disponibile.') + '</div>' +
+          '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaBarListHTML(fasiSlices, 'Nessun dato disponibile.') + '</div>' +
           '<div><h4 class="schema-pie-subtitle">Tipo di esercitazione</h4>' + schemaPieChartHTML(tipoSlices, 'Nessun dato disponibile.') + '</div>' +
-          '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaPieChartHTML(focusSlices, 'Nessun dato disponibile.') + '</div>' +
+          '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaBarListHTML(focusSlices, 'Nessun dato disponibile.') + '</div>' +
         '</div>' +
         '<div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">' +
           '<h4 class="schema-pie-subtitle">Esercizi utilizzati</h4>' +
@@ -5567,15 +5570,18 @@ function schemaExerciseCategorie(e){
   try { const c = JSON.parse((e && e.categorie) || '[]'); return Array.isArray(c) ? c : []; }
   catch { return []; }
 }
-// Minuti di lavoro per chiave (fase di gioco o focus) tra gli esercizi della seduta
-// (blocchi inclusi: ogni gruppo parallelo conta per il proprio tempo, non solo quello del
-// gruppo più lungo dello slot — a differenza del calcolo di durataTotale seduta, qui
-// interessa quanto lavoro di ogni tipo è stato fatto, non quanto dura l'allenamento
-// sull'orologio). Un esercizio con più chiavi insieme (più fasi, o più focus) divide il suo
-// tempo in parti uguali tra tutte, così la torta somma sempre al 100% invece di sommare più
-// fette per intero. extractKeys riceve l'esercizio e ritorna l'array di chiavi da questo
-// livello (categorie o focus); "senza chiave" finisce in una fetta a parte.
-function schemaSessionMinutesByKey(sess, extractKeys){
+// Minuti PIENI (non divisi) di lavoro per chiave (fase di gioco o focus) tra gli esercizi
+// della seduta (blocchi inclusi: ogni gruppo parallelo conta per il proprio tempo, non solo
+// quello del gruppo più lungo dello slot). Fase di gioco e Focus sono campi multi-selezione:
+// un esercizio con più chiavi insieme contribuisce per intero a ciascuna, quindi la somma
+// delle barre può superare la durata della seduta — è corretto così, un grafico a barre non
+// promette di sommare al 100% come farebbe una torta (per questo non sono più torte, vedi
+// schemaBarListHTML). extractKeys riceve l'esercizio e ritorna l'array di chiavi da questo
+// livello (categorie o focus). fallbackKey (opzionale) prova a etichettare diversamente un
+// esercizio "senza chiave" invece di buttarlo nel bucket generico "none": es. un esercizio di
+// lavoro fisico senza fase di gioco non è una svista di categorizzazione, è normale — merita
+// un'etichetta sua, non la stessa di un esercizio tattico dimenticato.
+function schemaSessionMinutesByKey(sess, extractKeys, fallbackKey){
   const totals = {};
   let none = 0;
   (sess.items || []).forEach(function(item){
@@ -5584,21 +5590,56 @@ function schemaSessionMinutesByKey(sess, extractKeys){
     const totaleCalcolato = Math.round(lv.ripetizioni * lv.durataRipetizione + Math.max(lv.ripetizioni - 1, 0) * (lv.recuperoSecondi || 0) / 60);
     const minuti = item.durataMinuti != null ? item.durataMinuti : totaleCalcolato;
     if (!minuti) return;
-    const keys = extractKeys(lv);
+    let keys = extractKeys(lv);
+    if (!keys.length && fallbackKey) {
+      const fb = fallbackKey(lv);
+      if (fb) keys = [fb];
+    }
     if (!keys.length) { none += minuti; return; }
-    const share = minuti / keys.length;
-    keys.forEach(function(key){ totals[key] = (totals[key] || 0) + share; });
+    keys.forEach(function(key){ totals[key] = (totals[key] || 0) + minuti; });
   });
   return { totals, none };
 }
+// Un esercizio di preparazione atletica non ha (e non deve avere) una fase di gioco: non è
+// lavoro tattico. Etichettarlo "Preparazione atletica" invece che genericamente "Non
+// categorizzato" separa questo caso normale da una vera svista (esercizio tattico dimenticato
+// da categorizzare), che resta nel bucket "Non categorizzato".
 function schemaSessionWorkCompositionData(sess){
-  const { totals, none } = schemaSessionMinutesByKey(sess, schemaExerciseCategorie);
+  const { totals, none } = schemaSessionMinutesByKey(sess, schemaExerciseCategorie, function(lv){
+    return lv.tipoEsercitazione === 'preparazione_atletica' ? '_fisico' : null;
+  });
   const slices = Object.keys(totals).map(function(key){
+    if (key === '_fisico') return { key, label: 'Preparazione atletica', color: '#8CA0AF', minuti: totals[key] };
     const info = schemaCategoriaInfo(key);
     return { key, label: info ? info.label : key, color: info ? info.color : '#8CA0AF', minuti: totals[key] };
   });
-  if (none > 0) slices.push({ key: '_none', label: 'Non categorizzato', color: '#8CA0AF', minuti: none });
+  if (none > 0) slices.push({ key: '_none', label: 'Non categorizzato', color: '#6B7680', minuti: none });
   return slices.sort(function(a, b){ return b.minuti - a.minuti; });
+}
+// Minuti di lavoro tattico: esercizi con almeno una fase di gioco assegnata, esclusi sia
+// "Non categorizzato" sia la preparazione atletica (che non è lavoro tattico per natura, non
+// solo perché non taggato). Risponde a "quanto della seduta è stato davvero lavoro di fase",
+// una domanda diversa da "come si distribuisce quel lavoro tra le fasi" (schemaBarListHTML).
+function schemaSessionTacticalMinutes(sess){
+  let minuti = 0;
+  (sess.items || []).forEach(function(item){
+    if (!item.esercizio) return;
+    const lv = item.esercizio;
+    if (!schemaExerciseCategorie(lv).length) return;
+    const totaleCalcolato = Math.round(lv.ripetizioni * lv.durataRipetizione + Math.max(lv.ripetizioni - 1, 0) * (lv.recuperoSecondi || 0) / 60);
+    minuti += item.durataMinuti != null ? item.durataMinuti : totaleCalcolato;
+  });
+  return Math.round(minuti);
+}
+function schemaSessionTotalMinutes(sess){
+  let minuti = 0;
+  (sess.items || []).forEach(function(item){
+    if (!item.esercizio) return;
+    const lv = item.esercizio;
+    const totaleCalcolato = Math.round(lv.ripetizioni * lv.durataRipetizione + Math.max(lv.ripetizioni - 1, 0) * (lv.recuperoSecondi || 0) / 60);
+    minuti += item.durataMinuti != null ? item.durataMinuti : totaleCalcolato;
+  });
+  return Math.round(minuti);
 }
 // I focus sono vocabolario libero (stringhe), non hanno un colore assegnato come le fasi di
 // gioco: ciclano sulla stessa palette pre-verificata per il contrasto, in ordine alfabetico
@@ -5612,9 +5653,27 @@ function schemaSessionFocusCompositionData(sess){
   if (none > 0) slices.push({ key: '_none', label: 'Senza focus', color: '#8CA0AF', minuti: none });
   return slices.sort(function(a, b){ return b.minuti - a.minuti; });
 }
+// Barre orizzontali per Fasi di gioco e Focus (campi multi-selezione): ogni barra è scalata
+// sul valore più alto tra le voci, non su un totale — non è una torta e non deve promettere
+// di sommare al 100%. Riusa lo stesso linguaggio grafico di schemaUsageListHTML (utilizzo
+// esercizi) invece di inventarne uno nuovo.
+function schemaBarListHTML(slices, emptyMessage){
+  if (!slices.length) return '<p class="hint">'+emptyMessage+'</p>';
+  const max = Math.max.apply(null, slices.map(function(s){ return s.minuti; }));
+  return '<div class="schema-usage-list">' + slices.map(function(s){
+    const pct = max > 0 ? Math.round(s.minuti / max * 100) : 0;
+    return '<div class="schema-usage-row">' +
+      '<span class="schema-usage-label">'+esc(s.label)+'</span>' +
+      '<span class="schema-usage-track"><span class="schema-usage-fill" style="width:'+pct+'%; background:'+s.color+';"></span></span>' +
+      '<span class="schema-usage-pct">'+Math.round(s.minuti)+' min</span>' +
+    '</div>';
+  }).join('') + '</div>';
+}
 // Donut via stroke-dasharray su cerchi impilati (niente path/arc a mano): ogni fetta è un
 // cerchio completo mascherato a una porzione della circonferenza, ruotato di -90deg così
-// la prima fetta parte dalle ore 12 come in un grafico a torta convenzionale.
+// la prima fetta parte dalle ore 12 come in un grafico a torta convenzionale. Riservata a
+// dimensioni a scelta SINGOLA (Tipo di esercitazione): solo lì il 100% ha senso vero, perché
+// un esercizio appartiene a una fetta sola — vedi schemaBarListHTML per fase/focus.
 function schemaPieChartHTML(slices, emptyMessage){
   const totalMin = slices.reduce(function(s, x){ return s + x.minuti; }, 0);
   if (!slices.length || totalMin <= 0) {
@@ -5639,11 +5698,11 @@ function schemaPieChartHTML(slices, emptyMessage){
       '<div class="schema-pie-legend">' + legend + '</div>' +
     '</div>';
 }
-function schemaWorkCompositionPieHTML(sess){
-  return schemaPieChartHTML(schemaSessionWorkCompositionData(sess), 'Aggiungi esercizi con una fase di gioco per vedere qui la composizione del lavoro.');
+function schemaWorkCompositionFasiHTML(sess){
+  return schemaBarListHTML(schemaSessionWorkCompositionData(sess), 'Aggiungi esercizi con una fase di gioco per vedere qui la composizione del lavoro.');
 }
-function schemaWorkCompositionByTagPieHTML(sess){
-  return schemaPieChartHTML(schemaSessionFocusCompositionData(sess), 'Aggiungi esercizi con un focus per vedere qui la composizione del lavoro.');
+function schemaWorkCompositionFocusHTML(sess){
+  return schemaBarListHTML(schemaSessionFocusCompositionData(sess), 'Aggiungi esercizi con un focus per vedere qui la composizione del lavoro.');
 }
 // tipoEsercitazione è un valore singolo non un array: un item vale per intero verso un solo
 // tipo, o nessuno se non specificato — niente divisione in quote come schemaSessionMinutesByKey.
@@ -7034,10 +7093,16 @@ function renderSchemaSessionBuilder(){
           ) +
           '<div class="schema-composizione-lavoro">' +
             '<h4>Composizione del lavoro</h4>' +
+            (function(){
+              const totMin = schemaSessionTotalMinutes(sess);
+              const tatMin = schemaSessionTacticalMinutes(sess);
+              const pct = totMin > 0 ? Math.round(tatMin / totMin * 100) : 0;
+              return totMin > 0 ? '<p class="hint">Lavoro tattico: '+tatMin+' min su '+totMin+' totali ('+pct+'%)</p>' : '';
+            })() +
             '<div class="grid-3">' +
-              '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaWorkCompositionPieHTML(sess) + '</div>' +
+              '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaWorkCompositionFasiHTML(sess) + '</div>' +
               '<div><h4 class="schema-pie-subtitle">Tipo di esercitazione</h4>' + schemaWorkCompositionByTipoPieHTML(sess) + '</div>' +
-              '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaWorkCompositionByTagPieHTML(sess) + '</div>' +
+              '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaWorkCompositionFocusHTML(sess) + '</div>' +
             '</div>' +
           '</div>' +
         '</div>';
@@ -7217,9 +7282,13 @@ function schemaSessionExportItemHTML(item, idx){
       '<h3>'+(idx+1)+'. '+esc(ex.titolo)+'</h3>' +
       '<p>Tempo totale: '+tempoTotale+' min · '+ex.ripetizioni+'×'+ex.durataRipetizione+' min · recupero '+ex.recuperoSecondi+'s tra le serie</p>' +
       '<p class="hint">Giocatori: '+ex.numeroGiocatoriBase+(ex.numeroPortieri ? '+'+ex.numeroPortieri+' portieri' : '')+' · Campo: '+(ex.lunghezzaCampo||'—')+'×'+(ex.larghezzaCampo||'—')+' m</p>' +
-      '<p class="hint">Obiettivo: ' +
-        (cats.length ? cats.map(cat=>'<span class="schema-cat-chip schema-cat-chip-tonal" style="'+schemaTonalChipStylePrint(cat.color)+'">'+esc(cat.label)+'</span>').join(' ') : 'Non categorizzato') +
-      '</p>' +
+      // Un esercizio di preparazione atletica non ha (giustamente) una fase di gioco: la riga
+      // "Tipo: Preparazione Atletica" qui sotto già lo dice, "Obiettivo: Non categorizzato"
+      // accanto leggerebbe come una svista che non è.
+      (cats.length || ex.tipoEsercitazione !== 'preparazione_atletica' ?
+        '<p class="hint">Obiettivo: ' +
+          (cats.length ? cats.map(cat=>'<span class="schema-cat-chip schema-cat-chip-tonal" style="'+schemaTonalChipStylePrint(cat.color)+'">'+esc(cat.label)+'</span>').join(' ') : 'Non categorizzato') +
+        '</p>' : '') +
       (ex.tipoEsercitazione ? '<p class="hint">Tipo: '+schemaTipoEsercitazioneChipsHTML(ex.tipoEsercitazione, true)+'</p>' : '') +
       '<p class="hint">'+schemaFocusHashHTML(tags)+'</p>' +
       (ex.descrizione ? '<p>'+schemaRichTextToHTML(ex.descrizione)+'</p>' : '') +
