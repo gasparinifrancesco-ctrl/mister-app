@@ -32,6 +32,7 @@ export async function PATCH(request, { params }) {
   if (typeof body.durataMinuti !== 'undefined') {
     data.durataMinuti = body.durataMinuti === null || body.durataMinuti === '' ? null : Number(body.durataMinuti);
   }
+  if (typeof body.nota !== 'undefined') data.nota = String(body.nota);
 
   const item = await prisma.sessionItem.update({ where: { id: itemId }, data });
   return Response.json({ item });

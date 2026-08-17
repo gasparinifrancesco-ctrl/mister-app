@@ -1,0 +1,1 @@
+ALTER TABLE "session_items" ADD COLUMN "nota" TEXT NOT NULL DEFAULT '';

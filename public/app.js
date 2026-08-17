@@ -4626,8 +4626,8 @@ function renderSchemaStatisticheView(){
       '</div>' +
       (stat.sedute===0 ? '<p class="hint" style="margin-top:16px;">Nessuna seduta svolta nel periodo selezionato.</p>' :
         '<div class="schema-composizione-rows" style="margin-top:16px;">' +
-          '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaBarListHTML(fasiSlices, 'Nessun dato disponibile.') + '</div>' +
           '<div><h4 class="schema-pie-subtitle">Tipo di esercitazione</h4>' + schemaPieChartHTML(tipoSlices, 'Nessun dato disponibile.') + '</div>' +
+          '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaBarListHTML(fasiSlices, 'Nessun dato disponibile.') + '</div>' +
           '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaBarListHTML(focusSlices, 'Nessun dato disponibile.') + '</div>' +
         '</div>' +
         '<div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">' +
@@ -6942,12 +6942,12 @@ async function loadSchemaSessionDetail(id){
 function schemaSessionItemRowHTML(item, slotIdx, slotsLength, canEditSedute){
   const titolo = item.esercizio ? item.esercizio.titolo : item.titoloSnapshot;
   return '<div class="schema-session-item-row">' +
-    '<div><strong>'+esc(titolo)+'</strong>'+(item.esercizio?'':'<div class="hint">esercizio non più in libreria</div>')+'</div>' +
+    '<div><strong>'+esc(titolo)+'</strong>'+(item.esercizio?'':'<div class="hint">esercizio non più in libreria</div>')+(item.nota?'<div class="hint">Nota: '+esc(item.nota)+'</div>':'')+'</div>' +
     '<input type="number" min="1" placeholder="min" value="'+(item.durataMinuti!=null?item.durataMinuti:'')+'" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
     '<div class="pitch-actions">' +
       (canEditSedute && slotIdx>0 ? '<button class="btn btn-small" onclick="moveSchemaSessionSlot('+item.ordine+', -1)">↑</button>' : '') +
       (canEditSedute && slotIdx<slotsLength-1 ? '<button class="btn btn-small" onclick="moveSchemaSessionSlot('+item.ordine+', 1)">↓</button>' : '') +
-      (item.esercizio && can('edit_esercizi') ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.esercizio.id+'\')">Nota</button>' : '') +
+      (canEditSedute ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.id+'\')">'+(item.nota?'Modifica nota':'Nota')+'</button>' : '') +
       (canEditSedute ? '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi</button>' : '') +
     '</div>' +
   '</div>';
@@ -6965,7 +6965,9 @@ function schemaSessionBlockRowHTML(slot, slotIdx, slotsLength, canEditSedute){
       '<div class="hint">Gruppo '+(item.gruppo||'?')+'</div>' +
       '<strong>'+esc(titolo)+'</strong>' +
       (item.esercizio?'':'<div class="hint">esercizio non più in libreria</div>') +
+      (item.nota?'<div class="hint">Nota: '+esc(item.nota)+'</div>':'') +
       '<input type="number" min="1" placeholder="min" value="'+(item.durataMinuti!=null?item.durataMinuti:'')+'" style="width:70px;" '+(canEditSedute?'':'disabled')+' onchange="setSchemaSessionItemDurata(\''+item.id+'\', this.value)">' +
+      (canEditSedute ? '<button class="btn btn-small" onclick="addSchemaSessionItemNote(\''+item.id+'\')">'+(item.nota?'Modifica nota':'Nota')+'</button>' : '') +
       (canEditSedute ? '<button class="btn btn-small btn-danger" onclick="removeSchemaSessionItem(\''+item.id+'\')">Rimuovi gruppo</button>' : '') +
     '</div>';
   }).join('');
@@ -7101,8 +7103,8 @@ function renderSchemaSessionBuilder(){
               return totMin > 0 ? '<p class="hint">Lavoro tattico: '+tatMin+' min su '+totMin+' totali ('+pct+'%)</p>' : '';
             })() +
             '<div class="schema-composizione-rows">' +
-              '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaWorkCompositionFasiHTML(sess) + '</div>' +
               '<div><h4 class="schema-pie-subtitle">Tipo di esercitazione</h4>' + schemaWorkCompositionByTipoPieHTML(sess) + '</div>' +
+              '<div><h4 class="schema-pie-subtitle">Fasi di gioco</h4>' + schemaWorkCompositionFasiHTML(sess) + '</div>' +
               '<div><h4 class="schema-pie-subtitle">Focus</h4>' + schemaWorkCompositionFocusHTML(sess) + '</div>' +
             '</div>' +
           '</div>' +
@@ -7148,11 +7150,17 @@ async function addSchemaSessionItem(exerciseId){
   await loadSchemaSessionDetail(state.schema.sessionId);
   renderView();
 }
-async function addSchemaSessionItemNote(esercizioId){
-  const testo = prompt('Nota su questo esercizio per questa seduta:');
-  if(!testo || !testo.trim()) return;
-  await apiPost('/api/schema/exercises/'+esercizioId+'/notes', { testo: testo.trim(), sedutaId: state.schema.sessionId });
-  alert('Nota aggiunta.');
+// Nota specifica a questo utilizzo dell'esercizio in questa seduta (campo SessionItem.nota),
+// non una Note dell'Exercise: a differenza delle note della libreria non si ripresenta in
+// altre sedute che usano lo stesso esercizio, e compare solo qui, in fondo all'esercizio
+// nell'anteprima/stampa — vedi schemaSessionExportItemHTML.
+async function addSchemaSessionItemNote(itemId){
+  const item = ((state.schema.currentSession && state.schema.currentSession.items) || []).find(i=>i.id===itemId);
+  const testo = prompt('Nota su questo esercizio, solo per questa seduta (non viene salvata sull\'esercizio in libreria):', item ? item.nota : '');
+  if(testo===null) return;
+  await apiPatch('/api/schema/sessions/'+state.schema.sessionId+'/items/'+itemId, { nota: testo.trim() });
+  await loadSchemaSessionDetail(state.schema.sessionId);
+  renderView();
 }
 async function removeSchemaSessionItem(itemId){
   await apiDelete('/api/schema/sessions/'+state.schema.sessionId+'/items/'+itemId);
@@ -7265,36 +7273,47 @@ function schemaFormationLineupHTML(sess, availablePlayers){
       '<div class="piano-pitch-cards">' + groupsHtml + '</div>' +
     '</div>';
 }
+// Blocco di testo informativo di un esercizio in stampa/anteprima, condiviso tra un esercizio
+// sequenziale e ogni colonna di un blocco parallelo: un gruppo non deve mostrare meno
+// informazioni solo perché condivide la riga con altri, quindi le due viste usano esattamente
+// gli stessi campi nello stesso ordine invece di due elenchi divergenti. Stesso linguaggio
+// grafico dello schermo: fase di gioco in tonal chip (testo scurito per il contrasto su carta,
+// vedi schemaTonalChipStylePrint), tipo di esercitazione sempre grigio neutro, focus in
+// hashtag corsivo (omesso del tutto se non ce n'è, invece di scrivere "Nessun focus" — non è
+// informazione utile in stampa). Descrizione e vincoli portano un'etichetta ("Descrizione:"/
+// "Vincoli:") e restano più scuri delle righe hint che li precedono (giocatori/obiettivo/tipo/
+// focus), per distinguere "dati strutturati" da "testo libero da leggere con attenzione".
+function schemaExportItemInfoHTML(ex, tempoTotale){
+  const cats = schemaExerciseCategorie(ex).map(schemaCategoriaInfo).filter(Boolean);
+  const tags = schemaExerciseTags(ex);
+  return '<p>Tempo totale: '+tempoTotale+' min · '+ex.ripetizioni+'×'+ex.durataRipetizione+' min · recupero '+ex.recuperoSecondi+'s tra le serie</p>' +
+    '<p class="hint">Giocatori: '+ex.numeroGiocatoriBase+(ex.numeroPortieri ? '+'+ex.numeroPortieri+' portieri' : '')+' · Campo: '+(ex.lunghezzaCampo||'—')+'×'+(ex.larghezzaCampo||'—')+' m</p>' +
+    // Un esercizio di preparazione atletica non ha (giustamente) una fase di gioco: la riga
+    // "Tipo: Preparazione Atletica" qui sotto già lo dice, "Obiettivo: Non categorizzato"
+    // accanto leggerebbe come una svista che non è.
+    (cats.length || ex.tipoEsercitazione !== 'preparazione_atletica' ?
+      '<p class="hint">Obiettivo: ' +
+        (cats.length ? cats.map(cat=>'<span class="schema-cat-chip schema-cat-chip-tonal" style="'+schemaTonalChipStylePrint(cat.color)+'">'+esc(cat.label)+'</span>').join(' ') : 'Non categorizzato') +
+      '</p>' : '') +
+    (ex.tipoEsercitazione ? '<p class="hint">Tipo: '+schemaTipoEsercitazioneChipsHTML(ex.tipoEsercitazione, true)+'</p>' : '') +
+    (tags.length ? '<p class="hint">'+schemaFocusHashHTML(tags)+'</p>' : '') +
+    (ex.descrizione ? '<p>Descrizione: '+schemaRichTextToHTML(ex.descrizione)+'</p>' : '') +
+    (ex.vincoli ? '<p>Vincoli: '+schemaRichTextToHTML(ex.vincoli)+'</p>' : '') +
+    (ex.svolgimento ? '<p>'+schemaRichTextToHTML(ex.svolgimento)+'</p>' : '');
+}
 function schemaSessionExportItemHTML(item, idx){
   if(!item.esercizio) return '<div class="schema-export-item"><h3>'+(idx+1)+'. '+esc(item.titoloSnapshot)+'</h3><p class="hint">Esercizio non più in libreria.</p></div>';
   const ex = item.esercizio;
-  const cats = schemaExerciseCategorie(ex).map(schemaCategoriaInfo).filter(Boolean);
-  const tags = schemaExerciseTags(ex);
   const totaleCalcolato = Math.round(ex.ripetizioni*ex.durataRipetizione + Math.max(ex.ripetizioni-1,0)*(ex.recuperoSecondi||0)/60);
   const tempoTotale = item.durataMinuti!=null ? item.durataMinuti : totaleCalcolato;
-  // Stesso linguaggio grafico dello schermo anche in stampa: fase di gioco in tonal chip
-  // (variante testo scurito per il contrasto su carta, vedi schemaTonalChipStylePrint),
-  // tipo di esercitazione sempre grigio neutro, focus in hashtag corsivo. Descrizione
-  // (perché/a cosa serve), vincoli (regole del gioco) e svolgimento (come si fa) sono tre
-  // informazioni distinte, tutte utili in campo — con la formattazione (grassetto/
-  // dimensione, marcatori **/++) e gli a-capo preservati.
   return '<div class="schema-export-item">' +
     '<div class="schema-export-item-text">' +
       '<h3>'+(idx+1)+'. '+esc(ex.titolo)+'</h3>' +
-      '<p>Tempo totale: '+tempoTotale+' min · '+ex.ripetizioni+'×'+ex.durataRipetizione+' min · recupero '+ex.recuperoSecondi+'s tra le serie</p>' +
-      '<p class="hint">Giocatori: '+ex.numeroGiocatoriBase+(ex.numeroPortieri ? '+'+ex.numeroPortieri+' portieri' : '')+' · Campo: '+(ex.lunghezzaCampo||'—')+'×'+(ex.larghezzaCampo||'—')+' m</p>' +
-      // Un esercizio di preparazione atletica non ha (giustamente) una fase di gioco: la riga
-      // "Tipo: Preparazione Atletica" qui sotto già lo dice, "Obiettivo: Non categorizzato"
-      // accanto leggerebbe come una svista che non è.
-      (cats.length || ex.tipoEsercitazione !== 'preparazione_atletica' ?
-        '<p class="hint">Obiettivo: ' +
-          (cats.length ? cats.map(cat=>'<span class="schema-cat-chip schema-cat-chip-tonal" style="'+schemaTonalChipStylePrint(cat.color)+'">'+esc(cat.label)+'</span>').join(' ') : 'Non categorizzato') +
-        '</p>' : '') +
-      (ex.tipoEsercitazione ? '<p class="hint">Tipo: '+schemaTipoEsercitazioneChipsHTML(ex.tipoEsercitazione, true)+'</p>' : '') +
-      '<p class="hint">'+schemaFocusHashHTML(tags)+'</p>' +
-      (ex.descrizione ? '<p>'+schemaRichTextToHTML(ex.descrizione)+'</p>' : '') +
-      (ex.vincoli ? '<p class="hint">Vincoli: '+schemaRichTextToHTML(ex.vincoli)+'</p>' : '') +
-      (ex.svolgimento ? '<p>'+schemaRichTextToHTML(ex.svolgimento)+'</p>' : '') +
+      schemaExportItemInfoHTML(ex, tempoTotale) +
+      // Nota specifica a questo utilizzo dell'esercizio in questa seduta (SessionItem.nota,
+      // non una nota della libreria): sempre in fondo, colorata per distinguerla dal resto
+      // del contenuto dell'esercizio.
+      (item.nota ? '<p class="schema-export-item-nota">Nota: '+esc(item.nota)+'</p>' : '') +
     '</div>' +
     (ex.mostraDisegno!==false ? '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(ex, false, true) + '</div>' : '') +
   '</div>';
@@ -7302,23 +7321,21 @@ function schemaSessionExportItemHTML(item, idx){
 // Un blocco di lavoro parallelo stampa i suoi gruppi affiancati in UNA sola voce numerata
 // (non una per gruppo, coerente con "senza ripetere l'intero blocco nella stampa"): la nota
 // sui gruppi che si invertono basta da sola a comunicare che il tempo è raddoppiato, senza
-// bisogno di duplicare le righe.
+// bisogno di duplicare le righe. Ogni colonna riporta comunque le stesse informazioni di un
+// esercizio normale (schemaExportItemInfoHTML) — il disegno è più stretto per lasciare spazio
+// al testo, non le informazioni tagliate.
 function schemaSessionExportBlockHTML(slot, idx){
   const blocco = slot.items[0].blocco || { invertono:false };
   const columns = slot.items.map(function(item){
     if(!item.esercizio) return '<div class="schema-export-block-col"><h4>Gruppo '+(item.gruppo||'?')+'</h4><p class="hint">Esercizio non più in libreria.</p></div>';
     const ex = item.esercizio;
-    const cats = schemaExerciseCategorie(ex).map(schemaCategoriaInfo).filter(Boolean);
     const totaleCalcolato = Math.round(ex.ripetizioni*ex.durataRipetizione + Math.max(ex.ripetizioni-1,0)*(ex.recuperoSecondi||0)/60);
     const tempoTotale = item.durataMinuti!=null ? item.durataMinuti : totaleCalcolato;
     return '<div class="schema-export-block-col">' +
       '<h4>Gruppo '+(item.gruppo||'?')+' — '+esc(ex.titolo)+'</h4>' +
       (ex.mostraDisegno!==false ? '<div class="schema-export-field schema-export-item-diagram">' + renderSchemaFieldSVG(ex, false, true) + '</div>' : '') +
-      '<p class="hint">'+tempoTotale+' min · '+ex.ripetizioni+'×'+ex.durataRipetizione+' min · recupero '+ex.recuperoSecondi+'s</p>' +
-      '<p class="hint">Giocatori: '+ex.numeroGiocatoriBase+(ex.numeroPortieri ? '+'+ex.numeroPortieri+' portieri' : '')+'</p>' +
-      (cats.length ? '<p class="hint">'+cats.map(cat=>'<span class="schema-cat-chip schema-cat-chip-tonal" style="'+schemaTonalChipStylePrint(cat.color)+'">'+esc(cat.label)+'</span>').join(' ')+'</p>' : '') +
-      (ex.tipoEsercitazione ? '<p class="hint">Tipo: '+schemaTipoEsercitazioneChipsHTML(ex.tipoEsercitazione, true)+'</p>' : '') +
-      (ex.svolgimento ? '<p>'+schemaRichTextToHTML(ex.svolgimento)+'</p>' : '') +
+      schemaExportItemInfoHTML(ex, tempoTotale) +
+      (item.nota ? '<p class="schema-export-item-nota">Nota: '+esc(item.nota)+'</p>' : '') +
     '</div>';
   }).join('');
   return '<div class="schema-export-item schema-export-block">' +

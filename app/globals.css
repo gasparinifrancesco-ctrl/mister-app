@@ -622,8 +622,15 @@
   .schema-export-block{ flex-direction:column; }
   .schema-export-block-cols{ display:flex; gap:14px; width:100%; }
   .schema-export-block-col{ flex:1; min-width:0; border:1px solid var(--border); border-radius:6px; padding:8px 10px; }
-  .schema-export-block-col .schema-export-item-diagram{ width:100%; }
+  /* Un gruppo riporta le stesse informazioni testuali di un esercizio singolo (vedi
+     schemaExportItemInfoHTML) ma condivide la riga con altri gruppi: il disegno resta
+     riconoscibile ma più stretto, per lasciare lo spazio verticale al testo invece di
+     tagliare informazioni. */
+  .schema-export-block-col .schema-export-item-diagram{ width:60%; max-width:170px; margin:0 auto 8px; }
   @media (max-width:640px){ .schema-export-block-cols{ flex-direction:column; } }
+  /* Nota specifica a un esercizio in questa seduta (SessionItem.nota): sempre in fondo,
+     colorata per distinguerla dal resto delle informazioni dell'esercizio. */
+  .schema-export-item-nota{ color:var(--danger); font-weight:600; }
   .schema-dim-input{ width:52px; text-align:center; }
   /* Campo (larghezza/lunghezza), Ripetizioni, Durata, Recupero: stessa altezza, stesso
      sfondo, stesso radius, cosi si leggono come un unico gruppo di controlli coerenti
@@ -690,6 +697,10 @@
   .schema-print-sheet .hint{ font-size:11px; }
   .schema-print-sheet .schema-export-item{ padding-top:10px; margin-top:10px; gap:18px; }
   .schema-print-sheet .schema-export-item-diagram{ width:270px; }
+  /* Specificità pari a schema-export-item-diagram sopra ma dichiarata dopo non basterebbe da
+     sola dentro schema-print-sheet: questa regola è più specifica apposta, cosi vince sempre
+     lei nel foglio stampato, non i 270px pensati per un esercizio singolo a piena larghezza. */
+  .schema-print-sheet .schema-export-block-col .schema-export-item-diagram{ width:60%; max-width:150px; margin:0 auto 8px; }
   .schema-print-sheet .schema-export-field{ margin-top:4px; }
   .schema-print-sheet .schema-export-pitch{ max-width:460px; margin:6px 0; }
   .schema-print-sheet .schema-cat-chip{ font-size:10px; padding:2px 7px; }

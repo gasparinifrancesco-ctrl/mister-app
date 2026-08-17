@@ -300,6 +300,11 @@ model SessionItem {
   // lista ordinata per ordine e accorpando le righe consecutive con lo stesso blockId.
   blockId        String?
   gruppo         Int?
+  // Nota specifica a QUESTO utilizzo dell'esercizio in QUESTA seduta (es. un accorgimento
+  // valido solo oggi): non è un Note dell'Exercise, quindi non finisce nello storico note
+  // della libreria né si ripresenta in altre sedute che usano lo stesso esercizio. Compare
+  // solo in fondo a questo esercizio nell'anteprima/stampa.
+  nota           String  @default("")
 
   session   Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   esercizio Exercise?     @relation(fields: [esercizioId], references: [id], onDelete: SetNull)
